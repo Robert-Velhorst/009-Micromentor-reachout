@@ -1,465 +1,1274 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { 
-  Zap, 
-  Cpu, 
-  Clock, 
-  BarChart3, 
-  Shield, 
-  Download, 
-  CheckCircle2, 
-  ArrowRight,
-  Terminal,
-  Activity,
-  Database,
-  Wifi,
-  Menu,
-  Moon,
-  Sun
-} from "lucide-react";
-import { motion } from "framer-motion";
-import ResourceDemo from "@/components/ResourceDemo";
-import { useTheme } from "@/contexts/ThemeContext";
-import ScrollProgress from "@/components/ScrollProgress";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
+  Activity,
+  AlertTriangle,
+  Check,
+  ClipboardCheck,
+  Euro,
+  ExternalLink,
+  FileText,
+  Gauge,
+  MailPlus,
+  MessageSquareReply,
+  Plus,
+  RefreshCcw,
+  Search,
+  Send,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  type Campaign,
+  type CampaignDetails,
+  type LedgerSummary,
+  type MessageDraft,
+  type MentorImportResult,
+  type MentorProfile,
+  type MentorResponse,
+  type OutreachOutcome,
+  type UsageReport,
+  ledgerApi,
+} from "@/lib/ledgerApi";
+
+type CampaignForm = {
+  title: string;
+  goal: string;
+  targetMentorType: string;
+  source: string;
+};
+
+type MentorForm = {
+  name: string;
+  company: string;
+  headline: string;
+  bio: string;
+  skills: string;
+  profileUrl: string;
+  notes: string;
+};
+
+const defaultCampaignForm: CampaignForm = {
+  title: "",
+  goal: "",
+  targetMentorType: "Startup, operations, product, growth, or automation mentor",
+  source: "MicroMentor/manual",
+};
+
+const defaultMentorForm: MentorForm = {
+  name: "",
+  company: "",
+  headline: "",
+  bio: "",
+  skills: "",
+  profileUrl: "",
+  notes: "",
+};
+
+const sampleCsv = `name,company,headline,bio,skills,profileUrl,notes
+Ada Lovelace Labs,Analytical Engine Co,Automation advisor,"Helps founders design practical automation workflows","automation, operations",https://example.com/ada,Strong operations angle`;
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("nl-NL", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: value < 1 ? 4 : 2,
+  }).format(value || 0);
+
+const formatDate = (value: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+
+const stageLabel: Record<string, string> = {
+  new: "New",
+  matched: "Matched",
+  drafted: "Drafted",
+  approved: "Approved",
+  contacted: "Contacted",
+  responded: "Responded",
+  follow_up: "Follow-up",
+  closed: "Closed",
+};
+
+function latestCampaign(campaigns: Campaign[]) {
+  return campaigns.find((campaign) => campaign.status === "active") || campaigns[0] || null;
+}
+
+function groupBy<T>(items: T[], getKey: (item: T) => string) {
+  const map = new Map<string, T[]>();
+  for (const item of items) {
+    const key = getKey(item);
+    map.set(key, [...(map.get(key) || []), item]);
+  }
+  return map;
+}
+
+function downloadText(filename: string, text: string, type = "text/plain;charset=utf-8") {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function Home() {
-  const { theme, toggleTheme } = useTheme();
-  const scrollToSection = (id: string) => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+  const [summary, setSummary] = useState<LedgerSummary | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [activeCampaignId, setActiveCampaignId] = useState("");
+  const [details, setDetails] = useState<CampaignDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [campaignForm, setCampaignForm] = useState<CampaignForm>(defaultCampaignForm);
+  const [mentorForm, setMentorForm] = useState<MentorForm>(defaultMentorForm);
+  const [sendEvidence, setSendEvidence] = useState<Record<string, string>>({});
+  const [responseText, setResponseText] = useState<Record<string, string>>({});
+  const [responseClass, setResponseClass] = useState<Record<string, MentorResponse["classification"]>>({});
+  const [draftEdits, setDraftEdits] = useState<Record<string, Pick<MessageDraft, "subject" | "body">>>({});
+  const [mentorEdits, setMentorEdits] = useState<Record<string, { notes: string; stage: MentorProfile["stage"] }>>({});
+  const [outcomeText, setOutcomeText] = useState<Record<string, string>>({});
+  const [outcomeStatus, setOutcomeStatus] = useState<Record<string, OutreachOutcome["status"]>>({});
+  const [usageReport, setUsageReport] = useState<UsageReport | null>(null);
+  const [csvText, setCsvText] = useState(sampleCsv);
+  const [csvImportResult, setCsvImportResult] = useState<MentorImportResult | null>(null);
+  const [selectedMentorId, setSelectedMentorId] = useState("");
+
+  const loadLedger = async (campaignId?: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const [nextSummary, campaignResult] = await Promise.all([
+        ledgerApi.summary(),
+        ledgerApi.campaigns(),
+      ]);
+      const nextCampaigns = campaignResult.campaigns;
+      const selectedId = campaignId || activeCampaignId || latestCampaign(nextCampaigns)?.id || "";
+      const nextDetails = selectedId ? await ledgerApi.campaign(selectedId) : null;
+      setSummary(nextSummary);
+      setCampaigns(nextCampaigns);
+      setActiveCampaignId(selectedId);
+      setDetails(nextDetails);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleDownload = () => {
-    // In a real scenario, this would trigger the download
-    window.location.href = "/maro-extension.zip";
+  useEffect(() => {
+    void loadLedger();
+    // Load once on mount; subsequent refreshes are explicit after mutations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const campaign = details?.campaign || null;
+  const assessmentsByMentor = useMemo(
+    () => new Map((details?.assessments || []).map((assessment) => [assessment.mentorProfileId, assessment])),
+    [details?.assessments]
+  );
+  const messagesByMentor = useMemo(
+    () => groupBy(details?.messages || [], (message) => message.mentorProfileId),
+    [details?.messages]
+  );
+  const approvalsByMessage = useMemo(
+    () => groupBy(details?.approvals || [], (approval) => approval.messageDraftId),
+    [details?.approvals]
+  );
+  const sendAttemptsByMentor = useMemo(
+    () => groupBy(details?.sendAttempts || [], (attempt) => attempt.mentorProfileId),
+    [details?.sendAttempts]
+  );
+  const responsesByMentor = useMemo(
+    () => groupBy(details?.responses || [], (response) => response.mentorProfileId),
+    [details?.responses]
+  );
+  const followUpsByMentor = useMemo(
+    () => groupBy(details?.followUps || [], (followUp) => followUp.mentorProfileId),
+    [details?.followUps]
+  );
+  const outcomesByMentor = useMemo(
+    () => groupBy(details?.outcomes || [], (outcome) => outcome.mentorProfileId),
+    [details?.outcomes]
+  );
+  const filteredMentors = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const mentors = details?.mentors || [];
+    if (!needle) return mentors;
+    return mentors.filter((mentor) =>
+      `${mentor.name} ${mentor.headline} ${mentor.bio} ${mentor.skills.join(" ")}`.toLowerCase().includes(needle)
+    );
+  }, [details?.mentors, query]);
+  const selectedMentor = useMemo(() => {
+    const mentors = details?.mentors || [];
+    return mentors.find((mentor) => mentor.id === selectedMentorId) || filteredMentors[0] || mentors[0] || null;
+  }, [details?.mentors, filteredMentors, selectedMentorId]);
+  const pendingReview = (details?.messages || []).filter((message) => message.status === "draft");
+  const approvedMessages = (details?.messages || []).filter((message) => message.status === "approved");
+  const sentMessages = (details?.messages || []).filter((message) => message.status === "sent");
+  const progress = campaign?.messagesDrafted ? (campaign.messagesSent / campaign.messagesDrafted) * 100 : 0;
+
+  const mutate = async (action: () => Promise<unknown>) => {
+    setError("");
+    try {
+      await action();
+      await loadLedger(activeCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed");
+    }
   };
 
+  const createCampaign = () =>
+    mutate(async () => {
+      const result = await ledgerApi.createCampaign(campaignForm);
+      setCampaignForm(defaultCampaignForm);
+      setActiveCampaignId(result.campaign.id);
+      await loadLedger(result.campaign.id);
+    });
+
+  const addMentor = () =>
+    mutate(async () => {
+      if (!activeCampaignId) throw new Error("Select a campaign first");
+      await ledgerApi.addMentor(activeCampaignId, mentorForm);
+      setMentorForm(defaultMentorForm);
+    });
+
+  const recordResponse = (mentor: MentorProfile) =>
+    mutate(async () => {
+      const message = sentMessages.find((item) => item.mentorProfileId === mentor.id) || null;
+      await ledgerApi.recordResponse({
+        campaignId: mentor.campaignId,
+        mentorProfileId: mentor.id,
+        messageDraftId: message?.id || null,
+        classification: responseClass[mentor.id] || "unknown",
+        body: responseText[mentor.id] || "",
+        nextAction: "Review response and decide whether to continue, close, or schedule a follow-up.",
+      });
+      setResponseText((current) => ({ ...current, [mentor.id]: "" }));
+    });
+
+  const saveMentorEdit = (mentor: MentorProfile) =>
+    mutate(async () => {
+      const edit = mentorEdits[mentor.id];
+      await ledgerApi.updateMentor(mentor.id, {
+        notes: edit?.notes ?? mentor.notes,
+        stage: edit?.stage ?? mentor.stage,
+      });
+    });
+
+  const recordOutcome = (mentor: MentorProfile) =>
+    mutate(async () => {
+      await ledgerApi.recordOutcome({
+        campaignId: mentor.campaignId,
+        mentorProfileId: mentor.id,
+        status: outcomeStatus[mentor.id] || "open",
+        summary: outcomeText[mentor.id] || "",
+        valueLevel: "medium",
+      });
+      setOutcomeText((current) => ({ ...current, [mentor.id]: "" }));
+    });
+
+  const loadUsageReport = async () => {
+    if (!activeCampaignId) return;
+    setError("");
+    try {
+      setUsageReport(await ledgerApi.usageReport(activeCampaignId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load usage report");
+    }
+  };
+
+  const importMentorCsv = (preview: boolean) =>
+    mutate(async () => {
+      if (!activeCampaignId) throw new Error("Select a campaign first");
+      const result = await ledgerApi.importMentorCsv(activeCampaignId, csvText, preview);
+      setCsvImportResult(result);
+    });
+
+  const exportMentorCsv = async () => {
+    if (!activeCampaignId) return;
+    setError("");
+    try {
+      const result = await ledgerApi.exportMentorCsv(activeCampaignId);
+      downloadText(result.filename, result.csv, "text/csv;charset=utf-8");
+      await loadLedger(activeCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to export mentor CSV");
+    }
+  };
+
+  const dueFollowUps = (details?.followUps || []).filter(
+    (followUp) => followUp.status === "scheduled" && new Date(followUp.dueAt).getTime() <= Date.now()
+  );
+  const latestResourceSession = details?.resourceSessions[0] || null;
+
   return (
-    <div className="min-h-screen flex flex-col bg-background font-sans selection:bg-primary/20">
-      {/* Navigation */}
-      <ScrollProgress />
-      <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md shadow-sm transition-all duration-300">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-2 font-bold text-xl tracking-tighter group cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-            <div className="relative">
-              <div className="absolute inset-0 bg-primary/20 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 animate-pulse"></div>
-              <img src="/images/maro-logo.svg" alt="MARO Logo" className="h-8 w-8 relative z-10 transition-transform duration-300 group-hover:scale-110" />
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
+        <div className="container flex h-16 items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-primary text-primary-foreground">
+              <MailPlus className="h-5 w-5" />
             </div>
-            <span className="group-hover:text-primary transition-colors duration-300">MARO</span>
+            <div>
+              <div className="text-base font-semibold leading-none">MARO</div>
+              <div className="text-xs text-muted-foreground">MicroMentor outreach operating ledger</div>
+            </div>
           </div>
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-            <button onClick={() => scrollToSection('features')} className="hover:text-primary transition-colors relative group">
-              Features
-              <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all duration-300 group-hover:w-full"></span>
-            </button>
-            <button onClick={() => scrollToSection('pricing')} className="hover:text-primary transition-colors relative group">
-              Pricing
-              <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all duration-300 group-hover:w-full"></span>
-            </button>
-            <button onClick={() => scrollToSection('specs')} className="hover:text-primary transition-colors relative group">
-              Specs
-              <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all duration-300 group-hover:w-full"></span>
-            </button>
-            <Button variant="ghost" size="icon" onClick={toggleTheme} className="ml-2 hover:bg-primary/10">
-              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          <div className="hidden items-center gap-2 md:flex">
+            <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 text-emerald-700">
+              Persisted local API
+            </Badge>
+            <Button variant="outline" className="rounded-md" onClick={() => void loadLedger(activeCampaignId)}>
+              <RefreshCcw className="h-4 w-4" />
+              Refresh
             </Button>
-          </nav>
-          <div className="flex items-center gap-4">
-            <Button onClick={handleDownload} className="hidden md:flex rounded-none font-mono text-xs font-bold uppercase tracking-wider shadow-lg hover:shadow-primary/25 transition-all hover:-translate-y-0.5">
-              <Download className="mr-2 h-4 w-4" />
-              Download v1.0
-            </Button>
-            
-            {/* Mobile Menu Trigger */}
-            <div className="md:hidden flex items-center">
-              <Button variant="ghost" size="icon" className="hover:bg-primary/10">
-                <Menu className="h-6 w-6" />
-              </Button>
-            </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1">
-        {/* Hero Section */}
-        <section className="relative py-20 md:py-32 overflow-hidden border-b">
-          <div className="absolute inset-0 -z-10 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
-          <div className="container grid lg:grid-cols-2 gap-12 items-center">
-            <div className="space-y-8">
-              <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20">
-                <Terminal className="mr-1 h-3 w-3" />
-                <span>v1.0 Stable Release</span>
-              </div>
-              <h1 className="text-4xl md:text-6xl font-bold tracking-tighter leading-tight">
-                Automate Outreach. <br />
-                <span className="text-primary">Minimize Overhead.</span>
-              </h1>
-              <p className="text-xl text-muted-foreground max-w-[600px] leading-relaxed">
-                Micromentor Automated Reach Out (MARO). The ultra-efficient browser extension for MicroMentor.org. Automate your messaging workflow while tracking every CPU cycle and byte of data.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Button size="lg" onClick={handleDownload} className="rounded-none h-14 px-8 text-base font-mono font-bold uppercase tracking-wider">
-                  Download Installer
-                  <ArrowRight className="ml-2 h-5 w-5" />
-                </Button>
-                <Button variant="outline" size="lg" onClick={() => scrollToSection('features')} className="rounded-none h-14 px-8 text-base font-mono font-bold uppercase tracking-wider">
-                  View Documentation
-                </Button>
-              </div>
-              <div className="grid grid-cols-3 gap-8 pt-8 border-t">
-                <div>
-                  <div className="text-3xl font-bold font-mono">20x</div>
-                  <div className="text-sm text-muted-foreground mt-1">Faster Outreach</div>
+      <main className="container py-5">
+        {error ? (
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <AlertTriangle className="h-4 w-4" />
+            {error}
+          </div>
+        ) : null}
+
+        <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+          <Card className="rounded-md py-5">
+            <CardHeader className="gap-4 px-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="rounded-md bg-primary/10 text-primary hover:bg-primary/10">
+                      Command dashboard
+                    </Badge>
+                    <Badge variant="outline" className="rounded-md">
+                      {campaigns.length} campaigns
+                    </Badge>
+                    <Badge variant="outline" className="rounded-md">
+                      Approval gated
+                    </Badge>
+                  </div>
+                  <CardTitle className="text-2xl leading-tight md:text-3xl">
+                    Control mentor discovery, review, follow-up, and billing.
+                  </CardTitle>
+                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                    Campaigns, mentors, message approvals, manual send confirmations, responses, follow-ups, resource costs, and audit events now use the local backend ledger.
+                  </p>
                 </div>
-                <div>
-                  <div className="text-3xl font-bold font-mono">50%</div>
-                  <div className="text-sm text-muted-foreground mt-1">Resource Savings</div>
-                </div>
-                <div>
-                  <div className="text-3xl font-bold font-mono">100%</div>
-                  <div className="text-sm text-muted-foreground mt-1">Automated</div>
+                <div className="grid grid-cols-3 gap-2 rounded-md border bg-muted/30 p-2 text-center">
+                  <div className="min-w-20">
+                    <div className="font-mono text-xl font-semibold">{summary?.totals.mentors || 0}</div>
+                    <div className="text-xs text-muted-foreground">Mentors</div>
+                  </div>
+                  <div className="min-w-20">
+                    <div className="font-mono text-xl font-semibold">{summary?.totals.strongMatches || 0}</div>
+                    <div className="text-xs text-muted-foreground">Strong</div>
+                  </div>
+                  <div className="min-w-20">
+                    <div className="font-mono text-xl font-semibold">{summary?.totals.followUpsDue || 0}</div>
+                    <div className="text-xs text-muted-foreground">Due</div>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="relative">
-              <div className="absolute -inset-4 bg-primary/20 blur-3xl opacity-20 rounded-full"></div>
-              <img 
-                src="/images/hero-dashboard.png" 
-                alt="Dashboard Interface" 
-                className="relative border-2 border-border shadow-2xl bg-background w-full h-auto"
-              />
-              {/* Floating Elements */}
-              <motion.div 
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.5, duration: 0.5 }}
-                className="absolute -bottom-6 -left-6 bg-background border p-4 shadow-lg max-w-[200px]"
+            </CardHeader>
+            <CardContent className="grid gap-4 px-5 md:grid-cols-4">
+              <MetricCard icon={<Users className="h-4 w-4 text-primary" />} label="Drafts" value={summary?.totals.drafts || 0} />
+              <MetricCard icon={<ClipboardCheck className="h-4 w-4 text-emerald-600" />} label="Approved" value={summary?.totals.approvals || 0} />
+              <MetricCard icon={<Send className="h-4 w-4 text-amber-600" />} label="Sent" value={summary?.totals.sent || 0} />
+              <MetricCard icon={<Euro className="h-4 w-4 text-sky-600" />} label="Final cost" value={formatCurrency(summary?.totals.finalCost || 0)} />
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-md py-5">
+            <CardHeader className="px-5">
+              <CardTitle className="text-lg">Active campaign</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 px-5">
+              <select
+                value={activeCampaignId}
+                onChange={(event) => void loadLedger(event.target.value)}
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                disabled={!campaigns.length}
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <Activity className="h-4 w-4 text-primary" />
-                  <span className="font-mono text-xs font-bold">CPU USAGE</span>
-                </div>
-                <div className="h-1 w-full bg-muted overflow-hidden">
-                  <div className="h-full bg-primary w-[12%]"></div>
-                </div>
-                <div className="mt-1 text-right font-mono text-xs text-muted-foreground">12% Load</div>
-              </motion.div>
-            </div>
-          </div>
+                {campaigns.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+              <div className="rounded-md border p-4">
+                <div className="text-sm font-medium">{campaign?.title || "No campaign selected"}</div>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{campaign?.goal || "Create a campaign to start the ledger."}</p>
+              </div>
+              {campaign ? (
+                <select
+                  value={campaign.status}
+                  onChange={(event) => void mutate(() => ledgerApi.updateCampaign(campaign.id, { status: event.target.value as Campaign["status"] }))}
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                >
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="completed">Completed</option>
+                  <option value="archived">Archived</option>
+                </select>
+              ) : null}
+              <Progress value={progress} className="h-2 rounded-md bg-muted" />
+              <div className="grid grid-cols-3 gap-2 text-sm">
+                <MiniStat label="Drafted" value={campaign?.messagesDrafted || 0} />
+                <MiniStat label="Sent" value={campaign?.messagesSent || 0} />
+                <MiniStat label="Replies" value={campaign?.responsesReceived || 0} />
+              </div>
+            </CardContent>
+          </Card>
         </section>
 
-        {/* Interactive Demo Section */}
-        <section className="pt-20 pb-10 border-b-0 bg-muted/10">
-          <div className="container">
-            <div className="flex flex-col items-center text-center mb-12">
-              <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20 mb-4">
-                <Activity className="mr-1 h-3 w-3" />
-                <span>Interactive Demo</span>
-              </div>
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tighter mb-4">See the Savings in Real-Time</h2>
-              <p className="text-muted-foreground max-w-[700px]">
-                Experience our transparent pricing model. Start the simulation to see how we track every resource and calculate costs down to the micro-cent.
-              </p>
-            </div>
-            <ResourceDemo />
+        <Tabs defaultValue="ledger" className="mt-5 gap-4">
+          <div className="overflow-x-auto">
+            <TabsList className="h-10 rounded-md">
+              <TabsTrigger value="ledger" className="rounded-md">
+                <Gauge className="h-4 w-4" />
+                Ledger
+              </TabsTrigger>
+              <TabsTrigger value="mentors" className="rounded-md">
+                <Users className="h-4 w-4" />
+                Mentors
+              </TabsTrigger>
+              <TabsTrigger value="review" className="rounded-md">
+                <FileText className="h-4 w-4" />
+                Review
+              </TabsTrigger>
+              <TabsTrigger value="responses" className="rounded-md">
+                <MessageSquareReply className="h-4 w-4" />
+                Responses
+              </TabsTrigger>
+              <TabsTrigger value="billing" className="rounded-md">
+                <Euro className="h-4 w-4" />
+                Billing
+              </TabsTrigger>
+              <TabsTrigger value="audit" className="rounded-md">
+                <ShieldCheck className="h-4 w-4" />
+                Audit
+              </TabsTrigger>
+            </TabsList>
           </div>
-        </section>
 
-        {/* Pricing Section - Moved immediately below Demo */}
-        <section id="pricing" className="pb-20 pt-4 bg-muted/10 border-b">
-          <div className="container">
-            <div className="flex flex-col items-center text-center mb-8">
-              <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 mb-4">
-                LIVE DEMO ABOVE
-              </div>
-              <p className="text-muted-foreground max-w-[700px]">
-                Check the interactive simulation above to see the real-time cost vs. savings breakdown. Our users typically see a <span className="font-bold text-foreground">200x Return on Spend</span> for every campaign.
-              </p>
-            </div>
+          <TabsContent value="ledger" className="grid gap-4 lg:grid-cols-[1fr_380px]">
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <CardTitle className="text-lg">Campaign ledger</CardTitle>
+              </CardHeader>
+              <CardContent className="px-5">
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full min-w-[860px] text-sm">
+                    <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Campaign</th>
+                        <th className="px-4 py-3 font-medium">Target</th>
+                        <th className="px-4 py-3 font-medium">Mentors</th>
+                        <th className="px-4 py-3 font-medium">Approved</th>
+                        <th className="px-4 py-3 font-medium">Sent</th>
+                        <th className="px-4 py-3 font-medium">Responses</th>
+                        <th className="px-4 py-3 font-medium">Follow-ups</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {campaigns.map((item) => (
+                        <tr key={item.id} className={item.id === activeCampaignId ? "bg-muted/30" : ""}>
+                          <td className="px-4 py-3">
+                            <button className="text-left font-medium" onClick={() => void loadLedger(item.id)}>
+                              {item.title}
+                            </button>
+                            <div className="text-xs text-muted-foreground">{item.source}</div>
+                          </td>
+                          <td className="max-w-[260px] px-4 py-3 text-muted-foreground">{item.targetMentorType}</td>
+                          <td className="px-4 py-3 font-mono">{item.totalMentors}</td>
+                          <td className="px-4 py-3 font-mono">{item.messagesApproved}</td>
+                          <td className="px-4 py-3 font-mono">{item.messagesSent}</td>
+                          <td className="px-4 py-3 font-mono">{item.responsesReceived}</td>
+                          <td className="px-4 py-3 font-mono">{item.followUpsDue}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
 
-            <div className="grid lg:grid-cols-2 gap-12 items-start max-w-5xl mx-auto">
-              <div className="space-y-6">
-                <h3 className="text-2xl font-bold tracking-tight">Transparent Resource Rates</h3>
-                <p className="text-muted-foreground">
-                  No monthly subscriptions. No hidden fees. Our revolutionary pricing model charges you based strictly on the computing resources you consume.
-                </p>
-                
-                <div className="space-y-4">
-                  <div className="flex gap-4">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      <Activity className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-mono font-bold">Resource Formula</h4>
-                      <p className="text-sm text-muted-foreground">Actual Price = Resources Used × 2</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-4">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      <Shield className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-mono font-bold">Billing Notifications</h4>
-                      <p className="text-sm text-muted-foreground">Receive detailed email reports. No complex dashboards to manage.</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-4">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      <CheckCircle2 className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-mono font-bold">Pay-As-You-Go</h4>
-                      <p className="text-sm text-muted-foreground">Scale up or down instantly. Costs align perfectly with your usage.</p>
-                    </div>
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <CardTitle className="text-lg">New campaign</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 px-5">
+                <Input value={campaignForm.title} onChange={(event) => setCampaignForm((current) => ({ ...current, title: event.target.value }))} placeholder="Campaign title" className="rounded-md" />
+                <Textarea value={campaignForm.goal} onChange={(event) => setCampaignForm((current) => ({ ...current, goal: event.target.value }))} placeholder="Outreach goal" className="min-h-24 rounded-md" />
+                <Input value={campaignForm.targetMentorType} onChange={(event) => setCampaignForm((current) => ({ ...current, targetMentorType: event.target.value }))} placeholder="Target mentor type" className="rounded-md" />
+                <Input value={campaignForm.source} onChange={(event) => setCampaignForm((current) => ({ ...current, source: event.target.value }))} placeholder="Source" className="rounded-md" />
+                <Button className="w-full rounded-md" onClick={() => void createCampaign()} disabled={!campaignForm.title.trim() || !campaignForm.goal.trim()}>
+                  <Plus className="h-4 w-4" />
+                  Create campaign
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="mentors" className="grid gap-4 xl:grid-cols-[1fr_390px]">
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <CardTitle className="text-lg">Mentor profiles and fit scores</CardTitle>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search mentors" className="h-9 rounded-md pl-9 sm:w-64" />
                   </div>
                 </div>
-              </div>
-              
-              <Card className="border-2 shadow-lg">
-                <CardHeader className="bg-muted/30 border-b">
-                  <CardTitle className="font-mono text-lg">Resource Pricing Table</CardTitle>
-                  <CardDescription>Current rates per unit</CardDescription>
+              </CardHeader>
+              <CardContent className="px-5">
+                <div className="space-y-3">
+                  {filteredMentors.map((mentor) => {
+                    const assessment = assessmentsByMentor.get(mentor.id);
+                    const mentorMessages = messagesByMentor.get(mentor.id) || [];
+                    return (
+                      <div key={mentor.id} className="rounded-md border p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="font-medium">{mentor.name}</div>
+                              <Badge variant="outline" className="rounded-md">
+                                {stageLabel[mentor.stage] || mentor.stage}
+                              </Badge>
+                              {assessment ? (
+                                <Badge className="rounded-md bg-primary/10 text-primary hover:bg-primary/10">
+                                  {assessment.score}% fit
+                                </Badge>
+                              ) : null}
+                            </div>
+                            <div className="mt-1 text-sm text-muted-foreground">{mentor.headline}</div>
+                            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{mentor.bio || "No profile context recorded yet."}</p>
+                            <div className="mt-2 text-xs text-muted-foreground">
+                              {(assessment?.reasonsJson || []).slice(0, 2).join(" ")}
+                            </div>
+                            <div className="mt-3 grid gap-2 md:grid-cols-[180px_1fr_auto]">
+                              <select
+                                value={mentorEdits[mentor.id]?.stage || mentor.stage}
+                                onChange={(event) =>
+                                  setMentorEdits((current) => ({
+                                    ...current,
+                                    [mentor.id]: {
+                                      notes: current[mentor.id]?.notes ?? mentor.notes,
+                                      stage: event.target.value as MentorProfile["stage"],
+                                    },
+                                  }))
+                                }
+                                className="h-9 rounded-md border bg-background px-3 text-sm"
+                              >
+                                {Object.entries(stageLabel).map(([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ))}
+                              </select>
+                              <Input
+                                value={mentorEdits[mentor.id]?.notes ?? mentor.notes}
+                                onChange={(event) =>
+                                  setMentorEdits((current) => ({
+                                    ...current,
+                                    [mentor.id]: {
+                                      stage: current[mentor.id]?.stage ?? mentor.stage,
+                                      notes: event.target.value,
+                                    },
+                                  }))
+                                }
+                                placeholder="Mentor notes"
+                                className="h-9 rounded-md"
+                              />
+                              <Button variant="outline" className="rounded-md" onClick={() => void saveMentorEdit(mentor)}>
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button variant="outline" className="rounded-md" onClick={() => setSelectedMentorId(mentor.id)}>
+                              Inspect
+                            </Button>
+                            <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.createDraft(activeCampaignId, mentor.id))}>
+                              <FileText className="h-4 w-4" />
+                              Draft
+                            </Button>
+                            <Badge variant="outline" className="rounded-md">
+                              {mentorMessages.length} messages
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!filteredMentors.length ? (
+                    <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                      No mentors in this campaign yet.
+                    </div>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+
+            <MentorDetailPanel
+              mentor={selectedMentor}
+              assessment={selectedMentor ? assessmentsByMentor.get(selectedMentor.id) || null : null}
+              messages={selectedMentor ? messagesByMentor.get(selectedMentor.id) || [] : []}
+              approvalsByMessage={approvalsByMessage}
+              sendAttempts={selectedMentor ? sendAttemptsByMentor.get(selectedMentor.id) || [] : []}
+              responses={selectedMentor ? responsesByMentor.get(selectedMentor.id) || [] : []}
+              followUps={selectedMentor ? followUpsByMentor.get(selectedMentor.id) || [] : []}
+              outcomes={selectedMentor ? outcomesByMentor.get(selectedMentor.id) || [] : []}
+              auditEvents={
+                selectedMentor
+                  ? (details?.auditEvents || []).filter(
+                      (event) =>
+                        event.entityId === selectedMentor.id ||
+                        (messagesByMentor.get(selectedMentor.id) || []).some((message) => message.id === event.entityId)
+                    )
+                  : []
+              }
+              onCreateDraft={(mentor) => void mutate(() => ledgerApi.createDraft(activeCampaignId, mentor.id))}
+            />
+
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <CardTitle className="text-lg">Add mentor</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 px-5">
+                <Input value={mentorForm.name} onChange={(event) => setMentorForm((current) => ({ ...current, name: event.target.value }))} placeholder="Name" className="rounded-md" />
+                <Input value={mentorForm.company} onChange={(event) => setMentorForm((current) => ({ ...current, company: event.target.value }))} placeholder="Company or organization" className="rounded-md" />
+                <Input value={mentorForm.headline} onChange={(event) => setMentorForm((current) => ({ ...current, headline: event.target.value }))} placeholder="Headline or role" className="rounded-md" />
+                <Textarea value={mentorForm.bio} onChange={(event) => setMentorForm((current) => ({ ...current, bio: event.target.value }))} placeholder="Bio, relevant context, or why they may help" className="min-h-24 rounded-md" />
+                <Input value={mentorForm.skills} onChange={(event) => setMentorForm((current) => ({ ...current, skills: event.target.value }))} placeholder="Skills, comma separated" className="rounded-md" />
+                <Input value={mentorForm.profileUrl} onChange={(event) => setMentorForm((current) => ({ ...current, profileUrl: event.target.value }))} placeholder="Profile URL" className="rounded-md" />
+                <Textarea value={mentorForm.notes} onChange={(event) => setMentorForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Internal notes" className="min-h-20 rounded-md" />
+                <Button className="w-full rounded-md" onClick={() => void addMentor()} disabled={!mentorForm.name.trim() || !activeCampaignId}>
+                  <Plus className="h-4 w-4" />
+                  Add and score
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <CardTitle className="text-lg">CSV intake</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 px-5">
+                <Textarea
+                  value={csvText}
+                  onChange={(event) => setCsvText(event.target.value)}
+                  className="min-h-40 rounded-md font-mono text-xs"
+                  placeholder="name,company,headline,bio,skills,profileUrl,notes"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <Button variant="outline" className="rounded-md" onClick={() => void importMentorCsv(true)} disabled={!csvText.trim() || !activeCampaignId}>
+                    Preview
+                  </Button>
+                  <Button className="rounded-md" onClick={() => void importMentorCsv(false)} disabled={!csvText.trim() || !activeCampaignId}>
+                    Import
+                  </Button>
+                </div>
+                <Button variant="outline" className="w-full rounded-md" onClick={() => void exportMentorCsv()} disabled={!activeCampaignId}>
+                  Export mentors CSV
+                </Button>
+                {csvImportResult ? (
+                  <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                    <div className="font-medium">
+                      {csvImportResult.preview ? "Preview" : "Imported"} {csvImportResult.importedCount} of {csvImportResult.totalRows}
+                    </div>
+                    {csvImportResult.skipped.length ? (
+                      <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                        Skipped: {csvImportResult.skipped.map((item) => `row ${item.row} ${item.reason}`).join(", ")}
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-xs text-muted-foreground">No duplicate or invalid rows detected.</div>
+                    )}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="review" className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+            <ReviewColumn
+              title="Needs review"
+              messages={pendingReview}
+              details={details}
+              draftEdits={draftEdits}
+              onDraftEdit={setDraftEdits}
+              action={(message) => (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    className="rounded-md"
+                    onClick={() =>
+                      void mutate(() => ledgerApi.updateDraft(message.id, draftEdits[message.id] || { subject: message.subject, body: message.body }))
+                    }
+                  >
+                    Save edit
+                  </Button>
+                  <Button className="rounded-md" onClick={() => void mutate(() => ledgerApi.approveDraft(message.id, "Approved in command center"))}>
+                    <Check className="h-4 w-4" />
+                    Approve
+                  </Button>
+                  <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.rejectDraft(message.id, "Rejected in command center"))}>
+                    Reject
+                  </Button>
+                </div>
+              )}
+            />
+            <ReviewColumn
+              title="Approved, awaiting manual send confirmation"
+              messages={approvedMessages}
+              details={details}
+              draftEdits={draftEdits}
+              onDraftEdit={setDraftEdits}
+              action={(message) => (
+                <div className="space-y-2">
+                  <Input
+                    value={sendEvidence[message.id] || ""}
+                    onChange={(event) => setSendEvidence((current) => ({ ...current, [message.id]: event.target.value }))}
+                    placeholder="Paste manual send evidence"
+                    className="rounded-md"
+                  />
+                  <Button
+                    className="w-full rounded-md"
+                    onClick={() => void mutate(() => ledgerApi.confirmSend(message.id, sendEvidence[message.id] || ""))}
+                    disabled={!sendEvidence[message.id]?.trim()}
+                  >
+                    <Send className="h-4 w-4" />
+                    Confirm manually sent
+                  </Button>
+                </div>
+              )}
+            />
+          </TabsContent>
+
+          <TabsContent value="responses" className="grid gap-4 xl:grid-cols-[1fr_420px]">
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <CardTitle className="text-lg">Response inbox</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 px-5">
+                {(details?.responses || []).map((response) => {
+                  const mentor = details?.mentors.find((item) => item.id === response.mentorProfileId);
+                  return (
+                    <div key={response.id} className="rounded-md border p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-medium">{mentor?.name || "Unknown mentor"}</div>
+                        <Badge variant="outline" className="rounded-md">
+                          {response.classification.replace("_", " ")}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{response.body || "No response text recorded."}</p>
+                      <div className="mt-2 text-xs text-muted-foreground">{response.nextAction}</div>
+                    </div>
+                  );
+                })}
+                {!details?.responses.length ? (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No responses recorded yet.
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <CardTitle className="text-lg">Record response</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 px-5">
+                {details?.mentors.map((mentor) => (
+                  <div key={mentor.id} className="rounded-md border p-3">
+                    <div className="mb-2 text-sm font-medium">{mentor.name}</div>
+                    <select
+                      value={responseClass[mentor.id] || "unknown"}
+                      onChange={(event) => setResponseClass((current) => ({ ...current, [mentor.id]: event.target.value as MentorResponse["classification"] }))}
+                      className="mb-2 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                    >
+                      <option value="interested">Interested</option>
+                      <option value="more_info">More info</option>
+                      <option value="not_interested">Not interested</option>
+                      <option value="unavailable">Unavailable</option>
+                      <option value="unknown">Unknown</option>
+                    </select>
+                    <Textarea
+                      value={responseText[mentor.id] || ""}
+                      onChange={(event) => setResponseText((current) => ({ ...current, [mentor.id]: event.target.value }))}
+                      placeholder="Paste or summarize reply"
+                      className="mb-2 min-h-20 rounded-md"
+                    />
+                    <Button variant="outline" className="w-full rounded-md" onClick={() => void recordResponse(mentor)} disabled={!responseText[mentor.id]?.trim()}>
+                      <MessageSquareReply className="h-4 w-4" />
+                      Record
+                    </Button>
+                    <div className="mt-3 border-t pt-3">
+                      <select
+                        value={outcomeStatus[mentor.id] || "open"}
+                        onChange={(event) => setOutcomeStatus((current) => ({ ...current, [mentor.id]: event.target.value as OutreachOutcome["status"] }))}
+                        className="mb-2 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                      >
+                        <option value="open">Open</option>
+                        <option value="booked">Booked</option>
+                        <option value="helpful">Helpful</option>
+                        <option value="declined">Declined</option>
+                        <option value="no_response">No response</option>
+                        <option value="not_relevant">Not relevant</option>
+                        <option value="closed">Closed</option>
+                      </select>
+                      <Input
+                        value={outcomeText[mentor.id] || ""}
+                        onChange={(event) => setOutcomeText((current) => ({ ...current, [mentor.id]: event.target.value }))}
+                        placeholder="Outcome summary"
+                        className="mb-2 rounded-md"
+                      />
+                      <Button variant="outline" className="w-full rounded-md" onClick={() => void recordOutcome(mentor)} disabled={!outcomeText[mentor.id]?.trim()}>
+                        Record outcome
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="billing" className="grid gap-4 lg:grid-cols-[1fr_420px]">
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <CardTitle className="text-lg">Follow-up queue</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 px-5">
+                {(details?.followUps || []).map((followUp) => {
+                  const mentor = details?.mentors.find((item) => item.id === followUp.mentorProfileId);
+                  const due = new Date(followUp.dueAt).getTime() <= Date.now();
+                  return (
+                    <div key={followUp.id} className="rounded-md border p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-medium">{mentor?.name || "Unknown mentor"}</div>
+                        <Badge variant="outline" className={due && followUp.status === "scheduled" ? "rounded-md border-amber-200 bg-amber-50 text-amber-700" : "rounded-md"}>
+                          {followUp.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">Due {formatDate(followUp.dueAt)}</div>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{followUp.suggestedMessage}</p>
+                      {followUp.status === "scheduled" ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.completeFollowUp(followUp.id))}>
+                            Complete
+                          </Button>
+                          <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.cancelFollowUp(followUp.id))}>
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {!details?.followUps.length ? (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    No follow-ups scheduled yet.
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <div className="space-y-4">
+              <Card className="rounded-md py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-lg">Resource billing</CardTitle>
                 </CardHeader>
-                <CardContent className="p-0">
-                  <div className="divide-y">
-                    <div className="flex justify-between p-4 hover:bg-muted/20 transition-colors">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Cpu className="h-4 w-4 text-muted-foreground" />
-                        <span>CPU Time</span>
-                      </div>
-                      <div className="font-mono font-bold">$0.0002 / sec</div>
-                    </div>
-                    <div className="flex justify-between p-4 hover:bg-muted/20 transition-colors">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Database className="h-4 w-4 text-muted-foreground" />
-                        <span>RAM Usage</span>
-                      </div>
-                      <div className="font-mono font-bold">$0.00002 / MB-hr</div>
-                    </div>
-                    <div className="flex justify-between p-4 hover:bg-muted/20 transition-colors">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Database className="h-4 w-4 text-muted-foreground" />
-                        <span>Storage</span>
-                      </div>
-                      <div className="font-mono font-bold">$0.0002 / MB-mo</div>
-                    </div>
-                    <div className="flex justify-between p-4 hover:bg-muted/20 transition-colors">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Wifi className="h-4 w-4 text-muted-foreground" />
-                        <span>Bandwidth</span>
-                      </div>
-                      <div className="font-mono font-bold">$0.0002 / MB</div>
-                    </div>
-                    <div className="flex justify-between p-4 bg-primary/5">
-                      <div className="flex items-center gap-2 text-sm font-medium text-primary">
-                        <Zap className="h-4 w-4" />
-                        <span>Electricity</span>
-                      </div>
-                      <div className="font-mono font-bold text-primary">$0.24 / kWh</div>
-                    </div>
+                <CardContent className="space-y-3 px-5">
+                  <div className="grid grid-cols-2 gap-2">
+                    <MiniStat label="Due follow-ups" value={dueFollowUps.length} />
+                    <MiniStat label="Billing records" value={details?.billingRecords.length || 0} />
                   </div>
+                  {latestResourceSession ? (
+                    <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium">Measurement</span>
+                        <Badge variant="outline" className="rounded-md">
+                          {latestResourceSession.measurementMode}
+                        </Badge>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <MiniStat label="CPU hrs" value={latestResourceSession.cpuCoreHours.toFixed(8)} />
+                        <MiniStat label="RAM GB hrs" value={latestResourceSession.ramGbHours.toFixed(8)} />
+                        <MiniStat label="Bandwidth GB" value={latestResourceSession.bandwidthGb.toFixed(8)} />
+                        <MiniStat label="kWh est." value={latestResourceSession.estimatedKwh.toFixed(8)} />
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{latestResourceSession.measurementNote}</p>
+                    </div>
+                  ) : null}
+                  <Button className="w-full rounded-md" onClick={() => activeCampaignId && void mutate(() => ledgerApi.closeResourceSession(activeCampaignId))} disabled={!activeCampaignId}>
+                    <Activity className="h-4 w-4" />
+                    Generate cost record
+                  </Button>
+                  <Button variant="outline" className="w-full rounded-md" onClick={() => void loadUsageReport()} disabled={!activeCampaignId}>
+                    Load usage report
+                  </Button>
+                  {usageReport ? (
+                    <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                      <div className="font-medium">Usage report</div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <MiniStat label="Outcomes" value={usageReport.totals.outcomesRecorded} />
+                        <MiniStat label="Final" value={formatCurrency(usageReport.totals.finalCost)} />
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{usageReport.measurementNote}</p>
+                    </div>
+                  ) : null}
+                  {(details?.billingRecords || []).map((record) => (
+                    <div key={record.id} className="rounded-md border p-3 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Raw resource cost</span>
+                        <span className="font-mono">{formatCurrency(record.rawResourceCost)}</span>
+                      </div>
+                      <div className="mt-1 flex justify-between gap-3">
+                        <span className="text-muted-foreground">Final price</span>
+                        <span className="font-mono font-semibold">{formatCurrency(record.finalCost)}</span>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">{record.pricingFormula}</div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+              <Card className="rounded-md py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-lg">Safety gates</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 px-5 text-sm text-muted-foreground">
+                  <SafetyLine text="Drafts must be approved before send confirmation." />
+                  <SafetyLine text="Send status requires manual delivery evidence." />
+                  <SafetyLine text="Responses and billing events are audit logged." />
                 </CardContent>
               </Card>
             </div>
-          </div>
-        </section>
+          </TabsContent>
 
-        {/* Features Section */}
-        <section id="features" className="py-20 bg-muted/30">
-          <div className="container">
-            <div className="flex flex-col items-center text-center mb-16">
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tighter mb-4">Engineered for Efficiency</h2>
-              <p className="text-muted-foreground max-w-[700px]">
-                Built with a focus on performance, security, and automation. Every feature is designed to save you time and resources.
-              </p>
-            </div>
-            
-            <div className="grid md:grid-cols-3 gap-8">
-              <Card className="rounded-none border-2 hover:border-primary transition-colors duration-300">
-                <CardHeader>
-                  <div className="h-12 w-12 bg-primary/10 flex items-center justify-center mb-4">
-                    <Zap className="h-6 w-6 text-primary" />
-                  </div>
-                  <CardTitle className="font-mono text-lg">Automated Messaging</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground mb-4">
-                    Queue-based system handles outreach automatically. Set it and forget it while the extension works in the background.
-                  </p>
-                  <img src="/images/feature-automation.png" alt="Automation" className="w-full h-32 object-contain opacity-80" />
-                </CardContent>
-              </Card>
-              
-              <Card className="rounded-none border-2 hover:border-primary transition-colors duration-300">
-                <CardHeader>
-                  <div className="h-12 w-12 bg-primary/10 flex items-center justify-center mb-4">
-                    <Cpu className="h-6 w-6 text-primary" />
-                  </div>
-                  <CardTitle className="font-mono text-lg">Resource Optimization</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground mb-4">
-                    Uses 50% less RAM than standard browser tabs. Optimized for low-end hardware and battery life.
-                  </p>
-                  <img src="/images/feature-resources.png" alt="Resources" className="w-full h-32 object-contain opacity-80" />
-                </CardContent>
-              </Card>
-              
-              <Card className="rounded-none border-2 hover:border-primary transition-colors duration-300">
-                <CardHeader>
-                  <div className="h-12 w-12 bg-primary/10 flex items-center justify-center mb-4">
-                    <BarChart3 className="h-6 w-6 text-primary" />
-                  </div>
-                  <CardTitle className="font-mono text-lg">Detailed Analytics</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground mb-4">
-                    Track every message sent, response rates, and resource consumption in real-time dashboards.
-                  </p>
-                  <img src="/images/feature-analytics.png" alt="Analytics" className="w-full h-32 object-contain opacity-80" />
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* Technical Specs */}
-        <section id="specs" className="py-20 border-t">
-          <div className="container">
-            <div className="grid md:grid-cols-2 gap-12 items-center">
-              <div>
-                <h2 className="text-3xl md:text-4xl font-bold tracking-tighter mb-6">Technical Specifications</h2>
-                <div className="space-y-4">
-                  <div className="flex items-start gap-4">
-                    <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
-                      <div className="h-2 w-2 rounded-full bg-primary"></div>
-                    </div>
+          <TabsContent value="audit" className="grid gap-4 lg:grid-cols-[1fr_360px]">
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <CardTitle className="text-lg">Audit trail</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 px-5">
+                {(details?.auditEvents || summary?.recentActivity || []).map((event) => (
+                  <div key={event.id} className="flex items-start justify-between gap-3 rounded-md border p-3 text-sm">
                     <div>
-                      <h3 className="font-bold">Browser Compatibility</h3>
-                      <p className="text-muted-foreground">Chrome 88+, Edge 90+, Brave, Opera</p>
+                      <div className="font-medium">{event.action.replaceAll("_", " ")}</div>
+                      <div className="text-xs text-muted-foreground">{event.entityType} - {formatDate(event.createdAt)}</div>
                     </div>
+                    <Badge variant="outline" className={event.riskLevel === "high" ? "rounded-md border-red-200 bg-red-50 text-red-700" : "rounded-md"}>
+                      {event.riskLevel}
+                    </Badge>
                   </div>
-                  <div className="flex items-start gap-4">
-                    <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
-                      <div className="h-2 w-2 rounded-full bg-primary"></div>
-                    </div>
-                    <div>
-                      <h3 className="font-bold">Security</h3>
-                      <p className="text-muted-foreground">Local storage encryption (AES-256), No external data transmission</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-4">
-                    <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
-                      <div className="h-2 w-2 rounded-full bg-primary"></div>
-                    </div>
-                    <div>
-                      <h3 className="font-bold">Performance</h3>
-                      <p className="text-muted-foreground">&lt; 50MB RAM usage, Background worker optimization</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-muted p-8 font-mono text-sm rounded-lg overflow-hidden relative">
-                <div className="absolute top-0 left-0 w-full h-8 bg-muted-foreground/10 flex items-center px-4 gap-2">
-                  <div className="h-3 w-3 rounded-full bg-red-500"></div>
-                  <div className="h-3 w-3 rounded-full bg-yellow-500"></div>
-                  <div className="h-3 w-3 rounded-full bg-green-500"></div>
-                </div>
-                <div className="mt-4 space-y-2 text-muted-foreground">
-                  <p><span className="text-primary">$</span> npm install maro-cli</p>
-                  <p className="text-foreground">Installing dependencies...</p>
-                  <p><span className="text-green-500">✔</span> Core engine optimized</p>
-                  <p><span className="text-green-500">✔</span> Analytics module loaded</p>
-                  <p><span className="text-green-500">✔</span> Security protocols active</p>
-                  <p className="text-foreground">MARO is ready. Start your campaign.</p>
-                  <p><span className="text-primary">$</span> _</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* FAQ Section */}
-        <section className="py-20 bg-muted/30 border-t">
-          <div className="container max-w-3xl">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl font-bold tracking-tighter mb-4">Frequently Asked Questions</h2>
-              <p className="text-muted-foreground">Everything you need to know about MARO.</p>
-            </div>
-            <Accordion type="single" collapsible className="w-full">
-              <AccordionItem value="item-1">
-                <AccordionTrigger>Is my data secure?</AccordionTrigger>
-                <AccordionContent>
-                  Absolutely. MARO operates entirely locally on your machine. Your credentials and message data are encrypted using AES-256 and never leave your browser.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="item-2">
-                <AccordionTrigger>How does the pricing model work?</AccordionTrigger>
-                <AccordionContent>
-                  Instead of a flat monthly fee, we charge based on the actual computing resources (CPU, RAM, Bandwidth) used during your outreach campaigns. This typically amounts to pennies per campaign.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="item-3">
-                <AccordionTrigger>Can I customize the outreach messages?</AccordionTrigger>
-                <AccordionContent>
-                  Yes! You can create unlimited message templates with dynamic variables (e.g., {"{FirstName}"}, {"{Company}"}) to ensure every message feels personal and authentic.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="item-4">
-                <AccordionTrigger>Does it work on LinkedIn?</AccordionTrigger>
-                <AccordionContent>
-                  Currently, MARO is optimized for MicroMentor.org. A LinkedIn module is in development and will be available in the next major release.
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
-        </section>
-
-        {/* CTA Section */}
-        <section className="py-20 border-t bg-primary text-primary-foreground">
-          <div className="container text-center">
-            <h2 className="text-3xl md:text-4xl font-bold tracking-tighter mb-6">
-              Ready to Optimize Your Outreach?
-            </h2>
-            <p className="text-xl opacity-90 max-w-[600px] mx-auto mb-8">
-              Join thousands of users to make reaching out to mentors a breeze and a non-time consuming effort.
-            </p>
-            <Button size="lg" variant="secondary" onClick={handleDownload} className="rounded-none h-14 px-8 text-base font-mono font-bold uppercase tracking-wider">
-              Get Started Now
-              <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
-          </div>
-        </section>
+                ))}
+              </CardContent>
+            </Card>
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <CardTitle className="text-lg">Operational status</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 px-5">
+                <MiniStat label="Pending review" value={pendingReview.length} />
+                <MiniStat label="Ready to confirm" value={approvedMessages.length} />
+                <MiniStat label="Sent messages" value={sentMessages.length} />
+                <MiniStat label="Loading" value={loading ? "Yes" : "No"} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
-
-      <footer className="py-8 border-t bg-muted/20">
-        <div className="container flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 font-bold">
-            <img src="/images/maro-logo.svg" alt="MARO Logo" className="h-6 w-6" />
-            <span>MARO</span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            © 2026 Micromentor Automated Reach Out. All rights reserved.
-          </p>
-          <div className="flex gap-6 text-sm text-muted-foreground">
-            <a href="#" className="hover:text-foreground transition-colors">Privacy</a>
-            <a href="#" className="hover:text-foreground transition-colors">Terms</a>
-            <a href="#" className="hover:text-foreground transition-colors">Contact</a>
-          </div>
-        </div>
-      </footer>
     </div>
+  );
+}
+
+function MentorDetailPanel({
+  mentor,
+  assessment,
+  messages,
+  approvalsByMessage,
+  sendAttempts,
+  responses,
+  followUps,
+  outcomes,
+  auditEvents,
+  onCreateDraft,
+}: {
+  mentor: MentorProfile | null;
+  assessment: CampaignDetails["assessments"][number] | null;
+  messages: CampaignDetails["messages"];
+  approvalsByMessage: Map<string, CampaignDetails["approvals"]>;
+  sendAttempts: CampaignDetails["sendAttempts"];
+  responses: CampaignDetails["responses"];
+  followUps: CampaignDetails["followUps"];
+  outcomes: CampaignDetails["outcomes"];
+  auditEvents: CampaignDetails["auditEvents"];
+  onCreateDraft: (mentor: MentorProfile) => void;
+}) {
+  return (
+    <Card className="rounded-md py-5">
+      <CardHeader className="px-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-lg">Mentor detail</CardTitle>
+            <div className="mt-1 text-xs text-muted-foreground">Profile, fit, history, and next actions</div>
+          </div>
+          {mentor ? (
+            <Badge variant="outline" className="rounded-md">
+              {stageLabel[mentor.stage] || mentor.stage}
+            </Badge>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4 px-5">
+        {!mentor ? (
+          <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+            Select a mentor to inspect their outreach history.
+          </div>
+        ) : (
+          <>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="font-medium">{mentor.name}</div>
+                {assessment ? (
+                  <Badge className="rounded-md bg-primary/10 text-primary hover:bg-primary/10">{assessment.score}% fit</Badge>
+                ) : null}
+              </div>
+              <div className="mt-1 text-sm text-muted-foreground">{mentor.headline || "No headline recorded"}</div>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span className="rounded-md border px-2 py-1">Source: {mentor.source || "manual"}</span>
+                {mentor.profileUrl ? (
+                  <a className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-primary" href={mentor.profileUrl} target="_blank" rel="noreferrer">
+                    Profile <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : null}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{mentor.bio || "No profile context recorded yet."}</p>
+              {mentor.skills.length ? (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {mentor.skills.map((skill) => (
+                    <Badge key={skill} variant="outline" className="rounded-md">
+                      {skill}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <MiniStat label="Drafts" value={messages.length} />
+              <MiniStat label="Sends" value={sendAttempts.length} />
+              <MiniStat label="Replies" value={responses.length} />
+            </div>
+
+            <div className="rounded-md border p-3">
+              <div className="mb-2 text-sm font-medium">Fit reasoning</div>
+              <ul className="space-y-1 text-xs leading-5 text-muted-foreground">
+                {(assessment?.reasonsJson || ["No fit rationale recorded yet."]).map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+              {assessment?.risksJson.length ? (
+                <div className="mt-3 border-t pt-3 text-xs leading-5 text-muted-foreground">
+                  Risk notes: {assessment.risksJson.join(" ")}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-md border p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-sm font-medium">Contact history</div>
+                <Button size="sm" variant="outline" className="h-8 rounded-md" onClick={() => onCreateDraft(mentor)}>
+                  <FileText className="h-4 w-4" />
+                  Draft
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {messages.map((message) => {
+                  const approvals = approvalsByMessage.get(message.id) || [];
+                  const attempts = sendAttempts.filter((attempt) => attempt.messageDraftId === message.id);
+                  return (
+                    <div key={message.id} className="rounded-md bg-muted/30 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium">{message.subject}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">Updated {formatDate(message.updatedAt)}</div>
+                        </div>
+                        <Badge variant="outline" className="rounded-md">
+                          {message.status}
+                        </Badge>
+                      </div>
+                      {approvals.length ? (
+                        <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                          Review: {approvals.map((approval) => `${approval.decision} - ${approval.decisionReason}`).join("; ")}
+                        </div>
+                      ) : null}
+                      {attempts.length ? (
+                        <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                          Send proof: {attempts.map((attempt) => attempt.deliveryEvidence || attempt.status).join("; ")}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {!messages.length ? <div className="text-sm text-muted-foreground">No messages drafted yet.</div> : null}
+              </div>
+            </div>
+
+            <div className="rounded-md border p-3">
+              <div className="mb-2 text-sm font-medium">Replies, follow-ups, and outcomes</div>
+              <div className="space-y-2 text-xs leading-5 text-muted-foreground">
+                {responses.map((response) => (
+                  <div key={response.id} className="rounded-md bg-muted/30 p-2">
+                    {response.classification.replace("_", " ")}: {response.body || "No response text recorded."}
+                  </div>
+                ))}
+                {followUps.map((followUp) => (
+                  <div key={followUp.id} className="rounded-md bg-muted/30 p-2">
+                    Follow-up {followUp.status}, due {formatDate(followUp.dueAt)}: {followUp.suggestedMessage}
+                  </div>
+                ))}
+                {outcomes.map((outcome) => (
+                  <div key={outcome.id} className="rounded-md bg-muted/30 p-2">
+                    Outcome {outcome.status}: {outcome.summary}
+                  </div>
+                ))}
+                {!responses.length && !followUps.length && !outcomes.length ? <div>No replies, follow-ups, or outcomes recorded yet.</div> : null}
+              </div>
+            </div>
+
+            <div className="rounded-md border p-3">
+              <div className="mb-2 text-sm font-medium">Notes and audit</div>
+              <div className="text-xs leading-5 text-muted-foreground">{mentor.notes || "No internal notes recorded."}</div>
+              {auditEvents.length ? (
+                <div className="mt-3 border-t pt-3 text-xs leading-5 text-muted-foreground">
+                  {auditEvents.slice(0, 4).map((event) => `${event.action} (${event.riskLevel})`).join(", ")}
+                </div>
+              ) : null}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-md border p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+        {icon}
+        {label}
+      </div>
+      <div className="font-mono text-2xl font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-md border p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 font-mono text-lg">{value}</div>
+    </div>
+  );
+}
+
+function SafetyLine({ text }: { text: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <ShieldCheck className="h-4 w-4 text-emerald-600" />
+      <span>{text}</span>
+    </div>
+  );
+}
+
+function ReviewColumn({
+  title,
+  messages,
+  details,
+  draftEdits,
+  onDraftEdit,
+  action,
+}: {
+  title: string;
+  messages: CampaignDetails["messages"];
+  details: CampaignDetails | null;
+  draftEdits: Record<string, Pick<MessageDraft, "subject" | "body">>;
+  onDraftEdit: React.Dispatch<React.SetStateAction<Record<string, Pick<MessageDraft, "subject" | "body">>>>;
+  action: (message: CampaignDetails["messages"][number]) => React.ReactNode;
+}) {
+  return (
+    <Card className="rounded-md py-5">
+      <CardHeader className="px-5">
+        <CardTitle className="text-lg">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 px-5">
+        {messages.map((message) => {
+          const mentor = details?.mentors.find((item) => item.id === message.mentorProfileId);
+          return (
+            <div key={message.id} className="rounded-md border p-4">
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium">{mentor?.name || "Unknown mentor"}</div>
+                  <div className="text-xs text-muted-foreground">{mentor?.headline || "No mentor headline"}</div>
+                </div>
+                <Badge variant="outline" className="rounded-md">
+                  {message.status}
+                </Badge>
+              </div>
+              <Input
+                value={draftEdits[message.id]?.subject ?? message.subject}
+                onChange={(event) =>
+                  onDraftEdit((current) => ({
+                    ...current,
+                    [message.id]: {
+                      subject: event.target.value,
+                      body: current[message.id]?.body ?? message.body,
+                    },
+                  }))
+                }
+                className="rounded-md"
+              />
+              <Textarea
+                value={draftEdits[message.id]?.body ?? message.body}
+                onChange={(event) =>
+                  onDraftEdit((current) => ({
+                    ...current,
+                    [message.id]: {
+                      subject: current[message.id]?.subject ?? message.subject,
+                      body: event.target.value,
+                    },
+                  }))
+                }
+                className="mt-3 min-h-48 rounded-md text-sm leading-6"
+              />
+              <div className="mt-4">{action(message)}</div>
+            </div>
+          );
+        })}
+        {!messages.length ? (
+          <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+            Nothing in this queue.
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }

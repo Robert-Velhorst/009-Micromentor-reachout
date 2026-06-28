@@ -1,128 +1,130 @@
-# Mentor Messenger Magic
+# MARO - Micromentor Reachout Console
 
-A fully-fledged tool for automating mentor outreach with resource-based pay-as-you-go pricing.
+MARO is a local-first MicroMentor outreach operating ledger for preparing, reviewing, confirming, following up, and costing mentor outreach.
 
-## Features
+## What It Does
 
-- **Appealing Landing Page**: Highlights time savings and cost benefits of using the tool
-- **Resource Monitoring System**: Tracks CPU, RAM, storage, bandwidth, and electricity usage
-- **Pay-as-you-go Pricing Model**: Resources used × 2 = actual price
-- **Resource Optimization**: Maximizes performance while minimizing resource usage
+- Manage outreach projects and campaigns.
+- Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
+- Require approval before a message can be manually confirmed as sent.
+- Record delivery evidence instead of faking external sends.
+- Track response classifications and follow-up suggestions.
+- Generate local process-measured resource-cost records using `Resource Cost x 2 = Final Price`.
+- Keep work local by default in a JSON ledger under `data/`.
 
-## Getting Started
+## Local Ledger API
 
-### Prerequisites
+The Express server now exposes operational API routes before serving the frontend:
 
-- Node.js 16+ and npm
-- Modern web browser
+- `GET /api/health`
+- `GET /api/ledger/summary`
+- `GET|POST /api/projects`
+- `PATCH /api/projects/:id`
+- `GET|POST /api/campaigns`
+- `PATCH /api/campaigns/:id`
+- `GET /api/campaigns/:id`
+- `GET|POST /api/campaigns/:id/mentors`
+- `POST /api/campaigns/:id/mentors/import`
+- `GET /api/campaigns/:id/mentors/export`
+- `GET|POST /api/campaigns/:id/messages`
+- `GET /api/campaigns/:id/follow-ups`
+- `GET /api/campaigns/:id/usage-report`
+- `GET|POST /api/mentors`
+- `GET|PATCH /api/mentors/:id`
+- `GET|POST /api/messages`
+- `PATCH /api/messages/:id`
+- `POST /api/messages/:id/approve`
+- `POST /api/messages/:id/reject`
+- `POST /api/messages/:id/send-attempt`
+- `GET|POST /api/responses`
+- `GET|POST /api/follow-ups`
+- `PATCH /api/follow-ups/:id`
+- `POST /api/follow-ups/:id/complete`
+- `POST /api/follow-ups/:id/cancel`
+- `GET|POST /api/outcomes`
+- `POST /api/resource-sessions`
+- `POST /api/resource-sessions/:id/end`
+- `GET /api/billing`
+- `GET /api/audit`
 
-### Installation
+The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to store it elsewhere. Runtime ledger data is ignored by git.
 
-1. Clone the repository:
-```sh
-git clone <repository-url>
-cd mentor-messenger-magic
-```
+Resource sessions are process-level local measurements. MARO records Node CPU time, RSS memory over session duration, local ledger file size, and observed API payload bytes. It does not use random simulated usage as billing evidence.
 
-2. Install dependencies:
+## Requirements
+
+- Windows 11, macOS, or Linux for development.
+- Node.js and npm for development.
+- ngrok CLI installed and authenticated if you want the default dev command to expose the app through ngrok.
+
+## Development
+
+Install dependencies:
+
 ```sh
 npm install
 ```
 
-3. Start the development server:
+Run the default ngrok flow:
+
 ```sh
 npm run dev
 ```
 
-4. Build for production:
+This builds the production app, starts the local Node server on `127.0.0.1:3000`, then opens an ngrok tunnel to that local server.
+
+For a local Vite-only development server:
+
+```sh
+npm run dev:vite
+```
+
+## Production Build
+
 ```sh
 npm run build
+npm run start
 ```
 
-5. Preview the production build:
+The production server binds to `127.0.0.1` by default. Set `PORT` or `HOST` if you need a different local port or host.
+
+## ngrok
+
+Install and authenticate ngrok first:
+
 ```sh
-npm run preview
+ngrok config add-authtoken <token>
 ```
 
-## Resource Monitoring System
+Optional basic auth for exposed tunnels:
 
-The application includes a comprehensive resource monitoring system that tracks:
-
-- **CPU Usage**: Measures CPU core-hours consumed
-- **RAM Usage**: Tracks memory consumption in GB-hours
-- **Storage**: Monitors storage usage in GB-hours
-- **Bandwidth**: Records network traffic in GB
-- **Electricity**: Estimates power consumption in kWh
-
-The monitoring system automatically starts when the application loads and provides real-time usage statistics in the Dashboard.
-
-## Pay-as-you-go Pricing Model
-
-The pricing model follows a simple formula:
-
-```
-Final Price = Resource Cost × 2
-```
-
-Where Resource Cost is calculated based on:
-- CPU: $0.02 per core-hour
-- RAM: $0.01 per GB-hour
-- Storage: $0.0005 per GB-hour
-- Bandwidth: $0.08 per GB
-- Electricity: $0.12 per kWh
-
-Users receive detailed usage reports via email, showing resource consumption and associated costs.
-
-## Resource Optimization
-
-The application is optimized for maximum efficiency through:
-
-- **Memoization**: Caches expensive function results
-- **Debouncing & Throttling**: Reduces frequency of resource-intensive operations
-- **Lazy Loading**: Loads components only when needed
-- **Virtual Scrolling**: Renders only visible items in large lists
-- **Image Optimization**: Reduces image size while maintaining quality
-- **Request Batching**: Combines multiple API requests
-- **Data Compression**: Minimizes bandwidth usage
-
-## Deployment
-
-### Static Deployment
-
-The built application can be deployed to any static hosting service:
-
-1. Build the project:
 ```sh
+set NGROK_BASIC_AUTH=user:password
+npm run dev
+```
+
+## Windows Installer
+
+Build a Windows 11 installer:
+
+```sh
+npm run installer:win
+```
+
+The generated installer is written to:
+
+```text
+artifacts/MARO-Windows11-Setup.exe
+```
+
+The installer embeds the built app and a Node runtime, installs MARO into `%LOCALAPPDATA%\MARO`, creates launch shortcuts, starts the local server, opens the browser, and opens an ngrok tunnel automatically when ngrok is available on PATH.
+
+## Checks
+
+```sh
+npm run check
 npm run build
+npm run check:api
 ```
 
-2. Deploy the `dist` directory to your hosting service of choice (Netlify, Vercel, GitHub Pages, etc.)
-
-### Docker Deployment
-
-For containerized deployment:
-
-1. Build the Docker image:
-```sh
-docker build -t mentor-messenger-magic .
-```
-
-2. Run the container:
-```sh
-docker run -p 8080:80 mentor-messenger-magic
-```
-
-## Project Structure
-
-- `src/components/` - UI components
-- `src/pages/` - Application pages
-- `src/utils/` - Utility functions and services
-  - `resourceMonitor.js` - Resource usage tracking
-  - `pricingModel.js` - Pay-as-you-go pricing implementation
-  - `resourceOptimizer.js` - Optimization utilities
-  - `api.js` - API service with integrated optimizations
-  - `appInitializer.js` - Application initialization
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+Security, resource, and feature analysis notes are in `analysis/SECURITY_RESOURCE_FEATURE_REPORT.md`.

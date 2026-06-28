@@ -74,15 +74,39 @@
  * - “data-only” → Place, Geometry utilities.
  */
 
-/// <reference types="@types/google.maps" />
-
 import { useEffect, useRef } from "react";
 import { usePersistFn } from "@/hooks/usePersistFn";
 import { cn } from "@/lib/utils";
 
+type LatLngLiteral = {
+  lat: number;
+  lng: number;
+};
+
+type GoogleMapInstance = {
+  setCenter?: (center: LatLngLiteral) => void;
+};
+
+type GoogleMapsApi = {
+  maps: {
+    Map: new (
+      element: HTMLElement,
+      options: {
+        zoom: number;
+        center: LatLngLiteral;
+        mapTypeControl: boolean;
+        fullscreenControl: boolean;
+        zoomControl: boolean;
+        streetViewControl: boolean;
+        mapId: string;
+      }
+    ) => GoogleMapInstance;
+  };
+};
+
 declare global {
   interface Window {
-    google?: typeof google;
+    google?: GoogleMapsApi;
   }
 }
 
@@ -111,9 +135,9 @@ function loadMapScript() {
 
 interface MapViewProps {
   className?: string;
-  initialCenter?: google.maps.LatLngLiteral;
+  initialCenter?: LatLngLiteral;
   initialZoom?: number;
-  onMapReady?: (map: google.maps.Map) => void;
+  onMapReady?: (map: GoogleMapInstance) => void;
 }
 
 export function MapView({
@@ -123,12 +147,16 @@ export function MapView({
   onMapReady,
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<google.maps.Map | null>(null);
+  const map = useRef<GoogleMapInstance | null>(null);
 
   const init = usePersistFn(async () => {
     await loadMapScript();
     if (!mapContainer.current) {
       console.error("Map container not found");
+      return;
+    }
+    if (!window.google?.maps?.Map) {
+      console.error("Google Maps API was not available after loading the script");
       return;
     }
     map.current = new window.google.maps.Map(mapContainer.current, {

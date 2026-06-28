@@ -6,6 +6,7 @@
 dist/
 build/
 *.dist
+artifacts/
 
 # Environment variables
 .env
@@ -60,6 +61,7 @@ jspm_packages/
 
 # Optional npm cache directory
 .npm
+.npm-cache/
 
 # Optional eslint cache
 .eslintcache
@@ -104,3 +106,4 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+data/
