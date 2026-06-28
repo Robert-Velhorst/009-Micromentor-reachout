@@ -99,6 +99,8 @@ await waitForServer();
 const ngrokArgs = ["http", `http://${host}:${port}`];
 if (basicAuth) {
   ngrokArgs.push("--basic-auth", basicAuth);
+} else {
+  console.warn("Warning: NGROK_BASIC_AUTH is not set. The tunnel URL will be public if ngrok starts successfully.");
 }
 
 const ngrok = run(ngrokCommand, ngrokArgs, {

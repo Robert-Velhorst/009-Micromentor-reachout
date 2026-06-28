@@ -10,6 +10,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Record delivery evidence instead of faking external sends.
 - Track response classifications and follow-up suggestions.
 - Generate local process-measured resource-cost records using `Resource Cost x 2 = Final Price`.
+- Show whether the app is local-only or reachable through ngrok, including a warning when the tunnel is public without basic auth.
 - Keep work local by default in a JSON ledger under `data/`.
 
 ## Local Ledger API
@@ -17,6 +18,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 The Express server now exposes operational API routes before serving the frontend:
 
 - `GET /api/health`
+- `GET /api/runtime/status`
 - `GET /api/ledger/summary`
 - `GET|POST /api/projects`
 - `PATCH /api/projects/:id`
@@ -102,6 +104,8 @@ Optional basic auth for exposed tunnels:
 set NGROK_BASIC_AUTH=user:password
 npm run dev
 ```
+
+The command center reads `GET /api/runtime/status` to show the local URL, detected ngrok tunnel URL, and basic-auth status. If ngrok is active and `NGROK_BASIC_AUTH` is not set, MARO shows a first-viewport warning before you share the tunnel URL.
 
 ## Windows Installer
 

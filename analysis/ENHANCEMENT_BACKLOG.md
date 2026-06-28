@@ -80,6 +80,8 @@ Acceptance:
 
 Why now: this directly supports the user-requested ngrok direction and reduces accidental exposure.
 
+Status: Implemented in the operating-ledger branch with `GET /api/runtime/status`, a dashboard runtime exposure panel, copy actions for local/tunnel URLs, UI warning for public unauthenticated tunnels, launcher warning when `NGROK_BASIC_AUTH` is missing, and smoke-test coverage.
+
 ### P1 - Local Workspace Backup, Restore, And Reset
 
 Problem: localStorage persistence is convenient but opaque. Browser cleanup, profile changes, or installer migration can lose work.
@@ -179,10 +181,12 @@ Avoid for now:
 ## Security Enhancements
 
 Do next:
-- Add ngrok exposure status and unauthenticated tunnel warning.
 - Add JSON backup validation and schema versioning before restore.
 - Add optional local encryption before storing sensitive notes or profiles.
 - Self-host fonts if offline/private installs become a requirement.
+
+Done:
+- Added ngrok exposure status and unauthenticated tunnel warning.
 
 Avoid for now:
 - Automated sending to MicroMentor. It creates account, consent, rate-limit, and platform-policy risk. Keep final send manual until rules and safeguards are explicit.

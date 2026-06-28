@@ -82,6 +82,11 @@ try {
   const health = await api("/api/health");
   assert(health.ok === true, "Health endpoint did not report ok");
 
+  const runtime = await api("/api/runtime/status");
+  assert(runtime.localUrl === baseUrl, "Runtime status did not report the smoke local URL");
+  assert(runtime.tunnel.active === false, "Runtime status should not report an active tunnel during smoke test");
+  assert(runtime.auth.basicAuthConfigured === false, "Runtime status unexpectedly reported basic auth in smoke test");
+
   const campaignResult = await api("/api/campaigns", {
     method: "POST",
     body: JSON.stringify({

@@ -5,6 +5,52 @@ import { registerLedgerRoutes } from "./ledger";
 
 const serverDir = path.dirname(path.resolve(process.argv[1] || "."));
 
+function hostAlias(host: string) {
+  return host === "localhost" ? "127.0.0.1" : host;
+}
+
+function tunnelTargetsServer(addr: string | undefined, host: string, port: number) {
+  if (!addr) return false;
+  try {
+    const parsed = new URL(addr);
+    const tunnelHost = hostAlias(parsed.hostname);
+    const expectedHost = hostAlias(host);
+    const tunnelPort = Number(parsed.port || (parsed.protocol === "https:" ? 443 : 80));
+    return tunnelPort === port && tunnelHost === expectedHost;
+  } catch {
+    return addr.includes(`:${port}`);
+  }
+}
+
+async function detectTunnelStatus(host: string, port: number) {
+  try {
+    const response = await fetch("http://127.0.0.1:4040/api/tunnels", {
+      signal: AbortSignal.timeout(750),
+    });
+    if (!response.ok) {
+      throw new Error(`ngrok API returned ${response.status}`);
+    }
+    const data = await response.json() as {
+      tunnels?: Array<{ proto?: string; public_url?: string; config?: { addr?: string } }>;
+    };
+    const matchingTunnels = (data.tunnels || []).filter((item) => tunnelTargetsServer(item.config?.addr, host, port));
+    const tunnel = matchingTunnels.find((item) => item.proto === "https") ?? matchingTunnels[0] ?? null;
+    return {
+      active: Boolean(tunnel?.public_url),
+      publicUrl: tunnel?.public_url ?? null,
+      inspectorUrl: "http://127.0.0.1:4040",
+      target: tunnel?.config?.addr ?? null,
+    };
+  } catch {
+    return {
+      active: false,
+      publicUrl: null,
+      inspectorUrl: null,
+      target: null,
+    };
+  }
+}
+
 async function startServer() {
   const app = express();
   const server = createServer(app);
@@ -39,6 +85,25 @@ async function startServer() {
   });
 
   registerLedgerRoutes(app);
+
+  app.get("/api/runtime/status", async (_req, res) => {
+    const port = Number(process.env.PORT || 3000);
+    const host = process.env.HOST || "127.0.0.1";
+    const tunnel = await detectTunnelStatus(host, port);
+    res.json({
+      mode: isProduction ? "production" : "development",
+      host,
+      port,
+      localUrl: `http://${host}:${port}`,
+      tunnel,
+      auth: {
+        basicAuthConfigured: Boolean(process.env.NGROK_BASIC_AUTH),
+      },
+      warnings: tunnel.active && !process.env.NGROK_BASIC_AUTH
+        ? ["ngrok_public_without_basic_auth"]
+        : [],
+    });
+  });
 
   const staticPath = isProduction
     ? path.resolve(serverDir, "public")

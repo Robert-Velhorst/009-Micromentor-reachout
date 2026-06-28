@@ -158,6 +158,23 @@ export type LedgerSummary = {
   recentActivity: AuditEvent[];
 };
 
+export type RuntimeStatus = {
+  mode: "production" | "development";
+  host: string;
+  port: number;
+  localUrl: string;
+  tunnel: {
+    active: boolean;
+    publicUrl: string | null;
+    inspectorUrl: string | null;
+    target: string | null;
+  };
+  auth: {
+    basicAuthConfigured: boolean;
+  };
+  warnings: Array<"ngrok_public_without_basic_auth" | string>;
+};
+
 export type CampaignDetails = {
   campaign: Campaign;
   mentors: MentorProfile[];
@@ -217,6 +234,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const ledgerApi = {
+  runtimeStatus: () => request<RuntimeStatus>("/api/runtime/status"),
   summary: () => request<LedgerSummary>("/api/ledger/summary"),
   campaigns: () => request<{ campaigns: Campaign[] }>("/api/campaigns"),
   campaign: (id: string) => request<CampaignDetails>(`/api/campaigns/${id}`),

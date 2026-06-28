@@ -4,10 +4,13 @@ import {
   AlertTriangle,
   Check,
   ClipboardCheck,
+  Copy,
   Euro,
   ExternalLink,
   FileText,
   Gauge,
+  Globe2,
+  Lock,
   MailPlus,
   MessageSquareReply,
   Plus,
@@ -34,6 +37,7 @@ import {
   type MentorProfile,
   type MentorResponse,
   type OutreachOutcome,
+  type RuntimeStatus,
   type UsageReport,
   ledgerApi,
 } from "@/lib/ledgerApi";
@@ -145,14 +149,17 @@ export default function Home() {
   const [csvText, setCsvText] = useState(sampleCsv);
   const [csvImportResult, setCsvImportResult] = useState<MentorImportResult | null>(null);
   const [selectedMentorId, setSelectedMentorId] = useState("");
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
+  const [runtimeCopyStatus, setRuntimeCopyStatus] = useState("");
 
   const loadLedger = async (campaignId?: string) => {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, campaignResult] = await Promise.all([
+      const [nextSummary, campaignResult, nextRuntimeStatus] = await Promise.all([
         ledgerApi.summary(),
         ledgerApi.campaigns(),
+        ledgerApi.runtimeStatus().catch(() => null),
       ]);
       const nextCampaigns = campaignResult.campaigns;
       const selectedId = campaignId || activeCampaignId || latestCampaign(nextCampaigns)?.id || "";
@@ -161,6 +168,7 @@ export default function Home() {
       setCampaigns(nextCampaigns);
       setActiveCampaignId(selectedId);
       setDetails(nextDetails);
+      setRuntimeStatus(nextRuntimeStatus);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
     } finally {
@@ -313,6 +321,16 @@ export default function Home() {
     (followUp) => followUp.status === "scheduled" && new Date(followUp.dueAt).getTime() <= Date.now()
   );
   const latestResourceSession = details?.resourceSessions[0] || null;
+  const publicTunnelWithoutAuth = Boolean(runtimeStatus?.warnings.includes("ngrok_public_without_basic_auth"));
+  const copyRuntimeUrl = async (value: string | null | undefined) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard?.writeText(value);
+      setRuntimeCopyStatus("URL copied.");
+    } catch {
+      setRuntimeCopyStatus("Clipboard blocked. Select the URL text manually.");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -344,6 +362,12 @@ export default function Home() {
           <div className="mb-4 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             <AlertTriangle className="h-4 w-4" />
             {error}
+          </div>
+        ) : null}
+        {publicTunnelWithoutAuth ? (
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <AlertTriangle className="h-4 w-4" />
+            ngrok is exposing this local ledger publicly without `NGROK_BASIC_AUTH`. Set basic auth before sharing the tunnel URL.
           </div>
         ) : null}
 
@@ -394,47 +418,51 @@ export default function Home() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-md py-5">
-            <CardHeader className="px-5">
-              <CardTitle className="text-lg">Active campaign</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 px-5">
-              <select
-                value={activeCampaignId}
-                onChange={(event) => void loadLedger(event.target.value)}
-                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                disabled={!campaigns.length}
-              >
-                {campaigns.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.title}
-                  </option>
-                ))}
-              </select>
-              <div className="rounded-md border p-4">
-                <div className="text-sm font-medium">{campaign?.title || "No campaign selected"}</div>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{campaign?.goal || "Create a campaign to start the ledger."}</p>
-              </div>
-              {campaign ? (
+          <div className="space-y-4">
+            <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <CardTitle className="text-lg">Active campaign</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 px-5">
                 <select
-                  value={campaign.status}
-                  onChange={(event) => void mutate(() => ledgerApi.updateCampaign(campaign.id, { status: event.target.value as Campaign["status"] }))}
+                  value={activeCampaignId}
+                  onChange={(event) => void loadLedger(event.target.value)}
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  disabled={!campaigns.length}
                 >
-                  <option value="active">Active</option>
-                  <option value="paused">Paused</option>
-                  <option value="completed">Completed</option>
-                  <option value="archived">Archived</option>
+                  {campaigns.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title}
+                    </option>
+                  ))}
                 </select>
-              ) : null}
-              <Progress value={progress} className="h-2 rounded-md bg-muted" />
-              <div className="grid grid-cols-3 gap-2 text-sm">
-                <MiniStat label="Drafted" value={campaign?.messagesDrafted || 0} />
-                <MiniStat label="Sent" value={campaign?.messagesSent || 0} />
-                <MiniStat label="Replies" value={campaign?.responsesReceived || 0} />
-              </div>
-            </CardContent>
-          </Card>
+                <div className="rounded-md border p-4">
+                  <div className="text-sm font-medium">{campaign?.title || "No campaign selected"}</div>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{campaign?.goal || "Create a campaign to start the ledger."}</p>
+                </div>
+                {campaign ? (
+                  <select
+                    value={campaign.status}
+                    onChange={(event) => void mutate(() => ledgerApi.updateCampaign(campaign.id, { status: event.target.value as Campaign["status"] }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="active">Active</option>
+                    <option value="paused">Paused</option>
+                    <option value="completed">Completed</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                ) : null}
+                <Progress value={progress} className="h-2 rounded-md bg-muted" />
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <MiniStat label="Drafted" value={campaign?.messagesDrafted || 0} />
+                  <MiniStat label="Sent" value={campaign?.messagesSent || 0} />
+                  <MiniStat label="Replies" value={campaign?.responsesReceived || 0} />
+                </div>
+              </CardContent>
+            </Card>
+
+            <RuntimeExposurePanel runtimeStatus={runtimeStatus} copyStatus={runtimeCopyStatus} onCopyUrl={copyRuntimeUrl} />
+          </div>
         </section>
 
         <Tabs defaultValue="ledger" className="mt-5 gap-4">
@@ -1195,6 +1223,95 @@ function SafetyLine({ text }: { text: string }) {
     <div className="flex items-center gap-2">
       <ShieldCheck className="h-4 w-4 text-emerald-600" />
       <span>{text}</span>
+    </div>
+  );
+}
+
+function RuntimeExposurePanel({
+  runtimeStatus,
+  copyStatus,
+  onCopyUrl,
+}: {
+  runtimeStatus: RuntimeStatus | null;
+  copyStatus: string;
+  onCopyUrl: (value: string | null | undefined) => void;
+}) {
+  const tunnelActive = Boolean(runtimeStatus?.tunnel.active);
+  const basicAuth = Boolean(runtimeStatus?.auth.basicAuthConfigured);
+  const publicWithoutAuth = Boolean(runtimeStatus?.warnings.includes("ngrok_public_without_basic_auth"));
+
+  return (
+    <Card className="rounded-md py-5">
+      <CardHeader className="px-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-lg">Runtime exposure</CardTitle>
+            <div className="mt-1 text-xs text-muted-foreground">Local and ngrok reachability</div>
+          </div>
+          <Badge
+            variant="outline"
+            className={tunnelActive ? "rounded-md border-amber-200 bg-amber-50 text-amber-700" : "rounded-md border-emerald-200 bg-emerald-50 text-emerald-700"}
+          >
+            {tunnelActive ? "Tunnel active" : "Local only"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 px-5">
+        <RuntimeUrlRow
+          icon={<Lock className="h-4 w-4" />}
+          label="Local URL"
+          value={runtimeStatus?.localUrl || "Loading"}
+          onCopy={() => onCopyUrl(runtimeStatus?.localUrl)}
+        />
+        <RuntimeUrlRow
+          icon={<Globe2 className="h-4 w-4" />}
+          label="Tunnel URL"
+          value={runtimeStatus?.tunnel.publicUrl || "Not active"}
+          onCopy={() => onCopyUrl(runtimeStatus?.tunnel.publicUrl)}
+          disabled={!runtimeStatus?.tunnel.publicUrl}
+        />
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <MiniStat label="Mode" value={runtimeStatus?.mode || "Loading"} />
+          <MiniStat label="Auth" value={basicAuth ? "Basic auth" : "Not set"} />
+        </div>
+        {copyStatus ? <div className="text-xs text-muted-foreground">{copyStatus}</div> : null}
+        {publicWithoutAuth ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+            This ngrok URL is public. Set `NGROK_BASIC_AUTH=user:pass` before sharing sensitive mentor data.
+          </div>
+        ) : (
+          <div className="rounded-md border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+            Browser checks local status only; tunnel metadata is read server-side from the local ngrok inspector when available.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RuntimeUrlRow({
+  icon,
+  label,
+  value,
+  onCopy,
+  disabled = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  onCopy: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border p-2 text-sm">
+      <div className="text-muted-foreground">{icon}</div>
+      <div className="min-w-0 flex-1">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="truncate font-mono text-xs">{value}</div>
+      </div>
+      <Button size="sm" variant="outline" className="h-8 rounded-md" onClick={onCopy} disabled={disabled} aria-label={`Copy ${label}`}>
+        <Copy className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
