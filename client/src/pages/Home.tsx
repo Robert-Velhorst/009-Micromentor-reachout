@@ -39,6 +39,7 @@ import {
   type OutreachOutcome,
   type RuntimeStatus,
   type UsageReport,
+  type WorkspaceSummary,
   ledgerApi,
 } from "@/lib/ledgerApi";
 
@@ -151,6 +152,9 @@ export default function Home() {
   const [selectedMentorId, setSelectedMentorId] = useState("");
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
   const [runtimeCopyStatus, setRuntimeCopyStatus] = useState("");
+  const [workspaceBackupText, setWorkspaceBackupText] = useState("");
+  const [workspacePreview, setWorkspacePreview] = useState<WorkspaceSummary | null>(null);
+  const [workspaceStatus, setWorkspaceStatus] = useState("");
 
   const loadLedger = async (campaignId?: string) => {
     setLoading(true);
@@ -162,7 +166,7 @@ export default function Home() {
         ledgerApi.runtimeStatus().catch(() => null),
       ]);
       const nextCampaigns = campaignResult.campaigns;
-      const selectedId = campaignId || activeCampaignId || latestCampaign(nextCampaigns)?.id || "";
+      const selectedId = campaignId !== undefined ? campaignId || latestCampaign(nextCampaigns)?.id || "" : activeCampaignId || latestCampaign(nextCampaigns)?.id || "";
       const nextDetails = selectedId ? await ledgerApi.campaign(selectedId) : null;
       setSummary(nextSummary);
       setCampaigns(nextCampaigns);
@@ -330,6 +334,59 @@ export default function Home() {
     } catch {
       setRuntimeCopyStatus("Clipboard blocked. Select the URL text manually.");
     }
+  };
+
+  const downloadWorkspaceBackup = async () => {
+    setError("");
+    setWorkspaceStatus("");
+    try {
+      const backup = await ledgerApi.workspaceBackup();
+      const filename = `maro-workspace-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      downloadText(filename, JSON.stringify(backup, null, 2), "application/json;charset=utf-8");
+      setWorkspacePreview(backup.summary);
+      setWorkspaceStatus("Backup exported.");
+      await loadLedger(activeCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to export workspace backup");
+    }
+  };
+
+  const previewWorkspaceRestore = async () => {
+    setError("");
+    setWorkspaceStatus("");
+    try {
+      const result = await ledgerApi.previewWorkspaceRestore(workspaceBackupText);
+      setWorkspacePreview(result.summary);
+      setWorkspaceStatus("Backup is valid. Review counts before restoring.");
+    } catch (err) {
+      setWorkspacePreview(null);
+      setError(err instanceof Error ? err.message : "Backup validation failed");
+    }
+  };
+
+  const restoreWorkspace = async () => {
+    if (!window.confirm("Restore this MARO backup and replace the current local workspace?")) return;
+    setError("");
+    setWorkspaceStatus("");
+    try {
+      const result = await ledgerApi.restoreWorkspace(workspaceBackupText);
+      setWorkspacePreview(result.summary);
+      setWorkspaceStatus("Workspace restored.");
+      setActiveCampaignId("");
+      await loadLedger("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to restore workspace");
+    }
+  };
+
+  const resetWorkspace = async (scope: "queue" | "mentors" | "workspace") => {
+    const label = scope === "queue" ? "message queue, replies, follow-ups, outcomes, and billing records" : scope === "mentors" ? "mentors and all related outreach history" : "the full workspace";
+    if (!window.confirm(`Reset ${label}? This cannot be undone unless you have a backup.`)) return;
+    await mutate(async () => {
+      const result = await ledgerApi.resetWorkspace(scope);
+      setWorkspacePreview(result.summary);
+      setWorkspaceStatus(`Reset completed: ${scope}.`);
+    });
   };
 
   return (
@@ -1008,17 +1065,29 @@ export default function Home() {
                 ))}
               </CardContent>
             </Card>
-            <Card className="rounded-md py-5">
-              <CardHeader className="px-5">
-                <CardTitle className="text-lg">Operational status</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 px-5">
-                <MiniStat label="Pending review" value={pendingReview.length} />
-                <MiniStat label="Ready to confirm" value={approvedMessages.length} />
-                <MiniStat label="Sent messages" value={sentMessages.length} />
-                <MiniStat label="Loading" value={loading ? "Yes" : "No"} />
-              </CardContent>
-            </Card>
+            <div className="space-y-4">
+              <Card className="rounded-md py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-lg">Operational status</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 px-5">
+                  <MiniStat label="Pending review" value={pendingReview.length} />
+                  <MiniStat label="Ready to confirm" value={approvedMessages.length} />
+                  <MiniStat label="Sent messages" value={sentMessages.length} />
+                  <MiniStat label="Loading" value={loading ? "Yes" : "No"} />
+                </CardContent>
+              </Card>
+              <WorkspacePanel
+                backupText={workspaceBackupText}
+                preview={workspacePreview}
+                status={workspaceStatus}
+                onBackupTextChange={setWorkspaceBackupText}
+                onExport={() => void downloadWorkspaceBackup()}
+                onPreview={() => void previewWorkspaceRestore()}
+                onRestore={() => void restoreWorkspace()}
+                onReset={(scope) => void resetWorkspace(scope)}
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </main>
@@ -1194,6 +1263,80 @@ function MentorDetailPanel({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function WorkspacePanel({
+  backupText,
+  preview,
+  status,
+  onBackupTextChange,
+  onExport,
+  onPreview,
+  onRestore,
+  onReset,
+}: {
+  backupText: string;
+  preview: WorkspaceSummary | null;
+  status: string;
+  onBackupTextChange: (value: string) => void;
+  onExport: () => void;
+  onPreview: () => void;
+  onRestore: () => void;
+  onReset: (scope: "queue" | "mentors" | "workspace") => void;
+}) {
+  return (
+    <Card className="rounded-md py-5">
+      <CardHeader className="px-5">
+        <CardTitle className="text-lg">Workspace safety</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 px-5">
+        <Button variant="outline" className="w-full rounded-md" onClick={onExport}>
+          Export backup
+        </Button>
+        <Textarea
+          value={backupText}
+          onChange={(event) => onBackupTextChange(event.target.value)}
+          placeholder="Paste MARO backup JSON to preview or restore"
+          className="min-h-28 rounded-md font-mono text-xs"
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="outline" className="rounded-md" onClick={onPreview} disabled={!backupText.trim()}>
+            Preview
+          </Button>
+          <Button className="rounded-md" onClick={onRestore} disabled={!backupText.trim()}>
+            Restore
+          </Button>
+        </div>
+        {status ? <div className="rounded-md border bg-muted/20 p-2 text-xs text-muted-foreground">{status}</div> : null}
+        {preview ? <WorkspaceSummaryGrid summary={preview} /> : null}
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+          Resets are permanent unless you export a backup first.
+        </div>
+        <div className="grid gap-2">
+          <Button variant="outline" className="rounded-md" onClick={() => onReset("queue")}>
+            Reset queue history
+          </Button>
+          <Button variant="outline" className="rounded-md" onClick={() => onReset("mentors")}>
+            Reset mentors
+          </Button>
+          <Button variant="outline" className="rounded-md border-red-200 text-red-700 hover:bg-red-50 hover:text-red-700" onClick={() => onReset("workspace")}>
+            Reset workspace
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WorkspaceSummaryGrid({ summary }: { summary: WorkspaceSummary }) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <MiniStat label="Campaigns" value={summary.campaigns} />
+      <MiniStat label="Mentors" value={summary.mentors} />
+      <MiniStat label="Drafts" value={summary.drafts} />
+      <MiniStat label="Audit" value={summary.auditEvents} />
+    </div>
   );
 }
 

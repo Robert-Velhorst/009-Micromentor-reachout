@@ -175,6 +175,32 @@ export type RuntimeStatus = {
   warnings: Array<"ngrok_public_without_basic_auth" | string>;
 };
 
+export type WorkspaceSummary = {
+  schemaVersion: number;
+  projects: number;
+  campaigns: number;
+  mentors: number;
+  identities: number;
+  assessments: number;
+  drafts: number;
+  approvals: number;
+  sendAttempts: number;
+  responses: number;
+  followUps: number;
+  outcomes: number;
+  resourceSessions: number;
+  billingRecords: number;
+  auditEvents: number;
+};
+
+export type WorkspaceBackup = {
+  kind: "maro-workspace-backup";
+  schemaVersion: 1;
+  exportedAt: string;
+  summary: WorkspaceSummary;
+  ledger: unknown;
+};
+
 export type CampaignDetails = {
   campaign: Campaign;
   mentors: MentorProfile[];
@@ -235,6 +261,22 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
 export const ledgerApi = {
   runtimeStatus: () => request<RuntimeStatus>("/api/runtime/status"),
+  workspaceBackup: () => request<WorkspaceBackup>("/api/workspace/backup"),
+  previewWorkspaceRestore: (backupJson: string) =>
+    request<{ valid: true; summary: WorkspaceSummary }>("/api/workspace/restore/preview", {
+      method: "POST",
+      body: JSON.stringify({ backupJson }),
+    }),
+  restoreWorkspace: (backupJson: string) =>
+    request<{ restored: true; summary: WorkspaceSummary }>("/api/workspace/restore", {
+      method: "POST",
+      body: JSON.stringify({ backupJson, confirm: true }),
+    }),
+  resetWorkspace: (scope: "queue" | "mentors" | "workspace") =>
+    request<{ reset: true; scope: string; summary: WorkspaceSummary }>("/api/workspace/reset", {
+      method: "POST",
+      body: JSON.stringify({ scope, confirm: true }),
+    }),
   summary: () => request<LedgerSummary>("/api/ledger/summary"),
   campaigns: () => request<{ campaigns: Campaign[] }>("/api/campaigns"),
   campaign: (id: string) => request<CampaignDetails>(`/api/campaigns/${id}`),

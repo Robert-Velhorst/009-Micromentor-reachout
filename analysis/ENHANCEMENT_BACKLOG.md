@@ -99,6 +99,8 @@ Acceptance:
 
 Why now: this is a low-complexity reliability improvement.
 
+Status: Implemented in the operating-ledger branch with schema-versioned JSON export, restore preview validation, confirmed restore, queue/mentor/workspace reset scopes, audit events, UI controls in the Audit tab, and smoke-test coverage.
+
 ### P1 - Privacy Mode And Optional Local Encryption
 
 Problem: mentor/contact data and drafts are readable in browser storage. This is acceptable for local prototypes, but weaker for real outreach data.
@@ -181,12 +183,12 @@ Avoid for now:
 ## Security Enhancements
 
 Do next:
-- Add JSON backup validation and schema versioning before restore.
 - Add optional local encryption before storing sensitive notes or profiles.
 - Self-host fonts if offline/private installs become a requirement.
 
 Done:
 - Added ngrok exposure status and unauthenticated tunnel warning.
+- Added JSON backup validation and schema versioning before restore.
 
 Avoid for now:
 - Automated sending to MicroMentor. It creates account, consent, rate-limit, and platform-policy risk. Keep final send manual until rules and safeguards are explicit.

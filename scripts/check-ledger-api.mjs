@@ -243,6 +243,37 @@ try {
   assert(details.followUps.some((followUp) => followUp.status === "cancelled"), "Cancelled follow-up was not persisted");
   assert(details.auditEvents.length >= 10, "Audit trail was not recorded");
 
+  const backup = await api("/api/workspace/backup");
+  assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
+  assert(backup.summary.mentors === 2, "Workspace backup did not include mentor count");
+  const restorePreview = await api("/api/workspace/restore/preview", {
+    method: "POST",
+    body: JSON.stringify({ backupJson: JSON.stringify(backup) }),
+  });
+  assert(restorePreview.valid === true, "Workspace restore preview did not validate backup");
+  assert(restorePreview.summary.drafts === 1, "Workspace restore preview did not include draft count");
+  await expectFailure("/api/workspace/restore/preview", {
+    method: "POST",
+    body: JSON.stringify({ backupJson: "{not-json" }),
+  }, 400);
+  await expectFailure("/api/workspace/reset", {
+    method: "POST",
+    body: JSON.stringify({ scope: "queue" }),
+  }, 400);
+  const resetQueue = await api("/api/workspace/reset", {
+    method: "POST",
+    body: JSON.stringify({ scope: "queue", confirm: true }),
+  });
+  assert(resetQueue.summary.drafts === 0, "Queue reset did not clear drafts");
+  assert(resetQueue.summary.mentors === 2, "Queue reset should preserve mentors");
+  const restored = await api("/api/workspace/restore", {
+    method: "POST",
+    body: JSON.stringify({ backupJson: JSON.stringify(backup), confirm: true }),
+  });
+  assert(restored.summary.drafts === 1, "Workspace restore did not restore draft count");
+  const restoredDetails = await api(`/api/campaigns/${campaignId}`);
+  assert(restoredDetails.campaign.messagesDrafted === 1, "Restored campaign draft count was not available");
+
   console.log(
     JSON.stringify(
       {
@@ -250,9 +281,9 @@ try {
         campaignId,
         mentorId,
         messageId,
-        finalCost: details.billingRecords[0].finalCost,
-        outcomes: details.outcomes.length,
-        auditEvents: details.auditEvents.length,
+        finalCost: restoredDetails.billingRecords[0].finalCost,
+        outcomes: restoredDetails.outcomes.length,
+        auditEvents: restoredDetails.auditEvents.length,
       },
       null,
       2

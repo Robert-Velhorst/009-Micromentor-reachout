@@ -11,6 +11,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Track response classifications and follow-up suggestions.
 - Generate local process-measured resource-cost records using `Resource Cost x 2 = Final Price`.
 - Show whether the app is local-only or reachable through ngrok, including a warning when the tunnel is public without basic auth.
+- Export, validate, restore, and reset the local workspace with schema-versioned JSON backups.
 - Keep work local by default in a JSON ledger under `data/`.
 
 ## Local Ledger API
@@ -19,6 +20,10 @@ The Express server now exposes operational API routes before serving the fronten
 
 - `GET /api/health`
 - `GET /api/runtime/status`
+- `GET /api/workspace/backup`
+- `POST /api/workspace/restore/preview`
+- `POST /api/workspace/restore`
+- `POST /api/workspace/reset`
 - `GET /api/ledger/summary`
 - `GET|POST /api/projects`
 - `PATCH /api/projects/:id`
@@ -52,6 +57,8 @@ The Express server now exposes operational API routes before serving the fronten
 The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to store it elsewhere. Runtime ledger data is ignored by git.
 
 Resource sessions are process-level local measurements. MARO records Node CPU time, RSS memory over session duration, local ledger file size, and observed API payload bytes. It does not use random simulated usage as billing evidence.
+
+Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates the required ledger arrays before replacing local data. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
 
 ## Requirements
 

@@ -239,10 +239,29 @@ type LedgerState = {
   auditEvents: AuditEvent[];
 };
 
+type WorkspaceResetScope = "queue" | "mentors" | "workspace";
+
 const PRICING_FORMULA = "Resource Cost x 2 = Final Price";
 const DEFAULT_USER_ID = "local-operator";
 const DEFAULT_PROJECT_ID = "project-robert-support-network";
 const DEFAULT_CAMPAIGN_ID = "campaign-micromentor-first-wave";
+const LEDGER_ARRAY_KEYS = [
+  "operators",
+  "projects",
+  "campaigns",
+  "mentorIdentities",
+  "mentorProfiles",
+  "matchAssessments",
+  "messageDrafts",
+  "messageApprovals",
+  "messageSendAttempts",
+  "mentorResponses",
+  "followUpPlans",
+  "resourceUsageSessions",
+  "billingRecords",
+  "outreachOutcomes",
+  "auditEvents",
+] as const;
 let observedApiBytes = 0;
 
 function now() {
@@ -425,15 +444,7 @@ function createSeedState(): LedgerState {
   };
 }
 
-function readState(): LedgerState {
-  const filePath = dataPath();
-  if (!fs.existsSync(filePath)) {
-    const state = createSeedState();
-    writeState(state);
-    return state;
-  }
-
-  const state = JSON.parse(fs.readFileSync(filePath, "utf8")) as Partial<LedgerState>;
+function normalizeState(state: Partial<LedgerState>): LedgerState {
   return {
     schemaVersion: 1,
     operators: state.operators || [],
@@ -462,10 +473,135 @@ function readState(): LedgerState {
   };
 }
 
+function readState(): LedgerState {
+  const filePath = dataPath();
+  if (!fs.existsSync(filePath)) {
+    const state = createSeedState();
+    writeState(state);
+    return state;
+  }
+
+  const state = JSON.parse(fs.readFileSync(filePath, "utf8")) as Partial<LedgerState>;
+  return normalizeState(state);
+}
+
 function writeState(state: LedgerState) {
   const filePath = dataPath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(state, null, 2), "utf8");
+}
+
+function replaceState(target: LedgerState, next: LedgerState) {
+  for (const key of Object.keys(target) as Array<keyof LedgerState>) {
+    delete target[key];
+  }
+  Object.assign(target, next);
+}
+
+function workspaceSummary(state: LedgerState) {
+  return {
+    schemaVersion: state.schemaVersion,
+    projects: state.projects.length,
+    campaigns: state.campaigns.length,
+    mentors: state.mentorProfiles.length,
+    identities: state.mentorIdentities.length,
+    assessments: state.matchAssessments.length,
+    drafts: state.messageDrafts.length,
+    approvals: state.messageApprovals.length,
+    sendAttempts: state.messageSendAttempts.length,
+    responses: state.mentorResponses.length,
+    followUps: state.followUpPlans.length,
+    outcomes: state.outreachOutcomes.length,
+    resourceSessions: state.resourceUsageSessions.length,
+    billingRecords: state.billingRecords.length,
+    auditEvents: state.auditEvents.length,
+  };
+}
+
+function parseBackupPayload(body: unknown) {
+  const payload = body && typeof body === "object" && "backup" in body
+    ? (body as { backup?: unknown }).backup
+    : body && typeof body === "object" && "backupJson" in body
+      ? (body as { backupJson?: unknown }).backupJson
+      : body;
+  if (typeof payload === "string") {
+    return JSON.parse(payload);
+  }
+  return payload;
+}
+
+function validateWorkspaceBackup(body: unknown): { state: LedgerState } | { error: string } {
+  let payload: unknown;
+  try {
+    payload = parseBackupPayload(body);
+  } catch {
+    return { error: "Backup JSON could not be parsed" };
+  }
+  if (!payload || typeof payload !== "object") {
+    return { error: "Backup must be a JSON object or JSON string" };
+  }
+
+  const envelope = payload as { kind?: unknown; schemaVersion?: unknown; ledger?: unknown };
+  const candidate = envelope.ledger && typeof envelope.ledger === "object" ? envelope.ledger : payload;
+  const ledger = candidate as Partial<LedgerState>;
+
+  if (ledger.schemaVersion !== 1) {
+    return { error: "Unsupported or missing backup schemaVersion" };
+  }
+  for (const key of LEDGER_ARRAY_KEYS) {
+    if (!Array.isArray(ledger[key])) {
+      return { error: `Backup is missing required array: ${key}` };
+    }
+  }
+
+  const normalized = normalizeState(ledger);
+  if (!normalized.operators.length) {
+    return { error: "Backup must contain at least one operator" };
+  }
+  if (!normalized.projects.length) {
+    return { error: "Backup must contain at least one project" };
+  }
+  if (!normalized.campaigns.length) {
+    return { error: "Backup must contain at least one campaign" };
+  }
+
+  return { state: normalized };
+}
+
+function resetWorkspaceScope(state: LedgerState, scope: WorkspaceResetScope) {
+  if (scope === "workspace") {
+    replaceState(state, createSeedState());
+    audit(state, "reset_workspace", "workspace", "local-ledger", workspaceSummary(state), { riskLevel: "high" });
+    return;
+  }
+
+  const before = workspaceSummary(state);
+  state.messageDrafts = [];
+  state.messageApprovals = [];
+  state.messageSendAttempts = [];
+  state.mentorResponses = [];
+  state.followUpPlans = [];
+  state.resourceUsageSessions = [];
+  state.billingRecords = [];
+  state.outreachOutcomes = [];
+
+  if (scope === "mentors") {
+    state.mentorIdentities = [];
+    state.mentorProfiles = [];
+    state.matchAssessments = [];
+  } else {
+    state.mentorProfiles = state.mentorProfiles.map((mentor) => ({
+      ...mentor,
+      stage: mentor.stage === "closed" ? "closed" : "matched",
+      updatedAt: now(),
+    }));
+  }
+
+  state.campaigns.forEach((campaign) => recalcCampaign(state, campaign.id));
+  audit(state, scope === "mentors" ? "reset_mentor_data" : "reset_queue_data", "workspace", "local-ledger", workspaceSummary(state), {
+    beforeState: before,
+    riskLevel: "high",
+  });
 }
 
 function audit(
@@ -768,6 +904,56 @@ export function registerLedgerRoutes(app: Express) {
     pricingFormula: PRICING_FORMULA,
     timestamp: now(),
   })));
+
+  app.get("/api/workspace/backup", route((_req, _res, state) => {
+    audit(state, "exported_workspace_backup", "workspace", "local-ledger", workspaceSummary(state), { riskLevel: "medium" });
+    return {
+      kind: "maro-workspace-backup",
+      schemaVersion: state.schemaVersion,
+      exportedAt: now(),
+      summary: workspaceSummary(state),
+      ledger: state,
+    };
+  }));
+
+  app.post("/api/workspace/restore/preview", route((req, res) => {
+    const validation = validateWorkspaceBackup(req.body || {});
+    if (!("state" in validation)) return jsonError(res, 400, String(validation.error));
+    return {
+      valid: true,
+      summary: workspaceSummary(validation.state),
+    };
+  }));
+
+  app.post("/api/workspace/restore", route((req, res, state) => {
+    if (req.body?.confirm !== true) return jsonError(res, 400, "Restore requires confirm=true");
+    const validation = validateWorkspaceBackup(req.body || {});
+    if (!("state" in validation)) return jsonError(res, 400, String(validation.error));
+    const before = workspaceSummary(state);
+    replaceState(state, validation.state);
+    audit(state, "restored_workspace_backup", "workspace", "local-ledger", workspaceSummary(state), {
+      beforeState: before,
+      riskLevel: "high",
+    });
+    return {
+      restored: true,
+      summary: workspaceSummary(state),
+    };
+  }));
+
+  app.post("/api/workspace/reset", route((req, res, state) => {
+    if (req.body?.confirm !== true) return jsonError(res, 400, "Reset requires confirm=true");
+    const scope = String(req.body?.scope || "");
+    if (!["queue", "mentors", "workspace"].includes(scope)) {
+      return jsonError(res, 400, "Reset scope must be queue, mentors, or workspace");
+    }
+    resetWorkspaceScope(state, scope as WorkspaceResetScope);
+    return {
+      reset: true,
+      scope,
+      summary: workspaceSummary(state),
+    };
+  }));
 
   app.get("/api/ledger/summary", route((_req, _res, state) => {
     state.campaigns.forEach((campaign) => recalcCampaign(state, campaign.id));
