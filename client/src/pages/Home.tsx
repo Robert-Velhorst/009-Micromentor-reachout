@@ -42,6 +42,7 @@ import {
   type MentorResponse,
   type NextActionRecommendation,
   type OutreachOutcome,
+  type OutreachProject,
   type RuntimeStatus,
   type UsageReport,
   type WorkspaceSummary,
@@ -49,12 +50,18 @@ import {
 } from "@/lib/ledgerApi";
 
 type CampaignForm = {
+  projectId: string;
   title: string;
   goal: string;
   targetMentorType: string;
   source: string;
   tone: string;
   followUpAfterDays: string;
+};
+
+type ProjectForm = {
+  title: string;
+  description: string;
 };
 
 type MentorForm = {
@@ -103,12 +110,18 @@ const emptyCsvColumnMap = csvColumnFields.reduce(
 );
 
 const defaultCampaignForm: CampaignForm = {
+  projectId: "",
   title: "",
   goal: "",
   targetMentorType: "Startup, operations, product, growth, or automation mentor",
   source: "MicroMentor/manual",
   tone: "respectful, concise, practical",
   followUpAfterDays: "7",
+};
+
+const defaultProjectForm: ProjectForm = {
+  title: "",
+  description: "",
 };
 
 const defaultMentorForm: MentorForm = {
@@ -280,12 +293,14 @@ function downloadText(filename: string, text: string, type = "text/plain;charset
 
 export default function Home() {
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
+  const [projects, setProjects] = useState<OutreachProject[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [activeCampaignId, setActiveCampaignId] = useState("");
   const [details, setDetails] = useState<CampaignDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [projectForm, setProjectForm] = useState<ProjectForm>(defaultProjectForm);
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(defaultCampaignForm);
   const [mentorForm, setMentorForm] = useState<MentorForm>(defaultMentorForm);
   const [sendEvidence, setSendEvidence] = useState<Record<string, string>>({});
@@ -318,9 +333,10 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, campaignResult, nextHealthStatus, nextRuntimeStatus] = await Promise.all([
+      const [nextSummary, campaignResult, projectResult, nextHealthStatus, nextRuntimeStatus] = await Promise.all([
         ledgerApi.summary(),
         ledgerApi.campaigns(),
+        ledgerApi.projects(),
         ledgerApi.health().catch(() => null),
         ledgerApi.runtimeStatus().catch(() => null),
       ]);
@@ -328,6 +344,7 @@ export default function Home() {
       const selectedId = campaignId !== undefined ? campaignId || latestCampaign(nextCampaigns)?.id || "" : activeCampaignId || latestCampaign(nextCampaigns)?.id || "";
       const nextDetails = selectedId ? await ledgerApi.campaign(selectedId) : null;
       setSummary(nextSummary);
+      setProjects(projectResult.projects);
       setCampaigns(nextCampaigns);
       setActiveCampaignId(selectedId);
       setDetails(nextDetails);
@@ -354,6 +371,10 @@ export default function Home() {
   }, [csvHeaderKey]);
 
   const campaign = details?.campaign || null;
+  const campaignProject = useMemo(
+    () => projects.find((project) => project.id === campaign?.projectId) || projects[0] || null,
+    [campaign?.projectId, projects]
+  );
   const assessmentsByMentor = useMemo(
     () => new Map((details?.assessments || []).map((assessment) => [assessment.mentorProfileId, assessment])),
     [details?.assessments]
@@ -418,6 +439,7 @@ export default function Home() {
     setError("");
     try {
       const result = await ledgerApi.createCampaign({
+        projectId: campaignForm.projectId || campaignProject?.id || projects[0]?.id,
         title: campaignForm.title,
         goal: campaignForm.goal,
         targetMentorType: campaignForm.targetMentorType,
@@ -433,6 +455,18 @@ export default function Home() {
       await loadLedger(result.campaign.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create campaign");
+    }
+  };
+
+  const createProject = async () => {
+    setError("");
+    try {
+      const result = await ledgerApi.createProject(projectForm);
+      setProjectForm(defaultProjectForm);
+      setCampaignForm((current) => ({ ...current, projectId: result.project.id }));
+      await loadLedger(activeCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create project");
     }
   };
 
@@ -839,11 +873,25 @@ export default function Home() {
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">{campaign?.goal || "Create a campaign to start the ledger."}</p>
                   {campaign ? (
                     <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                      <MiniStat label="Project" value={campaignProject?.title || "Unassigned"} />
                       <MiniStat label="Follow-up rule" value={`${campaignFollowUpDays(campaign)} days`} />
                       <MiniStat label="Tone" value={campaignTone(campaign)} />
                     </div>
                   ) : null}
                 </div>
+                {campaign && projects.length ? (
+                  <select
+                    value={campaign.projectId}
+                    onChange={(event) => void mutate(() => ledgerApi.updateCampaign(campaign.id, { projectId: event.target.value }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.title}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
                 {campaign ? (
                   <select
                     value={campaign.status}
@@ -925,7 +973,9 @@ export default function Home() {
                             <button className="text-left font-medium" onClick={() => void loadLedger(item.id)}>
                               {item.title}
                             </button>
-                            <div className="text-xs text-muted-foreground">{item.source}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {(projects.find((project) => project.id === item.projectId) || projects[0])?.title || "Unassigned project"} - {item.source}
+                            </div>
                           </td>
                           <td className="max-w-[260px] px-4 py-3 text-muted-foreground">{item.targetMentorType}</td>
                           <td className="px-4 py-3 font-mono">{item.totalMentors}</td>
@@ -941,31 +991,70 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-md py-5">
-              <CardHeader className="px-5">
-                <CardTitle className="text-lg">New campaign</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 px-5">
-                <Input value={campaignForm.title} onChange={(event) => setCampaignForm((current) => ({ ...current, title: event.target.value }))} placeholder="Campaign title" className="rounded-md" />
-                <Textarea value={campaignForm.goal} onChange={(event) => setCampaignForm((current) => ({ ...current, goal: event.target.value }))} placeholder="Outreach goal" className="min-h-24 rounded-md" />
-                <Input value={campaignForm.targetMentorType} onChange={(event) => setCampaignForm((current) => ({ ...current, targetMentorType: event.target.value }))} placeholder="Target mentor type" className="rounded-md" />
-                <Input value={campaignForm.source} onChange={(event) => setCampaignForm((current) => ({ ...current, source: event.target.value }))} placeholder="Source" className="rounded-md" />
-                <Input value={campaignForm.tone} onChange={(event) => setCampaignForm((current) => ({ ...current, tone: event.target.value }))} placeholder="Message tone" className="rounded-md" />
-                <Input
-                  type="number"
-                  min="1"
-                  max="90"
-                  value={campaignForm.followUpAfterDays}
-                  onChange={(event) => setCampaignForm((current) => ({ ...current, followUpAfterDays: event.target.value }))}
-                  placeholder="Follow-up after days"
-                  className="rounded-md"
-                />
-                <Button className="w-full rounded-md" onClick={() => void createCampaign()} disabled={!campaignForm.title.trim() || !campaignForm.goal.trim()}>
-                  <Plus className="h-4 w-4" />
-                  Create campaign
-                </Button>
-              </CardContent>
-            </Card>
+            <div className="space-y-4">
+              <Card className="rounded-md py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-lg">Project context</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 px-5">
+                  <div className="rounded-md border bg-muted/20 p-3">
+                    <div className="text-sm font-medium">{campaignProject?.title || "No project selected"}</div>
+                    <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {campaignProject?.description || "Projects group related mentor outreach campaigns."}
+                    </div>
+                  </div>
+                  <Input value={projectForm.title} onChange={(event) => setProjectForm((current) => ({ ...current, title: event.target.value }))} placeholder="Project title" className="rounded-md" />
+                  <Textarea
+                    value={projectForm.description}
+                    onChange={(event) => setProjectForm((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="Project description"
+                    className="min-h-20 rounded-md"
+                  />
+                  <Button variant="outline" className="w-full rounded-md" onClick={() => void createProject()} disabled={!projectForm.title.trim()}>
+                    <Plus className="h-4 w-4" />
+                    Create project
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-md py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-lg">New campaign</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 px-5">
+                  <select
+                    value={campaignForm.projectId || campaignProject?.id || projects[0]?.id || ""}
+                    onChange={(event) => setCampaignForm((current) => ({ ...current, projectId: event.target.value }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    disabled={!projects.length}
+                  >
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.title}
+                      </option>
+                    ))}
+                  </select>
+                  <Input value={campaignForm.title} onChange={(event) => setCampaignForm((current) => ({ ...current, title: event.target.value }))} placeholder="Campaign title" className="rounded-md" />
+                  <Textarea value={campaignForm.goal} onChange={(event) => setCampaignForm((current) => ({ ...current, goal: event.target.value }))} placeholder="Outreach goal" className="min-h-24 rounded-md" />
+                  <Input value={campaignForm.targetMentorType} onChange={(event) => setCampaignForm((current) => ({ ...current, targetMentorType: event.target.value }))} placeholder="Target mentor type" className="rounded-md" />
+                  <Input value={campaignForm.source} onChange={(event) => setCampaignForm((current) => ({ ...current, source: event.target.value }))} placeholder="Source" className="rounded-md" />
+                  <Input value={campaignForm.tone} onChange={(event) => setCampaignForm((current) => ({ ...current, tone: event.target.value }))} placeholder="Message tone" className="rounded-md" />
+                  <Input
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={campaignForm.followUpAfterDays}
+                    onChange={(event) => setCampaignForm((current) => ({ ...current, followUpAfterDays: event.target.value }))}
+                    placeholder="Follow-up after days"
+                    className="rounded-md"
+                  />
+                  <Button className="w-full rounded-md" onClick={() => void createCampaign()} disabled={!campaignForm.title.trim() || !campaignForm.goal.trim() || !projects.length}>
+                    <Plus className="h-4 w-4" />
+                    Create campaign
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="mentors" className="grid gap-4 xl:grid-cols-[1fr_390px]">

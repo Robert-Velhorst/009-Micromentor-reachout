@@ -31,6 +31,7 @@ Why first: this turns MARO from a draft generator into a repeatable outreach wor
 Status: Implemented in the operating-ledger branch with persisted campaigns, mentor stages, message statuses, responses, follow-ups, outcomes, deterministic next-action recommendations, campaign-history export, and a results view for response rate, booking rate, positive outcome rate, overdue follow-ups, outcome filters, and inline outcome updates. Failed manual send attempts are recorded without marking the draft sent or scheduling follow-up work, keeping retry state explicit.
 Follow-up scheduling now uses a persisted campaign-level timing rule instead of a hard-coded default, and pending follow-ups are cancelled when a response is recorded as not interested or unavailable.
 Dashboard recommendations are now actionable: opening a next action routes the operator to the relevant campaign tab, selects the mentor when applicable, and applies the right response/follow-up filter for outcome work.
+Project context is now visible and enforceable in the command center: operators can create projects, attach campaigns to them, and the API rejects campaigns that reference missing projects.
 
 ### P0 - Robust CSV Import, Export, And Deduplication
 

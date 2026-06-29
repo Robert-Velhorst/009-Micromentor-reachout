@@ -5,6 +5,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 ## What It Does
 
 - Manage outreach projects and campaigns.
+- Attach each outreach campaign to a project context so related mentor work stays grouped.
 - Store campaign-level message tone and follow-up timing rules, then apply them to generated drafts and follow-up suggestions.
 - Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
 - Require approval before a message can be manually confirmed as sent.
@@ -80,6 +81,8 @@ Resource sessions are process-level local measurements. MARO records Node CPU ti
 Invoice reports are persisted local ledger snapshots generated from stored billing records. They are audit logged and are not external charges, payment requests, or platform billing actions.
 
 Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates the required ledger arrays, including message quality reviews and invoice records, before replacing local data. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
+
+Projects group related outreach campaigns. Campaign creation and updates validate the selected project, and the command center shows project context beside active campaigns and in the campaign ledger.
 
 Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation. Generated drafts and automatic follow-up suggestions use each campaign's stored tone and follow-up timing rule. Pending follow-ups are cancelled when a recorded response says the mentor is not interested or unavailable. Failed manual send attempts remain visible in the review queue and do not create follow-up work.
 

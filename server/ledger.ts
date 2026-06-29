@@ -1587,6 +1587,10 @@ function requireCampaign(state: LedgerState, campaignId: string) {
   return state.campaigns.find((item) => item.id === campaignId);
 }
 
+function requireProject(state: LedgerState, projectId: string) {
+  return state.projects.find((item) => item.id === projectId);
+}
+
 function requireMessage(state: LedgerState, messageId: string) {
   return state.messageDrafts.find((item) => item.id === messageId);
 }
@@ -1902,11 +1906,13 @@ export function registerLedgerRoutes(app: Express) {
     const title = String(req.body?.title || "").trim();
     const goal = String(req.body?.goal || "").trim();
     if (!title || !goal) return jsonError(res, 400, "Campaign title and goal are required");
+    const projectId = String(req.body?.projectId || state.projects[0]?.id || DEFAULT_PROJECT_ID);
+    if (!requireProject(state, projectId)) return jsonError(res, 404, "Project not found");
     const createdAt = now();
     const campaign: OutreachCampaign = {
       id: randomUUID(),
       userId: DEFAULT_USER_ID,
-      projectId: String(req.body?.projectId || state.projects[0]?.id || DEFAULT_PROJECT_ID),
+      projectId,
       title,
       goal,
       targetMentorType: String(req.body?.targetMentorType || "Relevant mentor or advisor"),
@@ -1937,6 +1943,10 @@ export function registerLedgerRoutes(app: Express) {
       campaign.targetMentorType = req.body.targetMentorType.trim();
     }
     if (typeof req.body?.source === "string") campaign.source = req.body.source;
+    if (typeof req.body?.projectId === "string") {
+      if (!requireProject(state, req.body.projectId)) return jsonError(res, 404, "Project not found");
+      campaign.projectId = req.body.projectId;
+    }
     if (["active", "paused", "completed", "archived"].includes(String(req.body?.status))) {
       campaign.status = String(req.body.status) as CampaignStatus;
     }

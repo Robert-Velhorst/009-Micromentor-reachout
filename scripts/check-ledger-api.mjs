@@ -134,9 +134,38 @@ try {
   assert(headerValue(rootPage.response, "referrer-policy").toLowerCase() === "no-referrer", "Missing Referrer-Policy no-referrer header");
   assertIncludes(headerValue(rootPage.response, "permissions-policy"), "camera=()", "Missing restrictive Permissions-Policy header");
 
+  const projectList = await api("/api/projects");
+  assert(projectList.projects.length >= 1, "Default project was not available");
+  const projectResult = await api("/api/projects", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "Smoke project context",
+      description: "Project-linked outreach smoke coverage",
+    }),
+  });
+  assert(projectResult.project.title === "Smoke project context", "Project create did not persist title");
+  const updatedProject = await api(`/api/projects/${projectResult.project.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ description: "Updated project-linked outreach context" }),
+  });
+  assert(updatedProject.project.description === "Updated project-linked outreach context", "Project update did not persist description");
+  await expectFailure(
+    "/api/campaigns",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        projectId: "missing-project",
+        title: "Invalid project campaign",
+        goal: "This should not persist.",
+      }),
+    },
+    404
+  );
+
   const campaignResult = await api("/api/campaigns", {
     method: "POST",
     body: JSON.stringify({
+      projectId: projectResult.project.id,
       title: "Smoke mentor operating ledger",
       goal: "Find a practical automation mentor for a local-first outreach workflow.",
       targetMentorType: "Automation and startup operations mentor",
@@ -149,6 +178,7 @@ try {
     }),
   });
   const campaignId = campaignResult.campaign.id;
+  assert(campaignResult.campaign.projectId === projectResult.project.id, "Campaign did not persist selected project");
   assert(campaignResult.campaign.criteriaJson.followUpAfterDays === 3, "Campaign follow-up rule did not persist on create");
   assert(campaignResult.campaign.criteriaJson.tone === "direct, practical, respectful", "Campaign tone did not persist on create");
 

@@ -2,8 +2,17 @@ export type CampaignStatus = "active" | "paused" | "completed" | "archived";
 export type MentorStage = "new" | "matched" | "drafted" | "approved" | "contacted" | "responded" | "follow_up" | "closed";
 export type DraftStatus = "draft" | "approved" | "rejected" | "sent";
 
+export type OutreachProject = {
+  id: string;
+  title: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Campaign = {
   id: string;
+  projectId: string;
   title: string;
   goal: string;
   targetMentorType: string;
@@ -412,9 +421,21 @@ export const ledgerApi = {
   actions: (campaignId?: string) =>
     request<{ actions: NextActionRecommendation[] }>(campaignId ? `/api/actions?campaignId=${encodeURIComponent(campaignId)}` : "/api/actions"),
   summary: () => request<LedgerSummary>("/api/ledger/summary"),
+  projects: () => request<{ projects: OutreachProject[] }>("/api/projects"),
+  createProject: (payload: { title: string; description?: string }) =>
+    request<{ project: OutreachProject }>("/api/projects", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateProject: (projectId: string, payload: Partial<Pick<OutreachProject, "title" | "description">>) =>
+    request<{ project: OutreachProject }>(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   campaigns: () => request<{ campaigns: Campaign[] }>("/api/campaigns"),
   campaign: (id: string) => request<CampaignDetails>(`/api/campaigns/${id}`),
   createCampaign: (payload: {
+    projectId?: string;
     title: string;
     goal: string;
     targetMentorType: string;
@@ -425,7 +446,7 @@ export const ledgerApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  updateCampaign: (campaignId: string, payload: Partial<Pick<Campaign, "title" | "goal" | "targetMentorType" | "source" | "status" | "criteriaJson">>) =>
+  updateCampaign: (campaignId: string, payload: Partial<Pick<Campaign, "projectId" | "title" | "goal" | "targetMentorType" | "source" | "status" | "criteriaJson">>) =>
     request<{ campaign: Campaign }>(`/api/campaigns/${campaignId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
