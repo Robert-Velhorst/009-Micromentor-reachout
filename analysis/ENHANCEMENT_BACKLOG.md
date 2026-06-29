@@ -105,7 +105,7 @@ Acceptance:
 
 Why now: this is a low-complexity reliability improvement.
 
-Status: Implemented in the operating-ledger branch with schema-versioned JSON export, restore preview validation, confirmed restore, queue/mentor/workspace reset scopes, audit events, UI controls in the Audit tab, and smoke-test coverage.
+Status: Implemented in the operating-ledger branch with schema-versioned JSON export, restore preview validation, confirmed restore, queue/mentor/workspace reset scopes, audit events, UI controls in the Audit tab, and smoke-test coverage. Restore validation now explicitly requires message-quality and invoice-record arrays so portable backups cannot silently drop review or billing-report history.
 
 ### P1 - Privacy Mode And Optional Local Encryption
 

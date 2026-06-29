@@ -374,6 +374,7 @@ try {
   const backup = await api("/api/workspace/backup");
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
   assert(backup.summary.mentors === 3, "Workspace backup did not include mentor count");
+  assert(backup.summary.qualityReviews === 1, "Workspace backup did not include quality review count");
   assert(backup.summary.invoiceRecords === 1, "Workspace backup did not include invoice count");
   const restorePreview = await api("/api/workspace/restore/preview", {
     method: "POST",
@@ -381,6 +382,20 @@ try {
   });
   assert(restorePreview.valid === true, "Workspace restore preview did not validate backup");
   assert(restorePreview.summary.drafts === 1, "Workspace restore preview did not include draft count");
+  assert(restorePreview.summary.qualityReviews === 1, "Workspace restore preview did not include quality review count");
+  assert(restorePreview.summary.invoiceRecords === 1, "Workspace restore preview did not include invoice count");
+  const missingQualityReviewsBackup = structuredClone(backup);
+  delete missingQualityReviewsBackup.ledger.messageQualityReviews;
+  await expectFailure("/api/workspace/restore/preview", {
+    method: "POST",
+    body: JSON.stringify({ backupJson: JSON.stringify(missingQualityReviewsBackup) }),
+  }, 400);
+  const missingInvoiceRecordsBackup = structuredClone(backup);
+  delete missingInvoiceRecordsBackup.ledger.invoiceRecords;
+  await expectFailure("/api/workspace/restore/preview", {
+    method: "POST",
+    body: JSON.stringify({ backupJson: JSON.stringify(missingInvoiceRecordsBackup) }),
+  }, 400);
   await expectFailure("/api/workspace/restore/preview", {
     method: "POST",
     body: JSON.stringify({ backupJson: "{not-json" }),
@@ -401,8 +416,11 @@ try {
     body: JSON.stringify({ backupJson: JSON.stringify(backup), confirm: true }),
   });
   assert(restored.summary.drafts === 1, "Workspace restore did not restore draft count");
+  assert(restored.summary.qualityReviews === 1, "Workspace restore did not restore quality review count");
+  assert(restored.summary.invoiceRecords === 1, "Workspace restore did not restore invoice count");
   const restoredDetails = await api(`/api/campaigns/${campaignId}`);
   assert(restoredDetails.campaign.messagesDrafted === 1, "Restored campaign draft count was not available");
+  assert(restoredDetails.qualityReviews.length === 1, "Restored quality review was not available");
   assert(restoredDetails.invoiceRecords.length === 1, "Restored invoice record was not available");
 
   const persistedLedger = fs.readFileSync(ledgerFile, "utf8");
