@@ -555,6 +555,76 @@ function mentorsToCsv(mentors: MentorProfile[], assessments: MatchAssessment[]) 
   return [headers, ...rows].map((row) => row.map(csvEscape).join(",")).join("\r\n");
 }
 
+function campaignHistoryToCsv(state: LedgerState, campaign: OutreachCampaign) {
+  const headers = [
+    "campaign",
+    "campaignStatus",
+    "goal",
+    "targetMentorType",
+    "mentorName",
+    "company",
+    "headline",
+    "source",
+    "profileUrl",
+    "mentorStage",
+    "matchScore",
+    "matchReasons",
+    "messageCount",
+    "latestMessageStatus",
+    "latestMessageSubject",
+    "sentAt",
+    "responseClassification",
+    "responseAt",
+    "followUpStatus",
+    "followUpDueAt",
+    "outcomeStatus",
+    "outcomeSummary",
+    "notes",
+  ];
+  const mentors = state.mentorProfiles.filter((mentor) => mentor.campaignId === campaign.id);
+  const rows = mentors.map((mentor) => {
+    const assessment = state.matchAssessments.find((item) => item.mentorProfileId === mentor.id);
+    const messages = state.messageDrafts.filter((item) => item.mentorProfileId === mentor.id);
+    const latestMessage = latestByCreatedAt(messages);
+    const latestSend = latestByCreatedAt(state.messageSendAttempts.filter((item) => item.mentorProfileId === mentor.id && item.status === "confirmed_sent"));
+    const latestResponse = latestByCreatedAt(state.mentorResponses.filter((item) => item.mentorProfileId === mentor.id));
+    const latestFollowUp = latestByCreatedAt(state.followUpPlans.filter((item) => item.mentorProfileId === mentor.id));
+    const latestOutcome = latestByCreatedAt(state.outreachOutcomes.filter((item) => item.mentorProfileId === mentor.id));
+    const company = typeof mentor.rawProfileJson.company === "string" ? mentor.rawProfileJson.company : "";
+    return [
+      campaign.title,
+      campaign.status,
+      campaign.goal,
+      campaign.targetMentorType,
+      mentor.name,
+      company,
+      mentor.headline,
+      mentor.source,
+      mentor.profileUrl || "",
+      mentor.stage,
+      assessment?.score ?? "",
+      assessment?.reasonsJson.join(" | ") ?? "",
+      messages.length,
+      latestMessage?.status ?? "",
+      latestMessage?.subject ?? "",
+      latestSend?.finishedAt ?? "",
+      latestResponse?.classification ?? "",
+      latestResponse?.createdAt ?? "",
+      latestFollowUp?.status ?? "",
+      latestFollowUp?.dueAt ?? "",
+      latestOutcome?.status ?? "",
+      latestOutcome?.summary ?? "",
+      mentor.notes,
+    ];
+  });
+
+  return [headers, ...rows].map((row) => row.map(csvEscape).join(",")).join("\r\n");
+}
+
+function exportSlug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "maro";
+}
+
 function firstName(name: string) {
   return name.trim().split(/\s+/)[0] || name;
 }
@@ -1756,8 +1826,20 @@ export function registerLedgerRoutes(app: Express) {
     const assessments = state.matchAssessments.filter((item) => item.campaignId === campaignId);
     audit(state, "exported_mentor_csv", "campaign", campaign.id, { mentorCount: mentors.length }, { riskLevel: "high" });
     return {
-      filename: `${campaign.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "maro"}-mentors.csv`,
+      filename: `${exportSlug(campaign.title)}-mentors.csv`,
       csv: mentorsToCsv(mentors, assessments),
+    };
+  }));
+
+  app.get("/api/campaigns/:id/history/export", route((req, res, state) => {
+    const campaignId = routeId(req);
+    const campaign = requireCampaign(state, campaignId);
+    if (!campaign) return jsonError(res, 404, "Campaign not found");
+    const mentorCount = state.mentorProfiles.filter((item) => item.campaignId === campaignId).length;
+    audit(state, "exported_campaign_history_csv", "campaign", campaign.id, { mentorCount }, { riskLevel: "high" });
+    return {
+      filename: `${exportSlug(campaign.title)}-campaign-history.csv`,
+      csv: campaignHistoryToCsv(state, campaign),
     };
   }));
 

@@ -432,6 +432,8 @@ export const ledgerApi = {
     }),
   exportMentorCsv: (campaignId: string) =>
     request<{ filename: string; csv: string }>(`/api/campaigns/${campaignId}/mentors/export`),
+  exportCampaignHistoryCsv: (campaignId: string) =>
+    request<{ filename: string; csv: string }>(`/api/campaigns/${campaignId}/history/export`),
   createDraft: (campaignId: string, mentorProfileId: string) =>
     request<{ draft: MessageDraft }>(`/api/campaigns/${campaignId}/messages`, {
       method: "POST",

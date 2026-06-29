@@ -467,6 +467,18 @@ export default function Home() {
     }
   };
 
+  const exportCampaignHistoryCsv = async () => {
+    if (!activeCampaignId) return;
+    setError("");
+    try {
+      const result = await ledgerApi.exportCampaignHistoryCsv(activeCampaignId);
+      downloadText(result.filename, result.csv, "text/csv;charset=utf-8");
+      await loadLedger(activeCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to export campaign history CSV");
+    }
+  };
+
   const dueFollowUps = (details?.followUps || []).filter(
     (followUp) => followUp.status === "scheduled" && new Date(followUp.dueAt).getTime() <= Date.now()
   );
@@ -1045,6 +1057,9 @@ export default function Home() {
                 </div>
                 <Button variant="outline" className="w-full rounded-md" onClick={() => void exportMentorCsv()} disabled={!activeCampaignId}>
                   Export mentors CSV
+                </Button>
+                <Button variant="outline" className="w-full rounded-md" onClick={() => void exportCampaignHistoryCsv()} disabled={!activeCampaignId}>
+                  Export campaign history CSV
                 </Button>
                 {csvImportResult ? (
                   <div className="rounded-md border bg-muted/20 p-3 text-sm">

@@ -48,7 +48,7 @@ Acceptance:
 
 Why first: real MicroMentor workflows usually start with a list, not manual row entry.
 
-Status: Mostly implemented in the operating-ledger branch. CSV parsing supports quoted values, import preview, duplicate/missing-name skips, mentor export, `.csv` file loading in the command center, configurable source-column mapping for name/company/role/goal/profile/notes/priority/stage/source, and API smoke coverage for mapped headers. Remaining expansion is campaign-history CSV export beyond mentor rows.
+Status: Implemented in the operating-ledger branch. CSV parsing supports quoted values, import preview, duplicate/missing-name skips, mentor export, `.csv` file loading in the command center, configurable source-column mapping for name/company/role/goal/profile/notes/priority/stage/source, campaign-history CSV export with message status, send timestamp, response, follow-up, outcome, and notes, plus API smoke coverage for mapped headers and history export.
 
 ### P1 - Template Quality Checks
 

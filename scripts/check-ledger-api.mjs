@@ -310,6 +310,16 @@ try {
   assert(details.nextActions.some((action) => action.type === "draft_message" || action.type === "generate_cost_record"), "Next actions did not include remaining operational work");
   assert(details.auditEvents.length >= 10, "Audit trail was not recorded");
 
+  const historyExport = await api(`/api/campaigns/${campaignId}/history/export`);
+  assert(historyExport.filename.endsWith("-campaign-history.csv"), "Campaign history export filename was not generated");
+  assert(historyExport.csv.includes("latestMessageStatus"), "Campaign history export did not include message status header");
+  assert(historyExport.csv.includes("sentAt"), "Campaign history export did not include sent timestamp header");
+  assert(historyExport.csv.includes("outcomeStatus"), "Campaign history export did not include outcome status header");
+  assert(historyExport.csv.includes("Ada Tester"), "Campaign history export did not include the contacted mentor");
+  assert(historyExport.csv.includes("sent"), "Campaign history export did not include sent message state");
+  assert(historyExport.csv.includes("booked"), "Campaign history export did not include outcome state");
+  assert(historyExport.csv.includes("Strong test fit"), "Campaign history export did not include mentor notes");
+
   const backup = await api("/api/workspace/backup");
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
   assert(backup.summary.mentors === 3, "Workspace backup did not include mentor count");
