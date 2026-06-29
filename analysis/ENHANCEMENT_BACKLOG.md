@@ -140,6 +140,8 @@ Acceptance:
 
 Why later: strong workflow improvement, but it needs careful compliance and browser-extension QA.
 
+Status: First local handoff slice implemented in the operating-ledger branch. Review queues now show manual profile handoff controls for each draft, can open the stored source profile URL, and can copy the reviewed subject/body to the clipboard only after the draft body is visible in privacy mode. Final send remains outside MARO and still requires manual confirmation evidence before the ledger marks a message sent. Browser-extension form filling remains future work.
+
 ### P2 - Installer Signing, Updates, And Uninstall Path
 
 Problem: the current Windows installer works, but it is unsigned and has no update or uninstall flow.
@@ -196,6 +198,7 @@ Done:
 - Added JSON backup validation and schema versioning before restore.
 - Added optional passphrase-based encrypted local ledger storage for sensitive mentor, message, and campaign data.
 - Added UI privacy mode to hide sensitive command-center text until revealed.
+- Added manual profile handoff controls that copy revealed drafts without introducing automated external sending.
 
 Do next:
 - Self-host fonts if offline/private installs become a requirement.

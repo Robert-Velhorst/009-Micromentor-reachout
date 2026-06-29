@@ -16,6 +16,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Show whether the app is local-only or reachable through ngrok, including a warning when the tunnel is public without basic auth.
 - Export, validate, restore, and reset the local workspace with schema-versioned JSON backups.
 - Use session privacy mode to hide mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
+- Open the stored source profile and copy a reviewed draft from the message queue for manual MicroMentor handoff; MARO never auto-sends.
 - Keep work local by default in a JSON ledger under `data/`, with optional encryption at rest.
 
 ## Local Ledger API

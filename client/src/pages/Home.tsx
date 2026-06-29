@@ -165,6 +165,7 @@ export default function Home() {
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
   const [runtimeCopyStatus, setRuntimeCopyStatus] = useState("");
+  const [handoffStatus, setHandoffStatus] = useState<Record<string, string>>({});
   const [workspaceBackupText, setWorkspaceBackupText] = useState("");
   const [workspacePreview, setWorkspacePreview] = useState<WorkspaceSummary | null>(null);
   const [workspaceStatus, setWorkspaceStatus] = useState("");
@@ -385,6 +386,40 @@ export default function Home() {
       setRuntimeCopyStatus("URL copied.");
     } catch {
       setRuntimeCopyStatus("Clipboard blocked. Select the URL text manually.");
+    }
+  };
+  const copyDraftForHandoff = async (message: MessageDraft) => {
+    const subject = draftEdits[message.id]?.subject ?? message.subject;
+    const body = draftEdits[message.id]?.body ?? message.body;
+    const handoffText = `Subject: ${subject}\n\n${body}`;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(handoffText);
+      setHandoffStatus((current) => ({
+        ...current,
+        [message.id]: "Draft copied for manual paste. Final send remains manual.",
+      }));
+    } catch {
+      setHandoffStatus((current) => ({
+        ...current,
+        [message.id]: "Clipboard blocked. Select and copy the revealed draft manually.",
+      }));
+    }
+  };
+  const openProfileForHandoff = (messageId: string, profileUrl: string | null | undefined) => {
+    if (!profileUrl) return;
+    const opened = window.open(profileUrl, "_blank", "noopener,noreferrer");
+    if (opened) {
+      opened.opener = null;
+      setHandoffStatus((current) => ({
+        ...current,
+        [messageId]: "Profile opened in a new tab. Paste and send manually after review.",
+      }));
+    } else {
+      setHandoffStatus((current) => ({
+        ...current,
+        [messageId]: "Profile popup was blocked. Open the mentor profile link manually.",
+      }));
     }
   };
 
@@ -876,10 +911,13 @@ export default function Home() {
               draftEdits={draftEdits}
               onDraftEdit={setDraftEdits}
               qualityByMessage={qualityByMessage}
+              handoffStatus={handoffStatus}
               privacyMode={privacyMode}
               isSensitiveVisible={isSensitiveVisible}
               onRevealSensitive={revealSensitive}
               onHideSensitive={hideSensitive}
+              onCopyDraft={copyDraftForHandoff}
+              onOpenProfile={openProfileForHandoff}
               action={(message) => {
                 const quality = qualityByMessage.get(message.id);
                 return (
@@ -911,10 +949,13 @@ export default function Home() {
               draftEdits={draftEdits}
               onDraftEdit={setDraftEdits}
               qualityByMessage={qualityByMessage}
+              handoffStatus={handoffStatus}
               privacyMode={privacyMode}
               isSensitiveVisible={isSensitiveVisible}
               onRevealSensitive={revealSensitive}
               onHideSensitive={hideSensitive}
+              onCopyDraft={copyDraftForHandoff}
+              onOpenProfile={openProfileForHandoff}
               action={(message) => (
                 <div className="space-y-2">
                   <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
@@ -1793,10 +1834,13 @@ function ReviewColumn({
   draftEdits,
   onDraftEdit,
   qualityByMessage,
+  handoffStatus,
   privacyMode,
   isSensitiveVisible,
   onRevealSensitive,
   onHideSensitive,
+  onCopyDraft,
+  onOpenProfile,
   action,
 }: {
   title: string;
@@ -1805,10 +1849,13 @@ function ReviewColumn({
   draftEdits: Record<string, Pick<MessageDraft, "subject" | "body">>;
   onDraftEdit: React.Dispatch<React.SetStateAction<Record<string, Pick<MessageDraft, "subject" | "body">>>>;
   qualityByMessage: Map<string, CampaignDetails["qualityReviews"][number]>;
+  handoffStatus: Record<string, string>;
   privacyMode: boolean;
   isSensitiveVisible: (key: string) => boolean;
   onRevealSensitive: (key: string) => void;
   onHideSensitive: (key: string) => void;
+  onCopyDraft: (message: CampaignDetails["messages"][number]) => void;
+  onOpenProfile: (messageId: string, profileUrl: string | null | undefined) => void;
   action: (message: CampaignDetails["messages"][number]) => React.ReactNode;
 }) {
   return (
@@ -1820,6 +1867,8 @@ function ReviewColumn({
         {messages.map((message) => {
           const mentor = details?.mentors.find((item) => item.id === message.mentorProfileId);
           const quality = qualityByMessage.get(message.id);
+          const draftBodyKey = `draft-body:${message.id}`;
+          const draftBodyVisible = isSensitiveVisible(draftBodyKey);
           return (
             <div key={message.id} className="rounded-md border p-4">
               <div className="mb-3 flex items-start justify-between gap-3">
@@ -1845,13 +1894,13 @@ function ReviewColumn({
                 }
                 className="rounded-md"
               />
-              {privacyMode && !isSensitiveVisible(`draft-body:${message.id}`) ? (
+              {privacyMode && !draftBodyVisible ? (
                 <SensitiveText
                   className="mt-3"
                   privacyMode={privacyMode}
                   visible={false}
-                  onReveal={() => onRevealSensitive(`draft-body:${message.id}`)}
-                  onHide={() => onHideSensitive(`draft-body:${message.id}`)}
+                  onReveal={() => onRevealSensitive(draftBodyKey)}
+                  onHide={() => onHideSensitive(draftBodyKey)}
                   placeholder="Draft body hidden"
                 >
                   {null}
@@ -1872,13 +1921,49 @@ function ReviewColumn({
                     className="min-h-48 rounded-md text-sm leading-6"
                   />
                   {privacyMode ? (
-                    <Button type="button" size="sm" variant="outline" className="mt-2 h-8 rounded-md" onClick={() => onHideSensitive(`draft-body:${message.id}`)}>
+                    <Button type="button" size="sm" variant="outline" className="mt-2 h-8 rounded-md" onClick={() => onHideSensitive(draftBodyKey)}>
                       <EyeOff className="h-4 w-4" />
                       Hide draft body
                     </Button>
                   ) : null}
                 </div>
               )}
+              <div className="mt-3 rounded-md border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">Manual profile handoff</div>
+                    <div className="text-xs leading-5 text-muted-foreground">
+                      Open the source profile and copy the reviewed draft. MARO does not send the message.
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-md"
+                      onClick={() => onOpenProfile(message.id, mentor?.profileUrl)}
+                      disabled={!mentor?.profileUrl}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Open profile
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-md"
+                      onClick={() => onCopyDraft(message)}
+                      disabled={!draftBodyVisible}
+                    >
+                      <Copy className="h-4 w-4" />
+                      Copy draft
+                    </Button>
+                  </div>
+                </div>
+                {privacyMode && !draftBodyVisible ? (
+                  <div className="mt-2 text-xs text-muted-foreground">Reveal the draft body before copying it for manual handoff.</div>
+                ) : null}
+                {handoffStatus[message.id] ? <div className="mt-2 text-xs text-muted-foreground">{handoffStatus[message.id]}</div> : null}
+              </div>
               <div className="mt-4">{action(message)}</div>
             </div>
           );
