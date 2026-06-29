@@ -185,6 +185,7 @@ Status: Implemented as a local release gate. `npm run check:release` now runs th
 
 Done:
 - Persisted local invoice/usage-report records generated from stored billing records. Invoice reports are audit logged, included in workspace backup/restore/reset summaries, and explicitly documented as local records rather than external charges.
+- Removed Google Fonts requests and switched to local system font stacks so private/offline installs do not contact external font hosts during normal rendering.
 
 Do next:
 - Virtualize mentor and queue tables only after real lists exceed a few hundred rows. The current UI does not need virtualization yet.
@@ -207,7 +208,7 @@ Done:
 - Added manual profile handoff controls that copy revealed drafts without introducing automated external sending.
 
 Do next:
-- Self-host fonts if offline/private installs become a requirement.
+- Keep CSP self-only for production assets unless a future integration has an explicit privacy review and documented need.
 
 Avoid for now:
 - Automated sending to MicroMentor. It creates account, consent, rate-limit, and platform-policy risk. Keep final send manual until rules and safeguards are explicit.

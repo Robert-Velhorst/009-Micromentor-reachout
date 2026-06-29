@@ -30,12 +30,13 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Installer dependency and removal risk: the Windows installer embeds the Node runtime and built app, so the end user does not need a separate Node/npm install; it also writes installed-version metadata and registers a current-user uninstall entry.
 - Static type drift: fixed legacy `Map`, `calendar`, and `usePersistFn` type errors; `npm run check` now passes.
 - Release regression risk: added `npm run check:release` to run TypeScript checks, the production encrypted-ledger API smoke test, and the Windows installer build on Windows hosts.
+- External font privacy: removed Google Fonts preconnect/stylesheet requests and tightened CSP font/style directives back to self-only sources plus inline styles required by the bundled UI.
 
 ## Resource Analysis
 
 - Initial production JS observed earlier in the work: about 303.66 KB minified, 95.20 KB gzip.
-- Current production JS after the operating-ledger, privacy, handoff, CSV-mapping, campaign-history export, results-view, and installer-version slices: 276.41 KB minified, 80.73 KB gzip.
-- Current production CSS: 107.92 KB minified, 17.24 KB gzip.
+- Current production JS after the operating-ledger, privacy, handoff, CSV-mapping, campaign-history export, results-view, installer-version, and release-gate slices: 276.41 KB minified, 80.73 KB gzip.
+- Current production CSS after removing external webfont references: 108.11 KB minified, 17.27 KB gzip.
 - Final served public payload directory: about 338 KB, down from tens of MB because unused legacy public images/zips are no longer copied into production builds.
 - Final installer: 33.0 MB, dominated by the embedded Node runtime.
 - Runtime optimizations applied: removed unused app providers, deferred mentor search input, debounced localStorage writes, cleaned stale production public assets, and bundled only the current server/runtime payload.
@@ -54,7 +55,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - ngrok still creates a public URL when available; use `NGROK_BASIC_AUTH` for shared or sensitive drafts.
 - The installer is not Authenticode-signed and update checks are not implemented. Windows may show an unknown-publisher warning until a code-signing certificate and release channel are used.
 - Mentor/contact data is encrypted at rest only when `MARO_LEDGER_PASSPHRASE` is configured. Workspace backups are portable JSON exports and should still be treated as sensitive files.
-- Google Fonts remain external; privacy-sensitive/offline installs could self-host fonts later.
+- The app now uses local system font stacks; no external webfont request is needed for normal rendering.
 
 ## Feature Improvements Worth Doing Next
 
