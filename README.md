@@ -5,6 +5,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 ## What It Does
 
 - Manage outreach projects and campaigns.
+- Store campaign-level message tone and follow-up timing rules.
 - Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
 - Require approval before a message can be manually confirmed as sent.
 - Review draft quality before approval, including unresolved template tokens, personalization coverage, length, reading time, and call-to-action checks.
@@ -78,7 +79,7 @@ Invoice reports are persisted local ledger snapshots generated from stored billi
 
 Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates the required ledger arrays, including message quality reviews and invoice records, before replacing local data. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
 
-Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation.
+Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation. Automatic follow-up suggestions use each campaign's stored follow-up timing rule.
 
 ## Requirements
 

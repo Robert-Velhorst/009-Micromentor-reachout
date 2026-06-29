@@ -9,6 +9,11 @@ export type Campaign = {
   targetMentorType: string;
   status: CampaignStatus;
   source: string;
+  criteriaJson: {
+    tone?: string;
+    followUpAfterDays?: number;
+    requiredApproval?: boolean;
+  };
   totalMentors: number;
   messagesDrafted: number;
   messagesApproved: number;
@@ -413,12 +418,13 @@ export const ledgerApi = {
     goal: string;
     targetMentorType: string;
     source: string;
+    criteriaJson?: Campaign["criteriaJson"];
   }) =>
     request<{ campaign: Campaign }>("/api/campaigns", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  updateCampaign: (campaignId: string, payload: Partial<Pick<Campaign, "title" | "goal" | "targetMentorType" | "source" | "status">>) =>
+  updateCampaign: (campaignId: string, payload: Partial<Pick<Campaign, "title" | "goal" | "targetMentorType" | "source" | "status" | "criteriaJson">>) =>
     request<{ campaign: Campaign }>(`/api/campaigns/${campaignId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),

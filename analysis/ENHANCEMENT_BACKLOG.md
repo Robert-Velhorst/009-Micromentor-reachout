@@ -29,6 +29,7 @@ Acceptance:
 Why first: this turns MARO from a draft generator into a repeatable outreach workflow.
 
 Status: Implemented in the operating-ledger branch with persisted campaigns, mentor stages, message statuses, responses, follow-ups, outcomes, deterministic next-action recommendations, campaign-history export, and a results view for response rate, booking rate, positive outcome rate, overdue follow-ups, outcome filters, and inline outcome updates.
+Follow-up scheduling now uses a persisted campaign-level timing rule instead of a hard-coded default.
 
 ### P0 - Robust CSV Import, Export, And Deduplication
 
@@ -180,6 +181,7 @@ Acceptance:
 Why later: valuable once the next feature slice introduces more state transitions.
 
 Status: Implemented as a local release gate. `npm run check:release` now runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, production surface checks for CSP/security headers and external asset regressions, and the Windows installer build on Windows hosts. The smoke test covers root route serving, restrictive CSP, browser hardening headers, no external production asset URLs in the app shell, CSV parsing/import/export, mapped headers, duplicate skips, template quality blocking, approval-before-send enforcement, follow-up state transitions, response/outcome tracking, billing records, invoice report generation, backup/restore/reset validation, encryption-at-rest, and next-action coverage including invoice-report recommendations.
+It also verifies that campaign-level follow-up timing persists and controls the automatic follow-up generated after manual send confirmation.
 
 ## Resource Usage Enhancements
 

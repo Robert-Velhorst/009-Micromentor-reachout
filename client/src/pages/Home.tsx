@@ -53,6 +53,8 @@ type CampaignForm = {
   goal: string;
   targetMentorType: string;
   source: string;
+  tone: string;
+  followUpAfterDays: string;
 };
 
 type MentorForm = {
@@ -104,6 +106,8 @@ const defaultCampaignForm: CampaignForm = {
   goal: "",
   targetMentorType: "Startup, operations, product, growth, or automation mentor",
   source: "MicroMentor/manual",
+  tone: "respectful, concise, practical",
+  followUpAfterDays: "7",
 };
 
 const defaultMentorForm: MentorForm = {
@@ -229,6 +233,15 @@ function compactColumnMap(columnMap: Record<CsvColumnKey, string>): MentorCsvCol
     if (value) result[field.key] = value;
     return result;
   }, {} as MentorCsvColumnMap);
+}
+
+function campaignFollowUpDays(campaign: Campaign | null) {
+  const value = Number(campaign?.criteriaJson?.followUpAfterDays);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : 7;
+}
+
+function campaignTone(campaign: Campaign | null) {
+  return campaign?.criteriaJson?.tone || "respectful, concise, practical";
 }
 
 function downloadText(filename: string, text: string, type = "text/plain;charset=utf-8") {
@@ -375,13 +388,27 @@ export default function Home() {
     }
   };
 
-  const createCampaign = () =>
-    mutate(async () => {
-      const result = await ledgerApi.createCampaign(campaignForm);
+  const createCampaign = async () => {
+    setError("");
+    try {
+      const result = await ledgerApi.createCampaign({
+        title: campaignForm.title,
+        goal: campaignForm.goal,
+        targetMentorType: campaignForm.targetMentorType,
+        source: campaignForm.source,
+        criteriaJson: {
+          tone: campaignForm.tone,
+          followUpAfterDays: Number(campaignForm.followUpAfterDays) || 7,
+          requiredApproval: true,
+        },
+      });
       setCampaignForm(defaultCampaignForm);
       setActiveCampaignId(result.campaign.id);
       await loadLedger(result.campaign.id);
-    });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create campaign");
+    }
+  };
 
   const addMentor = () =>
     mutate(async () => {
@@ -765,6 +792,12 @@ export default function Home() {
                 <div className="rounded-md border p-4">
                   <div className="text-sm font-medium">{campaign?.title || "No campaign selected"}</div>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">{campaign?.goal || "Create a campaign to start the ledger."}</p>
+                  {campaign ? (
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                      <MiniStat label="Follow-up rule" value={`${campaignFollowUpDays(campaign)} days`} />
+                      <MiniStat label="Tone" value={campaignTone(campaign)} />
+                    </div>
+                  ) : null}
                 </div>
                 {campaign ? (
                   <select
@@ -872,6 +905,16 @@ export default function Home() {
                 <Textarea value={campaignForm.goal} onChange={(event) => setCampaignForm((current) => ({ ...current, goal: event.target.value }))} placeholder="Outreach goal" className="min-h-24 rounded-md" />
                 <Input value={campaignForm.targetMentorType} onChange={(event) => setCampaignForm((current) => ({ ...current, targetMentorType: event.target.value }))} placeholder="Target mentor type" className="rounded-md" />
                 <Input value={campaignForm.source} onChange={(event) => setCampaignForm((current) => ({ ...current, source: event.target.value }))} placeholder="Source" className="rounded-md" />
+                <Input value={campaignForm.tone} onChange={(event) => setCampaignForm((current) => ({ ...current, tone: event.target.value }))} placeholder="Message tone" className="rounded-md" />
+                <Input
+                  type="number"
+                  min="1"
+                  max="90"
+                  value={campaignForm.followUpAfterDays}
+                  onChange={(event) => setCampaignForm((current) => ({ ...current, followUpAfterDays: event.target.value }))}
+                  placeholder="Follow-up after days"
+                  className="rounded-md"
+                />
                 <Button className="w-full rounded-md" onClick={() => void createCampaign()} disabled={!campaignForm.title.trim() || !campaignForm.goal.trim()}>
                   <Plus className="h-4 w-4" />
                   Create campaign
@@ -1972,9 +2015,9 @@ function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: stri
 
 function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="rounded-md border p-3">
+    <div className="min-w-0 rounded-md border p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 font-mono text-lg">{value}</div>
+      <div className="mt-1 break-words font-mono text-lg">{value}</div>
     </div>
   );
 }

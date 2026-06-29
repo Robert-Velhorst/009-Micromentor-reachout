@@ -140,15 +140,23 @@ try {
       goal: "Find a practical automation mentor for a local-first outreach workflow.",
       targetMentorType: "Automation and startup operations mentor",
       source: "smoke-test",
+      criteriaJson: {
+        tone: "direct, practical, respectful",
+        followUpAfterDays: 3,
+        requiredApproval: true,
+      },
     }),
   });
   const campaignId = campaignResult.campaign.id;
+  assert(campaignResult.campaign.criteriaJson.followUpAfterDays === 3, "Campaign follow-up rule did not persist on create");
+  assert(campaignResult.campaign.criteriaJson.tone === "direct, practical, respectful", "Campaign tone did not persist on create");
 
   const updatedCampaign = await api(`/api/campaigns/${campaignId}`, {
     method: "PATCH",
     body: JSON.stringify({ status: "paused" }),
   });
   assert(updatedCampaign.campaign.status === "paused", "Campaign update did not persist");
+  assert(updatedCampaign.campaign.criteriaJson.followUpAfterDays === 3, "Campaign follow-up rule was lost on update");
 
   const mentorResult = await api(`/api/campaigns/${campaignId}/mentors`, {
     method: "POST",
@@ -275,6 +283,11 @@ try {
 
   const followUpsAfterSend = await api(`/api/campaigns/${campaignId}/follow-ups`);
   assert(followUpsAfterSend.followUps.length === 1, "Automatic follow-up was not scheduled after send confirmation");
+  const scheduledFollowUpDelayDays = Math.round(
+    (new Date(followUpsAfterSend.followUps[0].dueAt).getTime() - new Date(followUpsAfterSend.followUps[0].createdAt).getTime()) /
+      86400000
+  );
+  assert(scheduledFollowUpDelayDays === 3, "Automatic follow-up did not use the campaign follow-up rule");
   await api(`/api/follow-ups/${followUpsAfterSend.followUps[0].id}/complete`, { method: "POST" });
 
   const manualFollowUp = await api("/api/follow-ups", {
@@ -341,6 +354,7 @@ try {
   assert(invoiceResult.usageReport.invoiceRecords.length === 1, "Generated usage report did not include the invoice snapshot");
 
   const details = await api(`/api/campaigns/${campaignId}`);
+  assert(details.campaign.criteriaJson.followUpAfterDays === 3, "Campaign details did not include follow-up rule");
   assert(details.campaign.totalMentors === 3, "Campaign mentor count was not persisted");
   assert(details.campaign.messagesDrafted === 1, "Draft count was not persisted");
   assert(details.campaign.messagesSent === 1, "Sent count was not persisted");

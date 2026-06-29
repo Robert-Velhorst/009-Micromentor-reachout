@@ -63,6 +63,12 @@ type OutreachCampaign = {
   updatedAt: string;
 };
 
+type CampaignCriteria = {
+  tone: string;
+  followUpAfterDays: number;
+  requiredApproval: boolean;
+};
+
 type MentorIdentity = {
   id: string;
   normalizedName: string;
@@ -507,6 +513,25 @@ function normalize(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function parsePositiveInteger(value: unknown, fallback: number, min = 1, max = 90) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(parsed)));
+}
+
+function campaignCriteria(input: unknown): CampaignCriteria {
+  const source = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  return {
+    tone: String(source.tone || "respectful, concise, practical").trim() || "respectful, concise, practical",
+    followUpAfterDays: parsePositiveInteger(source.followUpAfterDays, 7),
+    requiredApproval: source.requiredApproval === false ? false : true,
+  };
+}
+
+function campaignFollowUpAfterDays(campaign: OutreachCampaign) {
+  return campaignCriteria(campaign.criteriaJson).followUpAfterDays;
+}
+
 const mentorStages: MentorStage[] = ["new", "matched", "drafted", "approved", "contacted", "responded", "follow_up", "closed"];
 
 function parseMentorStage(value: unknown) {
@@ -677,11 +702,7 @@ function createSeedState(): LedgerState {
     targetMentorType: "Startup, growth, operations, product, and automation mentors",
     status: "active",
     source: "MicroMentor/manual",
-    criteriaJson: {
-      tone: "respectful, concise, practical",
-      followUpAfterDays: 7,
-      requiredApproval: true,
-    },
+    criteriaJson: campaignCriteria({}),
     totalMentors: 0,
     messagesDrafted: 0,
     messagesApproved: 0,
@@ -733,7 +754,10 @@ function normalizeState(state: Partial<LedgerState>): LedgerState {
     schemaVersion: 1,
     operators: state.operators || [],
     projects: state.projects || [],
-    campaigns: state.campaigns || [],
+    campaigns: (state.campaigns || []).map((campaign) => ({
+      ...campaign,
+      criteriaJson: campaignCriteria(campaign.criteriaJson),
+    })),
     mentorIdentities: state.mentorIdentities || [],
     mentorProfiles: state.mentorProfiles || [],
     matchAssessments: state.matchAssessments || [],
@@ -1774,7 +1798,7 @@ export function registerLedgerRoutes(app: Express) {
       targetMentorType: String(req.body?.targetMentorType || "Relevant mentor or advisor"),
       status: "active",
       source: String(req.body?.source || "manual"),
-      criteriaJson: req.body?.criteriaJson && typeof req.body.criteriaJson === "object" ? req.body.criteriaJson : {},
+      criteriaJson: campaignCriteria(req.body?.criteriaJson),
       totalMentors: 0,
       messagesDrafted: 0,
       messagesApproved: 0,
@@ -1803,7 +1827,7 @@ export function registerLedgerRoutes(app: Express) {
       campaign.status = String(req.body.status) as CampaignStatus;
     }
     if (req.body?.criteriaJson && typeof req.body.criteriaJson === "object") {
-      campaign.criteriaJson = req.body.criteriaJson as Record<string, unknown>;
+      campaign.criteriaJson = campaignCriteria(req.body.criteriaJson);
     }
     campaign.updatedAt = now();
     recalcCampaign(state, campaign.id);
@@ -2123,6 +2147,8 @@ export function registerLedgerRoutes(app: Express) {
     if (draft.status !== "approved") {
       return jsonError(res, 409, "Message must be approved before manual send confirmation");
     }
+    const campaign = requireCampaign(state, draft.campaignId);
+    if (!campaign) return jsonError(res, 404, "Campaign not found");
     const createdAt = now();
     const evidence = String(req.body?.deliveryEvidence || "").trim();
     if (!evidence) return jsonError(res, 400, "Manual delivery evidence is required");
@@ -2153,7 +2179,7 @@ export function registerLedgerRoutes(app: Express) {
       campaignId: draft.campaignId,
       mentorProfileId: draft.mentorProfileId,
       messageDraftId: draft.id,
-      dueAt: addDays(new Date(createdAt), Number(req.body?.followUpAfterDays || 7)),
+      dueAt: addDays(new Date(createdAt), parsePositiveInteger(req.body?.followUpAfterDays, campaignFollowUpAfterDays(campaign))),
       status: "scheduled",
       suggestedMessage: `Hi ${mentor ? firstName(mentor.name) : "there"},\n\nI wanted to follow up on my earlier MicroMentor note in case it got buried.\n\nWould a short exchange still be useful?`,
       createdAt,
@@ -2263,7 +2289,7 @@ export function registerLedgerRoutes(app: Express) {
       campaignId,
       mentorProfileId,
       messageDraftId: req.body?.messageDraftId ? String(req.body.messageDraftId) : null,
-      dueAt: req.body?.dueAt ? new Date(String(req.body.dueAt)).toISOString() : addDays(new Date(), 7),
+      dueAt: req.body?.dueAt ? new Date(String(req.body.dueAt)).toISOString() : addDays(new Date(), campaignFollowUpAfterDays(requireCampaign(state, campaignId)!)),
       status: "scheduled",
       suggestedMessage: String(req.body?.suggestedMessage || "Short respectful follow-up."),
       createdAt,
