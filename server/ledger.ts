@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 type CampaignStatus = "active" | "paused" | "completed" | "archived";
 type MentorStage = "new" | "matched" | "drafted" | "approved" | "contacted" | "responded" | "follow_up" | "closed";
 type DraftStatus = "draft" | "approved" | "rejected" | "sent";
+type MessageQualityStatus = "pass" | "warning" | "blocked";
 type ApprovalDecision = "approved" | "rejected";
 type SendStatus = "confirmed_sent" | "failed";
 type ResponseClassification = "interested" | "not_interested" | "more_info" | "unavailable" | "unknown";
@@ -99,6 +100,25 @@ type MessageDraft = {
   language: string;
   status: DraftStatus;
   generatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type MessageQualityReview = {
+  id: string;
+  messageDraftId: string;
+  campaignId: string;
+  mentorProfileId: string;
+  status: MessageQualityStatus;
+  warningsJson: string[];
+  metricsJson: {
+    subjectLength: number;
+    bodyLength: number;
+    readingTimeSeconds: number;
+    personalizationScore: number;
+    unresolvedTokenCount: number;
+    callToActionCount: number;
+  };
   createdAt: string;
   updatedAt: string;
 };
@@ -229,6 +249,7 @@ type LedgerState = {
   mentorProfiles: MentorProfile[];
   matchAssessments: MatchAssessment[];
   messageDrafts: MessageDraft[];
+  messageQualityReviews: MessageQualityReview[];
   messageApprovals: MessageApproval[];
   messageSendAttempts: MessageSendAttempt[];
   mentorResponses: MentorResponse[];
@@ -419,6 +440,7 @@ function createSeedState(): LedgerState {
     mentorProfiles: [],
     matchAssessments: [],
     messageDrafts: [],
+    messageQualityReviews: [],
     messageApprovals: [],
     messageSendAttempts: [],
     mentorResponses: [],
@@ -454,6 +476,7 @@ function normalizeState(state: Partial<LedgerState>): LedgerState {
     mentorProfiles: state.mentorProfiles || [],
     matchAssessments: state.matchAssessments || [],
     messageDrafts: state.messageDrafts || [],
+    messageQualityReviews: state.messageQualityReviews || [],
     messageApprovals: state.messageApprovals || [],
     messageSendAttempts: state.messageSendAttempts || [],
     mentorResponses: state.mentorResponses || [],
@@ -507,6 +530,7 @@ function workspaceSummary(state: LedgerState) {
     identities: state.mentorIdentities.length,
     assessments: state.matchAssessments.length,
     drafts: state.messageDrafts.length,
+    qualityReviews: state.messageQualityReviews.length,
     approvals: state.messageApprovals.length,
     sendAttempts: state.messageSendAttempts.length,
     responses: state.mentorResponses.length,
@@ -577,6 +601,7 @@ function resetWorkspaceScope(state: LedgerState, scope: WorkspaceResetScope) {
 
   const before = workspaceSummary(state);
   state.messageDrafts = [];
+  state.messageQualityReviews = [];
   state.messageApprovals = [];
   state.messageSendAttempts = [];
   state.mentorResponses = [];
@@ -677,6 +702,7 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
     mentors,
     assessments: state.matchAssessments.filter((item) => item.campaignId === campaignId),
     messages,
+    qualityReviews: state.messageQualityReviews.filter((item) => messageIds.has(item.messageDraftId)),
     approvals: state.messageApprovals.filter((item) => messageIds.has(item.messageDraftId)),
     sendAttempts: state.messageSendAttempts.filter((item) => item.campaignId === campaignId),
     responses,
@@ -713,6 +739,98 @@ function scoreMentor(campaign: OutreachCampaign, mentor: Pick<MentorProfile, "he
       : ["Profile was imported for manual review; not enough structured evidence for a strong automated match."],
     risksJson: score < 60 ? ["Low keyword overlap; review relevance before drafting outreach."] : [],
   };
+}
+
+function countMatches(text: string, patterns: RegExp[]) {
+  return patterns.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0);
+}
+
+function reviewMessageQuality(campaign: OutreachCampaign, mentor: MentorProfile | undefined, draft: MessageDraft) {
+  const subject = draft.subject.trim();
+  const body = draft.body.trim();
+  const combined = `${subject}\n${body}`;
+  const lowerCombined = combined.toLowerCase();
+  const unresolvedTokens = Array.from(combined.matchAll(/\{([^}]+)\}/g)).map((match) => match[1]?.trim()).filter(Boolean);
+  const bodyWords = body.split(/\s+/).filter(Boolean).length;
+  const callToActionCount = countMatches(lowerCombined, [
+    /\?/,
+    /\bwould you\b/,
+    /\bcould we\b/,
+    /\bopen to\b/,
+    /\bshort (call|exchange|chat)\b/,
+    /\bpractical exchange\b/,
+  ]);
+
+  const mentorName = mentor?.name.toLowerCase() || "";
+  const first = mentor ? firstName(mentor.name).toLowerCase() : "";
+  const mentorSignals = [mentorName, first, ...(mentor?.skills || []).map((skill) => skill.toLowerCase())]
+    .filter((signal) => signal.length > 3);
+  const campaignKeywords = campaign.goal.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 5).slice(0, 8);
+  const personalizationHits =
+    mentorSignals.filter((signal) => lowerCombined.includes(signal)).length +
+    campaignKeywords.filter((word) => lowerCombined.includes(word)).length;
+  const personalizationScore = Math.min(100, personalizationHits * 20);
+
+  const warnings: string[] = [];
+  if (!subject) warnings.push("Subject is empty.");
+  if (subject.length > 90) warnings.push("Subject is long; keep it under 90 characters.");
+  if (bodyWords < 45) warnings.push("Message body is short; add enough context to feel personal.");
+  if (bodyWords > 220) warnings.push("Message body is long; trim it before asking for time.");
+  if (personalizationScore < 40) warnings.push("Low personalization coverage; reference the mentor or campaign more clearly.");
+  if (callToActionCount === 0) warnings.push("No clear question or call to action detected.");
+  if (unresolvedTokens.length > 0) {
+    warnings.push(`Unresolved template token(s): ${Array.from(new Set(unresolvedTokens)).join(", ")}.`);
+  }
+
+  const sentences = body.split(/[.!?]\s+/).map((sentence) => sentence.trim().toLowerCase()).filter((sentence) => sentence.length > 20);
+  const repeatedSentence = sentences.find((sentence, index) => sentences.indexOf(sentence) !== index);
+  if (repeatedSentence) warnings.push("Repeated sentence detected; review for accidental duplication.");
+
+  const status: MessageQualityStatus = unresolvedTokens.length > 0 || !subject || !body
+    ? "blocked"
+    : warnings.length
+      ? "warning"
+      : "pass";
+
+  return {
+    status,
+    warningsJson: warnings,
+    metricsJson: {
+      subjectLength: subject.length,
+      bodyLength: body.length,
+      readingTimeSeconds: Math.max(10, Math.round((bodyWords / 180) * 60)),
+      personalizationScore,
+      unresolvedTokenCount: unresolvedTokens.length,
+      callToActionCount,
+    },
+  };
+}
+
+function upsertMessageQualityReview(state: LedgerState, draft: MessageDraft) {
+  const campaign = state.campaigns.find((item) => item.id === draft.campaignId);
+  if (!campaign) return null;
+  const mentor = state.mentorProfiles.find((item) => item.id === draft.mentorProfileId);
+  const reviewedAt = now();
+  const reviewInput = reviewMessageQuality(campaign, mentor, draft);
+  const existing = state.messageQualityReviews.find((item) => item.messageDraftId === draft.id);
+  if (existing) {
+    existing.status = reviewInput.status;
+    existing.warningsJson = reviewInput.warningsJson;
+    existing.metricsJson = reviewInput.metricsJson;
+    existing.updatedAt = reviewedAt;
+    return existing;
+  }
+  const review: MessageQualityReview = {
+    id: randomUUID(),
+    messageDraftId: draft.id,
+    campaignId: draft.campaignId,
+    mentorProfileId: draft.mentorProfileId,
+    ...reviewInput,
+    createdAt: reviewedAt,
+    updatedAt: reviewedAt,
+  };
+  state.messageQualityReviews.unshift(review);
+  return review;
 }
 
 function calculateResourceCosts(startSnapshot: ResourceSnapshot, endSnapshot: ResourceSnapshot) {
@@ -890,9 +1008,10 @@ function createMessageDraftRecord(state: LedgerState, campaign: OutreachCampaign
   mentor.stage = "drafted";
   mentor.updatedAt = createdAt;
   state.messageDrafts.unshift(draft);
+  const qualityReview = upsertMessageQualityReview(state, draft);
   recalcCampaign(state, campaign.id);
-  audit(state, "created_message_draft", "messageDraft", draft.id, draft);
-  return { draft };
+  audit(state, "created_message_draft", "messageDraft", draft.id, { draft, qualityReview });
+  return { draft, qualityReview };
 }
 
 export function registerLedgerRoutes(app: Express) {
@@ -1285,14 +1404,19 @@ export function registerLedgerRoutes(app: Express) {
     draft.subject = String(req.body?.subject ?? draft.subject);
     draft.body = String(req.body?.body ?? draft.body);
     draft.updatedAt = now();
-    audit(state, "edited_message_draft", "messageDraft", draft.id, draft, { beforeState: before, riskLevel: "medium" });
-    return { draft };
+    const qualityReview = upsertMessageQualityReview(state, draft);
+    audit(state, "edited_message_draft", "messageDraft", draft.id, { draft, qualityReview }, { beforeState: before, riskLevel: "medium" });
+    return { draft, qualityReview };
   }));
 
   app.post("/api/messages/:id/approve", route((req, res, state) => {
     const draft = requireMessage(state, routeId(req));
     if (!draft) return jsonError(res, 404, "Message draft not found");
     if (draft.status === "sent") return jsonError(res, 409, "Sent messages cannot be re-approved");
+    const qualityReview = upsertMessageQualityReview(state, draft);
+    if (qualityReview?.status === "blocked") {
+      return jsonError(res, 409, `Message quality blocked approval: ${qualityReview.warningsJson.join(" ")}`);
+    }
     const decidedAt = now();
     draft.status = "approved";
     draft.updatedAt = decidedAt;
@@ -1313,8 +1437,8 @@ export function registerLedgerRoutes(app: Express) {
       mentor.updatedAt = decidedAt;
     }
     recalcCampaign(state, draft.campaignId);
-    audit(state, "approved_message", "messageDraft", draft.id, { approval, draft }, { riskLevel: "medium", approvalId: approval.id });
-    return { draft, approval };
+    audit(state, "approved_message", "messageDraft", draft.id, { approval, draft, qualityReview }, { riskLevel: "medium", approvalId: approval.id });
+    return { draft, approval, qualityReview };
   }));
 
   app.post("/api/messages/:id/reject", route((req, res, state) => {

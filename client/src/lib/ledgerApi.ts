@@ -51,6 +51,25 @@ export type MessageDraft = {
   updatedAt: string;
 };
 
+export type MessageQualityReview = {
+  id: string;
+  messageDraftId: string;
+  campaignId: string;
+  mentorProfileId: string;
+  status: "pass" | "warning" | "blocked";
+  warningsJson: string[];
+  metricsJson: {
+    subjectLength: number;
+    bodyLength: number;
+    readingTimeSeconds: number;
+    personalizationScore: number;
+    unresolvedTokenCount: number;
+    callToActionCount: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type MessageApproval = {
   id: string;
   messageDraftId: string;
@@ -183,6 +202,7 @@ export type WorkspaceSummary = {
   identities: number;
   assessments: number;
   drafts: number;
+  qualityReviews: number;
   approvals: number;
   sendAttempts: number;
   responses: number;
@@ -206,6 +226,7 @@ export type CampaignDetails = {
   mentors: MentorProfile[];
   assessments: MatchAssessment[];
   messages: MessageDraft[];
+  qualityReviews: MessageQualityReview[];
   approvals: MessageApproval[];
   sendAttempts: MessageSendAttempt[];
   responses: MentorResponse[];

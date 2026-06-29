@@ -63,6 +63,8 @@ Acceptance:
 
 Why now: it improves quality without adding risk or heavy dependencies.
 
+Status: Implemented in the operating-ledger branch with persisted per-draft quality reviews, unresolved-token approval blocking, length/reading-time/personalization/call-to-action checks, review-queue UI warnings, and smoke-test coverage.
+
 ### P1 - Ngrok Status And Exposure Controls
 
 Problem: the default runtime can expose the app through ngrok, but the UI does not show whether the app is local-only, tunneled, or protected by basic auth.

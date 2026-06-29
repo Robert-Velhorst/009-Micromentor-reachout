@@ -149,15 +149,34 @@ try {
     body: JSON.stringify({ mentorProfileId: mentorId }),
   });
   const messageId = draftResult.draft.id;
+  assert(draftResult.qualityReview.messageDraftId === messageId, "Draft creation did not return a quality review");
+
+  const blockedDraft = await api(`/api/messages/${messageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      subject: "Question for {UnknownToken}",
+      body: "Hi {UnknownToken}, this draft still has a broken template variable.",
+    }),
+  });
+  assert(blockedDraft.qualityReview.status === "blocked", "Broken template token did not block message quality");
+  await expectFailure(
+    `/api/messages/${messageId}/approve`,
+    {
+      method: "POST",
+      body: JSON.stringify({ decisionReason: "Should not approve broken token" }),
+    },
+    409
+  );
 
   const editedDraft = await api(`/api/messages/${messageId}`, {
     method: "PATCH",
     body: JSON.stringify({
       subject: "Edited smoke subject",
-      body: `${draftResult.draft.body}\n\nSmoke edit.`,
+      body: `${draftResult.draft.body}\n\nGrace, this keeps the request specific and asks for a short practical exchange.`,
     }),
   });
   assert(editedDraft.draft.subject === "Edited smoke subject", "Draft edit did not persist");
+  assert(editedDraft.qualityReview.status !== "blocked", "Repaired draft should not remain blocked");
 
   await expectFailure(
     `/api/messages/${messageId}/send-attempt`,

@@ -199,6 +199,10 @@ export default function Home() {
     () => groupBy(details?.approvals || [], (approval) => approval.messageDraftId),
     [details?.approvals]
   );
+  const qualityByMessage = useMemo(
+    () => new Map((details?.qualityReviews || []).map((review) => [review.messageDraftId, review])),
+    [details?.qualityReviews]
+  );
   const sendAttemptsByMentor = useMemo(
     () => groupBy(details?.sendAttempts || [], (attempt) => attempt.mentorProfileId),
     [details?.sendAttempts]
@@ -798,26 +802,30 @@ export default function Home() {
               details={details}
               draftEdits={draftEdits}
               onDraftEdit={setDraftEdits}
-              action={(message) => (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    className="rounded-md"
-                    onClick={() =>
-                      void mutate(() => ledgerApi.updateDraft(message.id, draftEdits[message.id] || { subject: message.subject, body: message.body }))
-                    }
-                  >
-                    Save edit
-                  </Button>
-                  <Button className="rounded-md" onClick={() => void mutate(() => ledgerApi.approveDraft(message.id, "Approved in command center"))}>
-                    <Check className="h-4 w-4" />
-                    Approve
-                  </Button>
-                  <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.rejectDraft(message.id, "Rejected in command center"))}>
-                    Reject
-                  </Button>
-                </div>
-              )}
+              qualityByMessage={qualityByMessage}
+              action={(message) => {
+                const quality = qualityByMessage.get(message.id);
+                return (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      className="rounded-md"
+                      onClick={() =>
+                        void mutate(() => ledgerApi.updateDraft(message.id, draftEdits[message.id] || { subject: message.subject, body: message.body }))
+                      }
+                    >
+                      Save edit
+                    </Button>
+                    <Button className="rounded-md" onClick={() => void mutate(() => ledgerApi.approveDraft(message.id, "Approved in command center"))} disabled={quality?.status === "blocked"}>
+                      <Check className="h-4 w-4" />
+                      Approve
+                    </Button>
+                    <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.rejectDraft(message.id, "Rejected in command center"))}>
+                      Reject
+                    </Button>
+                  </div>
+                );
+              }}
             />
             <ReviewColumn
               title="Approved, awaiting manual send confirmation"
@@ -825,6 +833,7 @@ export default function Home() {
               details={details}
               draftEdits={draftEdits}
               onDraftEdit={setDraftEdits}
+              qualityByMessage={qualityByMessage}
               action={(message) => (
                 <div className="space-y-2">
                   <Input
@@ -1459,12 +1468,46 @@ function RuntimeUrlRow({
   );
 }
 
+function MessageQualityBox({ quality }: { quality: CampaignDetails["qualityReviews"][number] }) {
+  const tone =
+    quality.status === "blocked"
+      ? "border-red-200 bg-red-50 text-red-700"
+      : quality.status === "warning"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return (
+    <div className="mb-3 rounded-md border bg-muted/20 p-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-medium">Message quality</div>
+        <Badge variant="outline" className={`rounded-md ${tone}`}>
+          {quality.status}
+        </Badge>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <MiniStat label="Personal" value={`${quality.metricsJson.personalizationScore}%`} />
+        <MiniStat label="Read sec" value={quality.metricsJson.readingTimeSeconds} />
+        <MiniStat label="Tokens" value={quality.metricsJson.unresolvedTokenCount} />
+      </div>
+      {quality.warningsJson.length ? (
+        <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
+          {quality.warningsJson.map((warning) => (
+            <div key={warning}>{warning}</div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-2 text-xs text-muted-foreground">No quality issues detected.</div>
+      )}
+    </div>
+  );
+}
+
 function ReviewColumn({
   title,
   messages,
   details,
   draftEdits,
   onDraftEdit,
+  qualityByMessage,
   action,
 }: {
   title: string;
@@ -1472,6 +1515,7 @@ function ReviewColumn({
   details: CampaignDetails | null;
   draftEdits: Record<string, Pick<MessageDraft, "subject" | "body">>;
   onDraftEdit: React.Dispatch<React.SetStateAction<Record<string, Pick<MessageDraft, "subject" | "body">>>>;
+  qualityByMessage: Map<string, CampaignDetails["qualityReviews"][number]>;
   action: (message: CampaignDetails["messages"][number]) => React.ReactNode;
 }) {
   return (
@@ -1482,6 +1526,7 @@ function ReviewColumn({
       <CardContent className="space-y-3 px-5">
         {messages.map((message) => {
           const mentor = details?.mentors.find((item) => item.id === message.mentorProfileId);
+          const quality = qualityByMessage.get(message.id);
           return (
             <div key={message.id} className="rounded-md border p-4">
               <div className="mb-3 flex items-start justify-between gap-3">
@@ -1493,6 +1538,7 @@ function ReviewColumn({
                   {message.status}
                 </Badge>
               </div>
+              {quality ? <MessageQualityBox quality={quality} /> : null}
               <Input
                 value={draftEdits[message.id]?.subject ?? message.subject}
                 onChange={(event) =>

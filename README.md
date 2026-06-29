@@ -7,6 +7,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Manage outreach projects and campaigns.
 - Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
 - Require approval before a message can be manually confirmed as sent.
+- Review draft quality before approval, including unresolved template tokens, personalization coverage, length, reading time, and call-to-action checks.
 - Record delivery evidence instead of faking external sends.
 - Track response classifications and follow-up suggestions.
 - Generate local process-measured resource-cost records using `Resource Cost x 2 = Final Price`.
