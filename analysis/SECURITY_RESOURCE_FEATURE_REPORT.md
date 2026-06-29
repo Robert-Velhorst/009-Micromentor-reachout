@@ -25,6 +25,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Dev log ingestion DoS risk: the Vite debug collector now caps request payloads at 256 KB before writing logs.
 - Ngrok access control: launcher supports optional `NGROK_BASIC_AUTH` so a tunnel can require basic auth.
 - Local ledger confidentiality: setting `MARO_LEDGER_PASSPHRASE` stores the ledger as an AES-256-GCM encrypted envelope instead of plaintext JSON.
+- Shoulder-surfing reduction: session privacy mode hides mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
 - Installer dependency risk: the Windows installer embeds the Node runtime and built app, so the end user does not need a separate Node/npm install.
 - Static type drift: fixed legacy `Map`, `calendar`, and `usePersistFn` type errors; `npm run check` now passes.
 
@@ -59,7 +60,6 @@ Detailed prioritization and acceptance criteria are in `analysis/ENHANCEMENT_BAC
 - CSV import/export with column mapping and duplicate detection.
 - Campaign history with outcomes: contacted, replied, booked, declined, follow-up due.
 - Template scoring and personalization checks before copying a message.
-- UI privacy mode that hides sensitive mentor notes and message bodies until revealed.
+- MicroMentor browser-extension handoff that keeps the final send action manual and reviewable.
 - Ngrok status panel showing tunnel URL, auth status, and copy button.
 - Signed installer and a simple update flow.
-- MicroMentor browser-extension handoff that keeps the final send action manual and reviewable.

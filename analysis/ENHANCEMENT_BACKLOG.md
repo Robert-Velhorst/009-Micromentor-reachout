@@ -115,13 +115,13 @@ Build:
 - Add clear messaging that forgotten passphrases cannot be recovered.
 
 Acceptance:
-- Stored mentors, messages, notes, and campaign history are encrypted when the mode is enabled.
-- The unlocked session behaves normally after passphrase entry.
+- Stored mentors, messages, notes, and campaign history are encrypted when `MARO_LEDGER_PASSPHRASE` is configured.
+- The command center can hide sensitive visible text until the operator reveals a specific item.
 - Existing unencrypted data can be migrated deliberately.
 
 Why now: useful before users put sensitive mentor notes into the tool.
 
-Status: Partially implemented. Server-side ledger encryption is available with `MARO_LEDGER_PASSPHRASE`; the local file is stored as an AES-256-GCM encrypted envelope and the full API smoke run verifies no plaintext mentor/campaign names are written to disk. UI privacy reveal mode remains open.
+Status: Implemented for the local-first operating ledger. Server-side ledger encryption is available with `MARO_LEDGER_PASSPHRASE`; the local file is stored as an AES-256-GCM encrypted envelope and the full API smoke run verifies no plaintext mentor/campaign names are written to disk. The command center now defaults to session privacy mode and hides mentor notes, draft bodies, responses, follow-ups, and send evidence until explicitly revealed.
 
 ### P2 - MicroMentor Profile Handoff
 
@@ -191,14 +191,14 @@ Avoid for now:
 
 ## Security Enhancements
 
-Do next:
-- Add UI privacy mode to hide message bodies and notes until revealed.
-- Self-host fonts if offline/private installs become a requirement.
-
 Done:
 - Added ngrok exposure status and unauthenticated tunnel warning.
 - Added JSON backup validation and schema versioning before restore.
 - Added optional passphrase-based encrypted local ledger storage for sensitive mentor, message, and campaign data.
+- Added UI privacy mode to hide sensitive command-center text until revealed.
+
+Do next:
+- Self-host fonts if offline/private installs become a requirement.
 
 Avoid for now:
 - Automated sending to MicroMentor. It creates account, consent, rate-limit, and platform-policy risk. Keep final send manual until rules and safeguards are explicit.

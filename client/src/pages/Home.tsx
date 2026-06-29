@@ -7,6 +7,8 @@ import {
   Copy,
   Euro,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileText,
   Gauge,
   Globe2,
@@ -158,6 +160,8 @@ export default function Home() {
   const [csvText, setCsvText] = useState(sampleCsv);
   const [csvImportResult, setCsvImportResult] = useState<MentorImportResult | null>(null);
   const [selectedMentorId, setSelectedMentorId] = useState("");
+  const [privacyMode, setPrivacyMode] = useState(true);
+  const [revealedSensitive, setRevealedSensitive] = useState<Set<string>>(() => new Set());
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
   const [runtimeCopyStatus, setRuntimeCopyStatus] = useState("");
@@ -354,6 +358,26 @@ export default function Home() {
   );
   const latestResourceSession = details?.resourceSessions[0] || null;
   const publicTunnelWithoutAuth = Boolean(runtimeStatus?.warnings.includes("ngrok_public_without_basic_auth"));
+
+  const isSensitiveVisible = (key: string) => !privacyMode || revealedSensitive.has(key);
+  const revealSensitive = (key: string) =>
+    setRevealedSensitive((current) => {
+      if (current.has(key)) return current;
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
+  const hideSensitive = (key: string) =>
+    setRevealedSensitive((current) => {
+      if (!current.has(key)) return current;
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  const togglePrivacyMode = () => {
+    if (!privacyMode) setRevealedSensitive(new Set());
+    setPrivacyMode((current) => !current);
+  };
   const copyRuntimeUrl = async (value: string | null | undefined) => {
     if (!value) return;
     try {
@@ -430,13 +454,17 @@ export default function Home() {
               <div className="text-xs text-muted-foreground">MicroMentor outreach operating ledger</div>
             </div>
           </div>
-          <div className="hidden items-center gap-2 md:flex">
-            <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 text-emerald-700">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="hidden rounded-md border-emerald-200 bg-emerald-50 text-emerald-700 md:inline-flex">
               Persisted local API
             </Badge>
-            <Button variant="outline" className="rounded-md" onClick={() => void loadLedger(activeCampaignId)}>
+            <Button variant={privacyMode ? "default" : "outline"} className="rounded-md" onClick={togglePrivacyMode} aria-label={privacyMode ? "Turn privacy mode off" : "Turn privacy mode on"}>
+              {privacyMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              <span className="hidden sm:inline">{privacyMode ? "Privacy on" : "Privacy off"}</span>
+            </Button>
+            <Button variant="outline" className="rounded-md" onClick={() => void loadLedger(activeCampaignId)} aria-label="Refresh ledger">
               <RefreshCcw className="h-4 w-4" />
-              Refresh
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
           </div>
         </div>
@@ -679,7 +707,7 @@ export default function Home() {
                             <div className="mt-2 text-xs text-muted-foreground">
                               {(assessment?.reasonsJson || []).slice(0, 2).join(" ")}
                             </div>
-                            <div className="mt-3 grid gap-2 md:grid-cols-[180px_1fr_auto]">
+                            <div className="mt-3 grid gap-2 md:grid-cols-[180px_1fr_auto_auto]">
                               <select
                                 value={mentorEdits[mentor.id]?.stage || mentor.stage}
                                 onChange={(event) =>
@@ -700,6 +728,7 @@ export default function Home() {
                                 ))}
                               </select>
                               <Input
+                                type={privacyMode && !isSensitiveVisible(`mentor-notes:${mentor.id}`) ? "password" : "text"}
                                 value={mentorEdits[mentor.id]?.notes ?? mentor.notes}
                                 onChange={(event) =>
                                   setMentorEdits((current) => ({
@@ -713,6 +742,17 @@ export default function Home() {
                                 placeholder="Mentor notes"
                                 className="h-9 rounded-md"
                               />
+                              <Button
+                                variant="outline"
+                                className="rounded-md"
+                                onClick={() =>
+                                  isSensitiveVisible(`mentor-notes:${mentor.id}`)
+                                    ? hideSensitive(`mentor-notes:${mentor.id}`)
+                                    : revealSensitive(`mentor-notes:${mentor.id}`)
+                                }
+                              >
+                                {isSensitiveVisible(`mentor-notes:${mentor.id}`) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </Button>
                               <Button variant="outline" className="rounded-md" onClick={() => void saveMentorEdit(mentor)}>
                                 Save
                               </Button>
@@ -762,6 +802,10 @@ export default function Home() {
                     )
                   : []
               }
+              privacyMode={privacyMode}
+              isSensitiveVisible={isSensitiveVisible}
+              onRevealSensitive={revealSensitive}
+              onHideSensitive={hideSensitive}
               onCreateDraft={(mentor) => void mutate(() => ledgerApi.createDraft(activeCampaignId, mentor.id))}
             />
 
@@ -832,6 +876,10 @@ export default function Home() {
               draftEdits={draftEdits}
               onDraftEdit={setDraftEdits}
               qualityByMessage={qualityByMessage}
+              privacyMode={privacyMode}
+              isSensitiveVisible={isSensitiveVisible}
+              onRevealSensitive={revealSensitive}
+              onHideSensitive={hideSensitive}
               action={(message) => {
                 const quality = qualityByMessage.get(message.id);
                 return (
@@ -863,14 +911,32 @@ export default function Home() {
               draftEdits={draftEdits}
               onDraftEdit={setDraftEdits}
               qualityByMessage={qualityByMessage}
+              privacyMode={privacyMode}
+              isSensitiveVisible={isSensitiveVisible}
+              onRevealSensitive={revealSensitive}
+              onHideSensitive={hideSensitive}
               action={(message) => (
                 <div className="space-y-2">
-                  <Input
-                    value={sendEvidence[message.id] || ""}
-                    onChange={(event) => setSendEvidence((current) => ({ ...current, [message.id]: event.target.value }))}
-                    placeholder="Paste manual send evidence"
-                    className="rounded-md"
-                  />
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <Input
+                      type={privacyMode && !isSensitiveVisible(`send-evidence:${message.id}`) ? "password" : "text"}
+                      value={sendEvidence[message.id] || ""}
+                      onChange={(event) => setSendEvidence((current) => ({ ...current, [message.id]: event.target.value }))}
+                      placeholder="Paste manual send evidence"
+                      className="rounded-md"
+                    />
+                    <Button
+                      variant="outline"
+                      className="rounded-md"
+                      onClick={() =>
+                        isSensitiveVisible(`send-evidence:${message.id}`)
+                          ? hideSensitive(`send-evidence:${message.id}`)
+                          : revealSensitive(`send-evidence:${message.id}`)
+                      }
+                    >
+                      {isSensitiveVisible(`send-evidence:${message.id}`) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                   <Button
                     className="w-full rounded-md"
                     onClick={() => void mutate(() => ledgerApi.confirmSend(message.id, sendEvidence[message.id] || ""))}
@@ -900,7 +966,16 @@ export default function Home() {
                           {response.classification.replace("_", " ")}
                         </Badge>
                       </div>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{response.body || "No response text recorded."}</p>
+                      <SensitiveText
+                        className="mt-2"
+                        privacyMode={privacyMode}
+                        visible={isSensitiveVisible(`response-body:${response.id}`)}
+                        onReveal={() => revealSensitive(`response-body:${response.id}`)}
+                        onHide={() => hideSensitive(`response-body:${response.id}`)}
+                        placeholder="Response text hidden"
+                      >
+                        {response.body || "No response text recorded."}
+                      </SensitiveText>
                       <div className="mt-2 text-xs text-muted-foreground">{response.nextAction}</div>
                     </div>
                   );
@@ -990,7 +1065,16 @@ export default function Home() {
                         </Badge>
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">Due {formatDate(followUp.dueAt)}</div>
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{followUp.suggestedMessage}</p>
+                      <SensitiveText
+                        className="mt-2"
+                        privacyMode={privacyMode}
+                        visible={isSensitiveVisible(`follow-up:${followUp.id}`)}
+                        onReveal={() => revealSensitive(`follow-up:${followUp.id}`)}
+                        onHide={() => hideSensitive(`follow-up:${followUp.id}`)}
+                        placeholder="Follow-up message hidden"
+                      >
+                        {followUp.suggestedMessage}
+                      </SensitiveText>
                       {followUp.status === "scheduled" ? (
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.completeFollowUp(followUp.id))}>
@@ -1175,6 +1259,10 @@ function MentorDetailPanel({
   outcomes,
   nextActions,
   auditEvents,
+  privacyMode,
+  isSensitiveVisible,
+  onRevealSensitive,
+  onHideSensitive,
   onCreateDraft,
 }: {
   mentor: MentorProfile | null;
@@ -1187,6 +1275,10 @@ function MentorDetailPanel({
   outcomes: CampaignDetails["outcomes"];
   nextActions: NextActionRecommendation[];
   auditEvents: CampaignDetails["auditEvents"];
+  privacyMode: boolean;
+  isSensitiveVisible: (key: string) => boolean;
+  onRevealSensitive: (key: string) => void;
+  onHideSensitive: (key: string) => void;
   onCreateDraft: (mentor: MentorProfile) => void;
 }) {
   return (
@@ -1293,9 +1385,16 @@ function MentorDetailPanel({
                         </div>
                       ) : null}
                       {attempts.length ? (
-                        <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                        <SensitiveText
+                          className="mt-2"
+                          privacyMode={privacyMode}
+                          visible={isSensitiveVisible(`send-proof:${message.id}`)}
+                          onReveal={() => onRevealSensitive(`send-proof:${message.id}`)}
+                          onHide={() => onHideSensitive(`send-proof:${message.id}`)}
+                          placeholder="Send proof hidden"
+                        >
                           Send proof: {attempts.map((attempt) => attempt.deliveryEvidence || attempt.status).join("; ")}
-                        </div>
+                        </SensitiveText>
                       ) : null}
                     </div>
                   );
@@ -1309,12 +1408,30 @@ function MentorDetailPanel({
               <div className="space-y-2 text-xs leading-5 text-muted-foreground">
                 {responses.map((response) => (
                   <div key={response.id} className="rounded-md bg-muted/30 p-2">
-                    {response.classification.replace("_", " ")}: {response.body || "No response text recorded."}
+                    <div className="mb-1 font-medium">{response.classification.replace("_", " ")}</div>
+                    <SensitiveText
+                      privacyMode={privacyMode}
+                      visible={isSensitiveVisible(`detail-response:${response.id}`)}
+                      onReveal={() => onRevealSensitive(`detail-response:${response.id}`)}
+                      onHide={() => onHideSensitive(`detail-response:${response.id}`)}
+                      placeholder="Response text hidden"
+                    >
+                      {response.body || "No response text recorded."}
+                    </SensitiveText>
                   </div>
                 ))}
                 {followUps.map((followUp) => (
                   <div key={followUp.id} className="rounded-md bg-muted/30 p-2">
-                    Follow-up {followUp.status}, due {formatDate(followUp.dueAt)}: {followUp.suggestedMessage}
+                    <div className="mb-1 font-medium">Follow-up {followUp.status}, due {formatDate(followUp.dueAt)}</div>
+                    <SensitiveText
+                      privacyMode={privacyMode}
+                      visible={isSensitiveVisible(`detail-follow-up:${followUp.id}`)}
+                      onReveal={() => onRevealSensitive(`detail-follow-up:${followUp.id}`)}
+                      onHide={() => onHideSensitive(`detail-follow-up:${followUp.id}`)}
+                      placeholder="Follow-up message hidden"
+                    >
+                      {followUp.suggestedMessage}
+                    </SensitiveText>
                   </div>
                 ))}
                 {outcomes.map((outcome) => (
@@ -1328,7 +1445,15 @@ function MentorDetailPanel({
 
             <div className="rounded-md border p-3">
               <div className="mb-2 text-sm font-medium">Notes and audit</div>
-              <div className="text-xs leading-5 text-muted-foreground">{mentor.notes || "No internal notes recorded."}</div>
+              <SensitiveText
+                privacyMode={privacyMode}
+                visible={isSensitiveVisible(`detail-notes:${mentor.id}`)}
+                onReveal={() => onRevealSensitive(`detail-notes:${mentor.id}`)}
+                onHide={() => onHideSensitive(`detail-notes:${mentor.id}`)}
+                placeholder="Internal notes hidden"
+              >
+                {mentor.notes || "No internal notes recorded."}
+              </SensitiveText>
               {auditEvents.length ? (
                 <div className="mt-3 border-t pt-3 text-xs leading-5 text-muted-foreground">
                   {auditEvents.slice(0, 4).map((event) => `${event.action} (${event.riskLevel})`).join(", ")}
@@ -1490,6 +1615,50 @@ function SafetyLine({ text }: { text: string }) {
   );
 }
 
+function SensitiveText({
+  children,
+  privacyMode,
+  visible,
+  onReveal,
+  onHide,
+  placeholder,
+  className = "",
+}: {
+  children: React.ReactNode;
+  privacyMode: boolean;
+  visible: boolean;
+  onReveal: () => void;
+  onHide: () => void;
+  placeholder: string;
+  className?: string;
+}) {
+  if (privacyMode && !visible) {
+    return (
+      <div className={`rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground ${className}`}>
+        <div className="flex items-center justify-between gap-3">
+          <span>{placeholder}</span>
+          <Button type="button" size="sm" variant="outline" className="h-8 rounded-md" onClick={onReveal}>
+            <Eye className="h-4 w-4" />
+            Reveal
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-md border bg-background p-3 text-sm leading-6 text-muted-foreground ${className}`}>
+      <div className="whitespace-pre-wrap">{children}</div>
+      {privacyMode ? (
+        <Button type="button" size="sm" variant="outline" className="mt-2 h-8 rounded-md" onClick={onHide}>
+          <EyeOff className="h-4 w-4" />
+          Hide
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 function RuntimeExposurePanel({
   runtimeStatus,
   healthStatus,
@@ -1624,6 +1793,10 @@ function ReviewColumn({
   draftEdits,
   onDraftEdit,
   qualityByMessage,
+  privacyMode,
+  isSensitiveVisible,
+  onRevealSensitive,
+  onHideSensitive,
   action,
 }: {
   title: string;
@@ -1632,6 +1805,10 @@ function ReviewColumn({
   draftEdits: Record<string, Pick<MessageDraft, "subject" | "body">>;
   onDraftEdit: React.Dispatch<React.SetStateAction<Record<string, Pick<MessageDraft, "subject" | "body">>>>;
   qualityByMessage: Map<string, CampaignDetails["qualityReviews"][number]>;
+  privacyMode: boolean;
+  isSensitiveVisible: (key: string) => boolean;
+  onRevealSensitive: (key: string) => void;
+  onHideSensitive: (key: string) => void;
   action: (message: CampaignDetails["messages"][number]) => React.ReactNode;
 }) {
   return (
@@ -1668,19 +1845,40 @@ function ReviewColumn({
                 }
                 className="rounded-md"
               />
-              <Textarea
-                value={draftEdits[message.id]?.body ?? message.body}
-                onChange={(event) =>
-                  onDraftEdit((current) => ({
-                    ...current,
-                    [message.id]: {
-                      subject: current[message.id]?.subject ?? message.subject,
-                      body: event.target.value,
-                    },
-                  }))
-                }
-                className="mt-3 min-h-48 rounded-md text-sm leading-6"
-              />
+              {privacyMode && !isSensitiveVisible(`draft-body:${message.id}`) ? (
+                <SensitiveText
+                  className="mt-3"
+                  privacyMode={privacyMode}
+                  visible={false}
+                  onReveal={() => onRevealSensitive(`draft-body:${message.id}`)}
+                  onHide={() => onHideSensitive(`draft-body:${message.id}`)}
+                  placeholder="Draft body hidden"
+                >
+                  {null}
+                </SensitiveText>
+              ) : (
+                <div className="mt-3">
+                  <Textarea
+                    value={draftEdits[message.id]?.body ?? message.body}
+                    onChange={(event) =>
+                      onDraftEdit((current) => ({
+                        ...current,
+                        [message.id]: {
+                          subject: current[message.id]?.subject ?? message.subject,
+                          body: event.target.value,
+                        },
+                      }))
+                    }
+                    className="min-h-48 rounded-md text-sm leading-6"
+                  />
+                  {privacyMode ? (
+                    <Button type="button" size="sm" variant="outline" className="mt-2 h-8 rounded-md" onClick={() => onHideSensitive(`draft-body:${message.id}`)}>
+                      <EyeOff className="h-4 w-4" />
+                      Hide draft body
+                    </Button>
+                  ) : null}
+                </div>
+              )}
               <div className="mt-4">{action(message)}</div>
             </div>
           );
