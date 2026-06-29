@@ -66,6 +66,7 @@ type MentorForm = {
 };
 
 type CsvColumnKey = keyof Required<MentorCsvColumnMap>;
+type ResultFilter = "all" | "awaiting_outcome" | "follow_up_due" | "booked" | "declined" | "no_response" | "open";
 
 const csvColumnFields: Array<{ key: CsvColumnKey; label: string; required?: boolean }> = [
   { key: "name", label: "Name", required: true },
@@ -150,6 +151,16 @@ const actionPriorityTone: Record<NextActionRecommendation["priority"], string> =
   low: "border-slate-200 bg-slate-50 text-slate-700",
 };
 
+const resultFilters: Array<{ value: ResultFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "awaiting_outcome", label: "Awaiting outcome" },
+  { value: "follow_up_due", label: "Follow-up due" },
+  { value: "booked", label: "Booked" },
+  { value: "declined", label: "Declined" },
+  { value: "no_response", label: "No response" },
+  { value: "open", label: "Open" },
+];
+
 function latestCampaign(campaigns: Campaign[]) {
   return campaigns.find((campaign) => campaign.status === "active") || campaigns[0] || null;
 }
@@ -161,6 +172,10 @@ function groupBy<T>(items: T[], getKey: (item: T) => string) {
     map.set(key, [...(map.get(key) || []), item]);
   }
   return map;
+}
+
+function latestByCreatedAt<T extends { createdAt: string }>(items: T[]) {
+  return [...items].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0] || null;
 }
 
 function parseCsvHeaderCells(text: string) {
@@ -258,6 +273,7 @@ export default function Home() {
   const [workspaceBackupText, setWorkspaceBackupText] = useState("");
   const [workspacePreview, setWorkspacePreview] = useState<WorkspaceSummary | null>(null);
   const [workspaceStatus, setWorkspaceStatus] = useState("");
+  const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
 
   const loadLedger = async (campaignId?: string) => {
     setLoading(true);
@@ -482,6 +498,39 @@ export default function Home() {
   const dueFollowUps = (details?.followUps || []).filter(
     (followUp) => followUp.status === "scheduled" && new Date(followUp.dueAt).getTime() <= Date.now()
   );
+  const resultRows = useMemo(() => {
+    const mentors = details?.mentors || [];
+    const messages = details?.messages || [];
+    const now = Date.now();
+
+    return mentors
+      .map((mentor) => {
+        const latestResponse = latestByCreatedAt(responsesByMentor.get(mentor.id) || []);
+        const latestOutcome = latestByCreatedAt(outcomesByMentor.get(mentor.id) || []);
+        const mentorFollowUps = followUpsByMentor.get(mentor.id) || [];
+        const latestFollowUp = latestByCreatedAt(mentorFollowUps);
+        const hasDueFollowUp = mentorFollowUps.some((followUp) => followUp.status === "scheduled" && new Date(followUp.dueAt).getTime() <= now);
+        const sentCount = messages.filter((message) => message.mentorProfileId === mentor.id && message.status === "sent").length;
+        const outcomeStatusValue = latestOutcome?.status || "open";
+        const awaitingOutcome = Boolean(latestResponse) && !latestOutcome;
+        return {
+          mentor,
+          latestResponse,
+          latestOutcome,
+          latestFollowUp,
+          hasDueFollowUp,
+          sentCount,
+          outcomeStatusValue,
+          awaitingOutcome,
+        };
+      })
+      .filter((row) => {
+        if (resultFilter === "all") return true;
+        if (resultFilter === "awaiting_outcome") return row.awaitingOutcome;
+        if (resultFilter === "follow_up_due") return row.hasDueFollowUp;
+        return row.outcomeStatusValue === resultFilter;
+      });
+  }, [details?.mentors, details?.messages, responsesByMentor, followUpsByMentor, outcomesByMentor, resultFilter]);
   const latestResourceSession = details?.resourceSessions[0] || null;
   const publicTunnelWithoutAuth = Boolean(runtimeStatus?.warnings.includes("ngrok_public_without_basic_auth"));
 
@@ -1167,8 +1216,114 @@ export default function Home() {
             />
           </TabsContent>
 
-          <TabsContent value="responses" className="grid gap-4 xl:grid-cols-[1fr_420px]">
+          <TabsContent value="responses" className="space-y-4">
             <Card className="rounded-md py-5">
+              <CardHeader className="px-5">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <CardTitle className="text-lg">Campaign results</CardTitle>
+                    <div className="mt-1 text-sm text-muted-foreground">Response rate, booked calls, open loops, and overdue follow-ups from the persisted ledger.</div>
+                  </div>
+                  <Button variant="outline" className="rounded-md" onClick={() => void exportCampaignHistoryCsv()} disabled={!activeCampaignId}>
+                    Export campaign history CSV
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4 px-5">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                  <MiniStat label="Contacted" value={details?.results.totals.contacted || 0} />
+                  <MiniStat label="Response rate" value={`${details?.results.rates.responseRate || 0}%`} />
+                  <MiniStat label="Booking rate" value={`${details?.results.rates.bookingRate || 0}%`} />
+                  <MiniStat label="Positive rate" value={`${details?.results.rates.positiveOutcomeRate || 0}%`} />
+                  <MiniStat label="Overdue follow-ups" value={details?.results.totals.overdueFollowUps || 0} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {resultFilters.map((filter) => (
+                    <Button
+                      key={filter.value}
+                      variant={resultFilter === filter.value ? "default" : "outline"}
+                      className="h-8 rounded-md px-3 text-xs"
+                      onClick={() => setResultFilter(filter.value)}
+                    >
+                      {filter.label}
+                    </Button>
+                  ))}
+                </div>
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full min-w-[1120px] text-sm">
+                    <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Mentor</th>
+                        <th className="px-4 py-3 font-medium">Latest response</th>
+                        <th className="px-4 py-3 font-medium">Outcome</th>
+                        <th className="px-4 py-3 font-medium">Follow-up</th>
+                        <th className="min-w-[520px] px-4 py-3 font-medium">Update outcome</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {resultRows.map((row) => (
+                        <tr key={row.mentor.id}>
+                          <td className="min-w-[520px] px-4 py-3">
+                            <button className="text-left font-medium" onClick={() => setSelectedMentorId(row.mentor.id)}>
+                              {row.mentor.name}
+                            </button>
+                            <div className="text-xs text-muted-foreground">{row.sentCount} sent messages</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className="rounded-md">
+                              {row.latestResponse?.classification.replace("_", " ") || "none"}
+                            </Badge>
+                            {row.awaitingOutcome ? <div className="mt-1 text-xs text-amber-700">Needs outcome decision</div> : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className="rounded-md">
+                              {row.outcomeStatusValue.replace("_", " ")}
+                            </Badge>
+                            {row.latestOutcome ? <div className="mt-1 max-w-[220px] truncate text-xs text-muted-foreground">{row.latestOutcome.summary}</div> : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className={row.hasDueFollowUp ? "rounded-md border-amber-200 bg-amber-50 text-amber-700" : "rounded-md"}>
+                              {row.hasDueFollowUp ? "due" : row.latestFollowUp?.status || "none"}
+                            </Badge>
+                            {row.latestFollowUp ? <div className="mt-1 text-xs text-muted-foreground">{formatDate(row.latestFollowUp.dueAt)}</div> : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="grid gap-2 md:grid-cols-[150px_1fr_auto]">
+                              <select
+                                value={outcomeStatus[row.mentor.id] || row.outcomeStatusValue}
+                                onChange={(event) => setOutcomeStatus((current) => ({ ...current, [row.mentor.id]: event.target.value as OutreachOutcome["status"] }))}
+                                className="h-9 rounded-md border bg-background px-3 text-sm"
+                              >
+                                <option value="open">Open</option>
+                                <option value="booked">Booked</option>
+                                <option value="helpful">Helpful</option>
+                                <option value="declined">Declined</option>
+                                <option value="no_response">No response</option>
+                                <option value="not_relevant">Not relevant</option>
+                                <option value="closed">Closed</option>
+                              </select>
+                              <Input
+                                value={outcomeText[row.mentor.id] || ""}
+                                onChange={(event) => setOutcomeText((current) => ({ ...current, [row.mentor.id]: event.target.value }))}
+                                placeholder="Outcome summary"
+                                className="h-9 rounded-md"
+                              />
+                              <Button variant="outline" className="h-9 rounded-md" onClick={() => void recordOutcome(row.mentor)} disabled={!outcomeText[row.mentor.id]?.trim()}>
+                                Save
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {!resultRows.length ? <div className="p-6 text-center text-sm text-muted-foreground">No mentors match this results filter.</div> : null}
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
+              <Card className="rounded-md py-5">
               <CardHeader className="px-5">
                 <CardTitle className="text-lg">Response inbox</CardTitle>
               </CardHeader>
@@ -1205,7 +1360,7 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-md py-5">
+              <Card className="rounded-md py-5">
               <CardHeader className="px-5">
                 <CardTitle className="text-lg">Record response</CardTitle>
               </CardHeader>
@@ -1261,7 +1416,8 @@ export default function Home() {
                   </div>
                 ))}
               </CardContent>
-            </Card>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="billing" className="grid gap-4 lg:grid-cols-[1fr_420px]">

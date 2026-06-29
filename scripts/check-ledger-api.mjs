@@ -306,6 +306,13 @@ try {
   assert(details.outcomes.length === 1, "Outcome detail was not persisted");
   assert(details.followUps.some((followUp) => followUp.status === "completed"), "Completed follow-up was not persisted");
   assert(details.followUps.some((followUp) => followUp.status === "cancelled"), "Cancelled follow-up was not persisted");
+  assert(details.results.totals.contacted === 1, "Campaign results did not include contacted mentor count");
+  assert(details.results.totals.booked === 1, "Campaign results did not include booked outcome count");
+  assert(details.results.totals.overdueFollowUps === 0, "Campaign results did not clear completed/cancelled follow-ups");
+  assert(details.results.rates.responseRate === 100, "Campaign results did not include response rate");
+  assert(details.results.rates.bookingRate === 100, "Campaign results did not include booking rate");
+  assert(details.results.followUpBreakdown.completed === 1, "Campaign results did not include completed follow-up breakdown");
+  assert(details.results.followUpBreakdown.cancelled === 1, "Campaign results did not include cancelled follow-up breakdown");
   assert(Array.isArray(details.nextActions), "Campaign details did not include next actions");
   assert(details.nextActions.some((action) => action.type === "draft_message" || action.type === "generate_cost_record"), "Next actions did not include remaining operational work");
   assert(details.auditEvents.length >= 10, "Audit trail was not recorded");

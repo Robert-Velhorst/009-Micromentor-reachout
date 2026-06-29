@@ -104,6 +104,8 @@ export type FollowUpPlan = {
   dueAt: string;
   status: "scheduled" | "completed" | "cancelled";
   suggestedMessage: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type MentorResponse = {
@@ -182,6 +184,28 @@ export type OutreachOutcome = {
   valueLevel: "low" | "medium" | "high";
   createdAt: string;
   updatedAt: string;
+};
+
+export type CampaignResults = {
+  totals: {
+    mentors: number;
+    contacted: number;
+    responses: number;
+    outcomes: number;
+    booked: number;
+    helpful: number;
+    declined: number;
+    noResponse: number;
+    overdueFollowUps: number;
+    openLoops: number;
+  };
+  rates: {
+    responseRate: number;
+    bookingRate: number;
+    positiveOutcomeRate: number;
+  };
+  outcomeBreakdown: Record<OutreachOutcome["status"], number>;
+  followUpBreakdown: Record<FollowUpPlan["status"], number>;
 };
 
 export type NextActionRecommendation = {
@@ -307,6 +331,7 @@ export type CampaignDetails = {
   billingRecords: BillingRecord[];
   invoiceRecords: InvoiceRecord[];
   outcomes: OutreachOutcome[];
+  results: CampaignResults;
   nextActions: NextActionRecommendation[];
   auditEvents: AuditEvent[];
 };

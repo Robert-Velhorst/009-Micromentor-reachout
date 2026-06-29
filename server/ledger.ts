@@ -269,6 +269,28 @@ type OutreachOutcome = {
   updatedAt: string;
 };
 
+type CampaignResults = {
+  totals: {
+    mentors: number;
+    contacted: number;
+    responses: number;
+    outcomes: number;
+    booked: number;
+    helpful: number;
+    declined: number;
+    noResponse: number;
+    overdueFollowUps: number;
+    openLoops: number;
+  };
+  rates: {
+    responseRate: number;
+    bookingRate: number;
+    positiveOutcomeRate: number;
+  };
+  outcomeBreakdown: Record<OutcomeStatus, number>;
+  followUpBreakdown: Record<FollowUpStatus, number>;
+};
+
 type NextActionRecommendation = {
   id: string;
   campaignId: string;
@@ -931,6 +953,78 @@ function latestByCreatedAt<T extends { createdAt: string }>(items: T[]) {
   return [...items].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0] || null;
 }
 
+function percent(numerator: number, denominator: number) {
+  return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : 0;
+}
+
+function buildCampaignResults(state: LedgerState, campaignId: string): CampaignResults {
+  const mentors = state.mentorProfiles.filter((item) => item.campaignId === campaignId);
+  const messages = state.messageDrafts.filter((item) => item.campaignId === campaignId);
+  const responses = state.mentorResponses.filter((item) => item.campaignId === campaignId);
+  const followUps = state.followUpPlans.filter((item) => item.campaignId === campaignId);
+  const outcomes = state.outreachOutcomes.filter((item) => item.campaignId === campaignId);
+  const contactedMentorIds = new Set(messages.filter((message) => message.status === "sent").map((message) => message.mentorProfileId));
+  const respondedMentorIds = new Set(responses.map((response) => response.mentorProfileId));
+  const latestOutcomeByMentor = new Map<string, OutreachOutcome>();
+  const currentTime = Date.now();
+
+  for (const outcome of [...outcomes].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())) {
+    latestOutcomeByMentor.set(outcome.mentorProfileId, outcome);
+  }
+
+  const outcomeBreakdown = {
+    open: 0,
+    booked: 0,
+    helpful: 0,
+    declined: 0,
+    no_response: 0,
+    not_relevant: 0,
+    closed: 0,
+  } satisfies Record<OutcomeStatus, number>;
+  for (const outcome of outcomes) {
+    outcomeBreakdown[outcome.status] += 1;
+  }
+
+  const followUpBreakdown = {
+    scheduled: 0,
+    completed: 0,
+    cancelled: 0,
+  } satisfies Record<FollowUpStatus, number>;
+  for (const followUp of followUps) {
+    followUpBreakdown[followUp.status] += 1;
+  }
+
+  const overdueFollowUps = followUps.filter((followUp) => followUp.status === "scheduled" && new Date(followUp.dueAt).getTime() <= currentTime).length;
+  const openLoops = mentors.filter((mentor) => {
+    const latestOutcome = latestOutcomeByMentor.get(mentor.id);
+    if (latestOutcome && !["open"].includes(latestOutcome.status)) return false;
+    return contactedMentorIds.has(mentor.id) || respondedMentorIds.has(mentor.id) || followUps.some((followUp) => followUp.mentorProfileId === mentor.id && followUp.status === "scheduled");
+  }).length;
+  const positiveOutcomes = outcomeBreakdown.booked + outcomeBreakdown.helpful;
+
+  return {
+    totals: {
+      mentors: mentors.length,
+      contacted: contactedMentorIds.size,
+      responses: respondedMentorIds.size,
+      outcomes: outcomes.length,
+      booked: outcomeBreakdown.booked,
+      helpful: outcomeBreakdown.helpful,
+      declined: outcomeBreakdown.declined,
+      noResponse: outcomeBreakdown.no_response,
+      overdueFollowUps,
+      openLoops,
+    },
+    rates: {
+      responseRate: percent(respondedMentorIds.size, contactedMentorIds.size),
+      bookingRate: percent(outcomeBreakdown.booked, contactedMentorIds.size),
+      positiveOutcomeRate: percent(positiveOutcomes, contactedMentorIds.size),
+    },
+    outcomeBreakdown,
+    followUpBreakdown,
+  };
+}
+
 function buildNextActionRecommendations(state: LedgerState, campaignId?: string) {
   const actions: NextActionRecommendation[] = [];
   const targetCampaigns = campaignId
@@ -1155,6 +1249,7 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
     billingRecords,
     invoiceRecords,
     outcomes,
+    results: buildCampaignResults(state, campaignId),
     nextActions: buildNextActionRecommendations(state, campaignId),
     auditEvents: state.auditEvents.filter(
       (item) =>

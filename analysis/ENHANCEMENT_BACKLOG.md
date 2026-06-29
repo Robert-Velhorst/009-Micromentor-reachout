@@ -28,7 +28,7 @@ Acceptance:
 
 Why first: this turns MARO from a draft generator into a repeatable outreach workflow.
 
-Status: Partially implemented in the operating-ledger branch with persisted campaigns, mentor stages, message statuses, responses, follow-ups, outcomes, and deterministic next-action recommendations for draft review, blocked drafts, manual send confirmation, due follow-ups, response outcome decisions, and resource-cost records.
+Status: Implemented in the operating-ledger branch with persisted campaigns, mentor stages, message statuses, responses, follow-ups, outcomes, deterministic next-action recommendations, campaign-history export, and a results view for response rate, booking rate, positive outcome rate, overdue follow-ups, outcome filters, and inline outcome updates.
 
 ### P0 - Robust CSV Import, Export, And Deduplication
 

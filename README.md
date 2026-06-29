@@ -13,6 +13,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Import mentors from pasted CSV text or `.csv` files with configurable source-column mapping and duplicate preview.
 - Export mentor rows and full campaign history CSVs with message status, send timestamp, response, follow-up, outcome, and notes.
 - Track response classifications and follow-up suggestions.
+- Review campaign results with response rate, booking rate, positive outcome rate, overdue follow-ups, and outcome filters.
 - Generate local process-measured resource-cost records using `Resource Cost x 2 = Final Price`.
 - Persist invoice/usage-report snapshots for campaign billing transparency without charging anyone.
 - Show whether the app is local-only or reachable through ngrok, including a warning when the tunnel is public without basic auth.
@@ -76,7 +77,7 @@ Invoice reports are persisted local ledger snapshots generated from stored billi
 
 Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates the required ledger arrays before replacing local data. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
 
-Next actions are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation.
+Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation.
 
 ## Requirements
 
