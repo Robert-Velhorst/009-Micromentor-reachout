@@ -252,6 +252,19 @@ export type RuntimeStatus = {
   warnings: Array<"ngrok_public_without_basic_auth" | string>;
 };
 
+export type HealthStatus = {
+  ok: boolean;
+  service: "maro-ledger";
+  schemaVersion: number;
+  persistence: "local-json" | "encrypted-json";
+  storage: {
+    persistence: "local-json" | "encrypted-json";
+    encrypted: boolean;
+  };
+  pricingFormula: string;
+  timestamp: string;
+};
+
 export type WorkspaceSummary = {
   schemaVersion: number;
   projects: number;
@@ -343,6 +356,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const ledgerApi = {
+  health: () => request<HealthStatus>("/api/health"),
   runtimeStatus: () => request<RuntimeStatus>("/api/runtime/status"),
   workspaceBackup: () => request<WorkspaceBackup>("/api/workspace/backup"),
   previewWorkspaceRestore: (backupJson: string) =>

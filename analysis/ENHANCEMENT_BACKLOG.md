@@ -107,11 +107,11 @@ Status: Implemented in the operating-ledger branch with schema-versioned JSON ex
 
 ### P1 - Privacy Mode And Optional Local Encryption
 
-Problem: mentor/contact data and drafts are readable in browser storage. This is acceptable for local prototypes, but weaker for real outreach data.
+Problem: mentor/contact data and drafts are readable in the local ledger when encryption is not configured. This is acceptable for local prototypes, but weaker for real outreach data.
 
 Build:
 - Add privacy mode that hides message bodies and notes until revealed.
-- Add optional passphrase-based encryption for stored workspace data using Web Crypto.
+- Add optional passphrase-based encryption for stored workspace data.
 - Add clear messaging that forgotten passphrases cannot be recovered.
 
 Acceptance:
@@ -120,6 +120,8 @@ Acceptance:
 - Existing unencrypted data can be migrated deliberately.
 
 Why now: useful before users put sensitive mentor notes into the tool.
+
+Status: Partially implemented. Server-side ledger encryption is available with `MARO_LEDGER_PASSPHRASE`; the local file is stored as an AES-256-GCM encrypted envelope and the full API smoke run verifies no plaintext mentor/campaign names are written to disk. UI privacy reveal mode remains open.
 
 ### P2 - MicroMentor Profile Handoff
 
@@ -190,12 +192,13 @@ Avoid for now:
 ## Security Enhancements
 
 Do next:
-- Add optional local encryption before storing sensitive notes or profiles.
+- Add UI privacy mode to hide message bodies and notes until revealed.
 - Self-host fonts if offline/private installs become a requirement.
 
 Done:
 - Added ngrok exposure status and unauthenticated tunnel warning.
 - Added JSON backup validation and schema versioning before restore.
+- Added optional passphrase-based encrypted local ledger storage for sensitive mentor, message, and campaign data.
 
 Avoid for now:
 - Automated sending to MicroMentor. It creates account, consent, rate-limit, and platform-policy risk. Keep final send manual until rules and safeguards are explicit.
@@ -207,6 +210,6 @@ Avoid for now:
 2. CSV import/export with duplicate detection.
 3. Template quality checks.
 4. Ngrok status and workspace backup/restore.
-5. Optional encryption, profile handoff, and installer signing/update work.
+5. Privacy reveal mode, profile handoff, and installer signing/update work.
 
 The first two slices deliver the largest practical improvement with limited architectural risk.

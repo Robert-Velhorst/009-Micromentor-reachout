@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   type Campaign,
   type CampaignDetails,
+  type HealthStatus,
   type LedgerSummary,
   type MessageDraft,
   type MentorImportResult,
@@ -157,6 +158,7 @@ export default function Home() {
   const [csvText, setCsvText] = useState(sampleCsv);
   const [csvImportResult, setCsvImportResult] = useState<MentorImportResult | null>(null);
   const [selectedMentorId, setSelectedMentorId] = useState("");
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
   const [runtimeCopyStatus, setRuntimeCopyStatus] = useState("");
   const [workspaceBackupText, setWorkspaceBackupText] = useState("");
@@ -167,9 +169,10 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, campaignResult, nextRuntimeStatus] = await Promise.all([
+      const [nextSummary, campaignResult, nextHealthStatus, nextRuntimeStatus] = await Promise.all([
         ledgerApi.summary(),
         ledgerApi.campaigns(),
+        ledgerApi.health().catch(() => null),
         ledgerApi.runtimeStatus().catch(() => null),
       ]);
       const nextCampaigns = campaignResult.campaigns;
@@ -179,6 +182,7 @@ export default function Home() {
       setCampaigns(nextCampaigns);
       setActiveCampaignId(selectedId);
       setDetails(nextDetails);
+      setHealthStatus(nextHealthStatus);
       setRuntimeStatus(nextRuntimeStatus);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
@@ -546,7 +550,7 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            <RuntimeExposurePanel runtimeStatus={runtimeStatus} copyStatus={runtimeCopyStatus} onCopyUrl={copyRuntimeUrl} />
+            <RuntimeExposurePanel runtimeStatus={runtimeStatus} healthStatus={healthStatus} copyStatus={runtimeCopyStatus} onCopyUrl={copyRuntimeUrl} />
           </div>
         </section>
 
@@ -1488,16 +1492,19 @@ function SafetyLine({ text }: { text: string }) {
 
 function RuntimeExposurePanel({
   runtimeStatus,
+  healthStatus,
   copyStatus,
   onCopyUrl,
 }: {
   runtimeStatus: RuntimeStatus | null;
+  healthStatus: HealthStatus | null;
   copyStatus: string;
   onCopyUrl: (value: string | null | undefined) => void;
 }) {
   const tunnelActive = Boolean(runtimeStatus?.tunnel.active);
   const basicAuth = Boolean(runtimeStatus?.auth.basicAuthConfigured);
   const publicWithoutAuth = Boolean(runtimeStatus?.warnings.includes("ngrok_public_without_basic_auth"));
+  const encryptedStorage = Boolean(healthStatus?.storage.encrypted);
 
   return (
     <Card className="rounded-md py-5">
@@ -1532,6 +1539,8 @@ function RuntimeExposurePanel({
         <div className="grid grid-cols-2 gap-2 text-sm">
           <MiniStat label="Mode" value={runtimeStatus?.mode || "Loading"} />
           <MiniStat label="Auth" value={basicAuth ? "Basic auth" : "Not set"} />
+          <MiniStat label="Ledger" value={encryptedStorage ? "Encrypted" : healthStatus ? "Plain JSON" : "Loading"} />
+          <MiniStat label="Schema" value={healthStatus?.schemaVersion || "Loading"} />
         </div>
         {copyStatus ? <div className="text-xs text-muted-foreground">{copyStatus}</div> : null}
         {publicWithoutAuth ? (

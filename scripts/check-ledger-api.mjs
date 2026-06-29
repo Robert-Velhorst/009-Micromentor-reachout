@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dataDir = path.join(root, "artifacts", "smoke-ledger-data");
+const ledgerFile = path.join(dataDir, "maro-ledger.json");
 const port = Number(process.env.MARO_SMOKE_PORT || 3197);
 const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -67,6 +68,7 @@ const server = spawn(process.execPath, ["dist/index.cjs"], {
     HOST: "127.0.0.1",
     PORT: String(port),
     MARO_DATA_DIR: dataDir,
+    MARO_LEDGER_PASSPHRASE: "smoke-test-ledger-passphrase",
   },
   shell: false,
   stdio: ["ignore", "pipe", "pipe"],
@@ -81,6 +83,9 @@ try {
 
   const health = await api("/api/health");
   assert(health.ok === true, "Health endpoint did not report ok");
+  assert(health.persistence === "encrypted-json", "Health endpoint did not report encrypted ledger persistence");
+  assert(health.storage?.encrypted === true, "Health endpoint did not report encrypted storage");
+  assert(!("path" in health.storage), "Health storage status should not expose a local filesystem path");
 
   const runtime = await api("/api/runtime/status");
   assert(runtime.localUrl === baseUrl, "Runtime status did not report the smoke local URL");
@@ -314,6 +319,14 @@ try {
   const restoredDetails = await api(`/api/campaigns/${campaignId}`);
   assert(restoredDetails.campaign.messagesDrafted === 1, "Restored campaign draft count was not available");
   assert(restoredDetails.invoiceRecords.length === 1, "Restored invoice record was not available");
+
+  const persistedLedger = fs.readFileSync(ledgerFile, "utf8");
+  const persistedEnvelope = JSON.parse(persistedLedger);
+  assert(persistedEnvelope.kind === "maro-encrypted-ledger", "Ledger file was not stored as an encrypted envelope");
+  assert(persistedEnvelope.algorithm === "aes-256-gcm", "Ledger file did not use the expected encryption algorithm");
+  assert(!persistedLedger.includes("Ada Tester"), "Encrypted ledger leaked mentor name plaintext");
+  assert(!persistedLedger.includes("Grace Hopper"), "Encrypted ledger leaked imported mentor plaintext");
+  assert(!persistedLedger.includes("Smoke mentor operating ledger"), "Encrypted ledger leaked campaign title plaintext");
 
   console.log(
     JSON.stringify(

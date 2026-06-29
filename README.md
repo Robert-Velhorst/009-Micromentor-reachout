@@ -15,7 +15,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Persist invoice/usage-report snapshots for campaign billing transparency without charging anyone.
 - Show whether the app is local-only or reachable through ngrok, including a warning when the tunnel is public without basic auth.
 - Export, validate, restore, and reset the local workspace with schema-versioned JSON backups.
-- Keep work local by default in a JSON ledger under `data/`.
+- Keep work local by default in a JSON ledger under `data/`, with optional encryption at rest.
 
 ## Local Ledger API
 
@@ -62,6 +62,8 @@ The Express server now exposes operational API routes before serving the fronten
 - `GET /api/audit`
 
 The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to store it elsewhere. Runtime ledger data is ignored by git.
+
+Set `MARO_LEDGER_PASSPHRASE` to encrypt the local ledger file at rest with AES-256-GCM. Existing plaintext ledger files are migrated to an encrypted envelope on the next API read/write when this passphrase is present. Keep the passphrase somewhere safe; MARO cannot recover encrypted ledger data without it. Workspace backups remain portable JSON exports and should be handled as sensitive files.
 
 Resource sessions are process-level local measurements. MARO records Node CPU time, RSS memory over session duration, local ledger file size, and observed API payload bytes. It does not use random simulated usage as billing evidence.
 

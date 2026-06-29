@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync } from "node:crypto";
 
 type CampaignStatus = "active" | "paused" | "completed" | "archived";
 type MentorStage = "new" | "matched" | "drafted" | "approved" | "contacted" | "responded" | "follow_up" | "closed";
@@ -320,12 +320,25 @@ type LedgerState = {
   auditEvents: AuditEvent[];
 };
 
+type EncryptedLedgerEnvelope = {
+  kind: "maro-encrypted-ledger";
+  schemaVersion: 1;
+  algorithm: "aes-256-gcm";
+  kdf: "scrypt";
+  salt: string;
+  iv: string;
+  authTag: string;
+  ciphertext: string;
+};
+
 type WorkspaceResetScope = "queue" | "mentors" | "workspace";
 
 const PRICING_FORMULA = "Resource Cost x 2 = Final Price";
 const DEFAULT_USER_ID = "local-operator";
 const DEFAULT_PROJECT_ID = "project-robert-support-network";
 const DEFAULT_CAMPAIGN_ID = "campaign-micromentor-first-wave";
+const ENCRYPTED_LEDGER_KIND = "maro-encrypted-ledger";
+const LEDGER_ENCRYPTION_AAD = Buffer.from("maro-ledger-v1", "utf8");
 const LEDGER_ARRAY_KEYS = [
   "operators",
   "projects",
@@ -358,6 +371,90 @@ function addDays(date: Date, days: number) {
 function dataPath() {
   const dataDir = process.env.MARO_DATA_DIR || path.resolve(process.cwd(), "data");
   return path.join(dataDir, "maro-ledger.json");
+}
+
+function ledgerPassphrase() {
+  return (process.env.MARO_LEDGER_PASSPHRASE || "").trim();
+}
+
+function storageStatus() {
+  return {
+    persistence: ledgerPassphrase() ? "encrypted-json" : "local-json",
+    encrypted: Boolean(ledgerPassphrase()),
+  };
+}
+
+function encryptedEnvelope(value: unknown): value is EncryptedLedgerEnvelope {
+  const candidate = value as Partial<EncryptedLedgerEnvelope>;
+  return Boolean(
+    candidate &&
+      candidate.kind === ENCRYPTED_LEDGER_KIND &&
+      candidate.schemaVersion === 1 &&
+      candidate.algorithm === "aes-256-gcm" &&
+      candidate.kdf === "scrypt" &&
+      typeof candidate.salt === "string" &&
+      typeof candidate.iv === "string" &&
+      typeof candidate.authTag === "string" &&
+      typeof candidate.ciphertext === "string"
+  );
+}
+
+function deriveLedgerKey(passphrase: string, salt: Buffer) {
+  return scryptSync(passphrase, salt, 32);
+}
+
+function encryptLedgerJson(json: string) {
+  const passphrase = ledgerPassphrase();
+  if (!passphrase) return json;
+
+  const salt = randomBytes(16);
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", deriveLedgerKey(passphrase, salt), iv);
+  cipher.setAAD(LEDGER_ENCRYPTION_AAD);
+  const ciphertext = Buffer.concat([cipher.update(json, "utf8"), cipher.final()]);
+  const envelope: EncryptedLedgerEnvelope = {
+    kind: ENCRYPTED_LEDGER_KIND,
+    schemaVersion: 1,
+    algorithm: "aes-256-gcm",
+    kdf: "scrypt",
+    salt: salt.toString("base64"),
+    iv: iv.toString("base64"),
+    authTag: cipher.getAuthTag().toString("base64"),
+    ciphertext: ciphertext.toString("base64"),
+  };
+  return JSON.stringify(envelope, null, 2);
+}
+
+function decryptLedgerEnvelope(envelope: EncryptedLedgerEnvelope) {
+  const passphrase = ledgerPassphrase();
+  if (!passphrase) {
+    throw new Error("Encrypted ledger requires MARO_LEDGER_PASSPHRASE");
+  }
+
+  try {
+    const salt = Buffer.from(envelope.salt, "base64");
+    const iv = Buffer.from(envelope.iv, "base64");
+    const authTag = Buffer.from(envelope.authTag, "base64");
+    const ciphertext = Buffer.from(envelope.ciphertext, "base64");
+    const decipher = createDecipheriv("aes-256-gcm", deriveLedgerKey(passphrase, salt), iv);
+    decipher.setAAD(LEDGER_ENCRYPTION_AAD);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  } catch {
+    throw new Error("Encrypted ledger could not be decrypted. Check MARO_LEDGER_PASSPHRASE.");
+  }
+}
+
+function parseStoredLedger(contents: string): { state: Partial<LedgerState>; encrypted: boolean } {
+  const parsed = JSON.parse(contents) as unknown;
+  if (!encryptedEnvelope(parsed)) {
+    return { state: parsed as Partial<LedgerState>, encrypted: false };
+  }
+
+  return {
+    state: JSON.parse(decryptLedgerEnvelope(parsed)) as Partial<LedgerState>,
+    encrypted: true,
+  };
 }
 
 function ledgerFileBytes() {
@@ -566,14 +663,18 @@ function readState(): LedgerState {
     return state;
   }
 
-  const state = JSON.parse(fs.readFileSync(filePath, "utf8")) as Partial<LedgerState>;
-  return normalizeState(state);
+  const stored = parseStoredLedger(fs.readFileSync(filePath, "utf8"));
+  const state = normalizeState(stored.state);
+  if (ledgerPassphrase() && !stored.encrypted) {
+    writeState(state);
+  }
+  return state;
 }
 
 function writeState(state: LedgerState) {
   const filePath = dataPath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(state, null, 2), "utf8");
+  fs.writeFileSync(filePath, encryptLedgerJson(JSON.stringify(state, null, 2)), "utf8");
 }
 
 function replaceState(target: LedgerState, next: LedgerState) {
@@ -1352,7 +1453,8 @@ export function registerLedgerRoutes(app: Express) {
     ok: true,
     service: "maro-ledger",
     schemaVersion: state.schemaVersion,
-    persistence: "local-json",
+    persistence: storageStatus().persistence,
+    storage: storageStatus(),
     pricingFormula: PRICING_FORMULA,
     timestamp: now(),
   })));

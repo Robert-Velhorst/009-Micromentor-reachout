@@ -12,7 +12,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 
 ## Threat Model
 
-- The tool is a local outreach console that stores mentor/contact drafts in browser `localStorage`.
+- The tool is a local outreach console that stores mentor/contact drafts in a local server-side ledger file.
 - The largest trust-boundary change is ngrok exposure: local-only content can become reachable through a public tunnel.
 - No server-side database, authentication backend, payment logic, or third-party API write path is active in the production app.
 - Primary risks are accidental public exposure, browser-side data leakage, stale debug tooling, dependency/build drift, and installer tampering.
@@ -24,6 +24,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Production error disclosure: `ErrorBoundary` no longer shows stack traces outside development builds.
 - Dev log ingestion DoS risk: the Vite debug collector now caps request payloads at 256 KB before writing logs.
 - Ngrok access control: launcher supports optional `NGROK_BASIC_AUTH` so a tunnel can require basic auth.
+- Local ledger confidentiality: setting `MARO_LEDGER_PASSPHRASE` stores the ledger as an AES-256-GCM encrypted envelope instead of plaintext JSON.
 - Installer dependency risk: the Windows installer embeds the Node runtime and built app, so the end user does not need a separate Node/npm install.
 - Static type drift: fixed legacy `Map`, `calendar`, and `usePersistFn` type errors; `npm run check` now passes.
 
@@ -48,7 +49,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 
 - ngrok still creates a public URL when available; use `NGROK_BASIC_AUTH` for shared or sensitive drafts.
 - The installer is not Authenticode-signed. Windows may show an unknown-publisher warning until a code-signing certificate is used.
-- Mentor/contact data is stored in browser `localStorage`, not encrypted at rest.
+- Mentor/contact data is encrypted at rest only when `MARO_LEDGER_PASSPHRASE` is configured. Workspace backups are portable JSON exports and should still be treated as sensitive files.
 - Google Fonts remain external; privacy-sensitive/offline installs could self-host fonts later.
 
 ## Feature Improvements Worth Doing Next
@@ -58,7 +59,7 @@ Detailed prioritization and acceptance criteria are in `analysis/ENHANCEMENT_BAC
 - CSV import/export with column mapping and duplicate detection.
 - Campaign history with outcomes: contacted, replied, booked, declined, follow-up due.
 - Template scoring and personalization checks before copying a message.
-- Optional encrypted local workspace for sensitive mentor notes.
+- UI privacy mode that hides sensitive mentor notes and message bodies until revealed.
 - Ngrok status panel showing tunnel URL, auth status, and copy button.
 - Signed installer and a simple update flow.
 - MicroMentor browser-extension handoff that keeps the final send action manual and reviewable.
