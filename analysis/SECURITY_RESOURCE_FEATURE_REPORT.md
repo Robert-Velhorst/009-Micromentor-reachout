@@ -29,6 +29,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Manual handoff safety: review queues can open the stored mentor profile URL and copy the revealed reviewed draft, but the app still does not automate external sending.
 - Installer dependency and removal risk: the Windows installer embeds the Node runtime and built app, so the end user does not need a separate Node/npm install; it also writes installed-version metadata and registers a current-user uninstall entry.
 - Static type drift: fixed legacy `Map`, `calendar`, and `usePersistFn` type errors; `npm run check` now passes.
+- Release regression risk: added `npm run check:release` to run TypeScript checks, the production encrypted-ledger API smoke test, and the Windows installer build on Windows hosts.
 
 ## Resource Analysis
 
@@ -43,6 +44,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 
 - `npm run build`: passed.
 - `npm run check`: passed.
+- `npm run check:release`: passed.
 - `node scripts/ngrok.mjs`: correctly fails fast here because ngrok is not installed on PATH.
 - Safe installer run with `MARO_INSTALL_DIR`, `MARO_SKIP_SHORTCUTS=1`, `MARO_SKIP_REGISTRY=1`, and `MARO_SKIP_LAUNCH=1`: passed.
 - Installed test server on `127.0.0.1:3103`: returned HTTP 200 with CSP, `X-Frame-Options: DENY`, and `X-Content-Type-Options: nosniff`.

@@ -293,6 +293,9 @@ try {
   assert(usageReport.measurementNote.includes("process-level"), "Usage report did not disclose process-level measurement");
   assert(Array.isArray(usageReport.invoiceRecords), "Usage report did not include invoice record list");
 
+  const invoiceActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(invoiceActions.actions.some((action) => action.type === "generate_invoice_record"), "Next actions did not include invoice report generation");
+
   const invoiceResult = await api(`/api/campaigns/${campaignId}/invoices`, { method: "POST" });
   assert(invoiceResult.invoiceRecord.invoiceNumber.startsWith("MARO-"), "Invoice report did not include a MARO invoice number");
   assert(invoiceResult.invoiceRecord.finalCost === usageReport.totals.finalCost, "Invoice report final cost did not match usage report");

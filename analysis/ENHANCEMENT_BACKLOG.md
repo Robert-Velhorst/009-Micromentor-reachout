@@ -179,6 +179,8 @@ Acceptance:
 
 Why later: valuable once the next feature slice introduces more state transitions.
 
+Status: Implemented as a local release gate. `npm run check:release` now runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, and the Windows installer build on Windows hosts. The smoke test covers CSV parsing/import/export, mapped headers, duplicate skips, template quality blocking, approval-before-send enforcement, follow-up state transitions, response/outcome tracking, billing records, invoice report generation, backup/restore/reset validation, encryption-at-rest, and next-action coverage including invoice-report recommendations.
+
 ## Resource Usage Enhancements
 
 Done:

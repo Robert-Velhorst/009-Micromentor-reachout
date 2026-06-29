@@ -225,7 +225,8 @@ export type NextActionRecommendation = {
     | "confirm_manual_send"
     | "follow_up_due"
     | "record_response_outcome"
-    | "generate_cost_record";
+    | "generate_cost_record"
+    | "generate_invoice_record";
   title: string;
   description: string;
   recommendedAction: string;
