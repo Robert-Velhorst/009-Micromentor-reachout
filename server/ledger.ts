@@ -14,6 +14,17 @@ type ResponseClassification = "interested" | "not_interested" | "more_info" | "u
 type FollowUpStatus = "scheduled" | "completed" | "cancelled";
 type ResourceSessionStatus = "active" | "ended";
 type OutcomeStatus = "open" | "booked" | "helpful" | "declined" | "no_response" | "not_relevant" | "closed";
+type NextActionPriority = "high" | "medium" | "low";
+type NextActionType =
+  | "add_mentors"
+  | "draft_message"
+  | "review_fit"
+  | "fix_blocked_draft"
+  | "review_draft"
+  | "confirm_manual_send"
+  | "follow_up_due"
+  | "record_response_outcome"
+  | "generate_cost_record";
 
 type Operator = {
   id: string;
@@ -224,6 +235,22 @@ type OutreachOutcome = {
   valueLevel: "low" | "medium" | "high";
   createdAt: string;
   updatedAt: string;
+};
+
+type NextActionRecommendation = {
+  id: string;
+  campaignId: string;
+  mentorProfileId: string | null;
+  messageDraftId: string | null;
+  followUpId: string | null;
+  responseId: string | null;
+  priority: NextActionPriority;
+  type: NextActionType;
+  title: string;
+  description: string;
+  recommendedAction: string;
+  dueAt: string | null;
+  createdFrom: "derived_from_ledger";
 };
 
 type AuditEvent = {
@@ -678,6 +705,185 @@ function recalcCampaign(state: LedgerState, campaignId: string) {
   campaign.updatedAt = now();
 }
 
+function priorityWeight(priority: NextActionPriority) {
+  return priority === "high" ? 0 : priority === "medium" ? 1 : 2;
+}
+
+function latestByCreatedAt<T extends { createdAt: string }>(items: T[]) {
+  return [...items].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0] || null;
+}
+
+function buildNextActionRecommendations(state: LedgerState, campaignId?: string) {
+  const actions: NextActionRecommendation[] = [];
+  const targetCampaigns = campaignId
+    ? state.campaigns.filter((campaign) => campaign.id === campaignId)
+    : state.campaigns.filter((campaign) => campaign.status !== "archived");
+  const currentTime = Date.now();
+
+  const pushAction = (action: Omit<NextActionRecommendation, "createdFrom">) => {
+    actions.push({ ...action, createdFrom: "derived_from_ledger" });
+  };
+
+  for (const campaign of targetCampaigns) {
+    recalcCampaign(state, campaign.id);
+    const mentors = state.mentorProfiles.filter((mentor) => mentor.campaignId === campaign.id);
+    const messages = state.messageDrafts.filter((message) => message.campaignId === campaign.id);
+    const responses = state.mentorResponses.filter((response) => response.campaignId === campaign.id);
+    const followUps = state.followUpPlans.filter((followUp) => followUp.campaignId === campaign.id);
+    const outcomes = state.outreachOutcomes.filter((outcome) => outcome.campaignId === campaign.id);
+    const billingRecords = state.billingRecords.filter((record) => record.campaignId === campaign.id);
+
+    if (!mentors.length) {
+      pushAction({
+        id: `action:add-mentors:${campaign.id}`,
+        campaignId: campaign.id,
+        mentorProfileId: null,
+        messageDraftId: null,
+        followUpId: null,
+        responseId: null,
+        priority: "medium",
+        type: "add_mentors",
+        title: "Add mentors to start this campaign",
+        description: campaign.goal,
+        recommendedAction: "Import a CSV or add the first mentor profile so MARO can score fit and draft outreach.",
+        dueAt: null,
+      });
+    }
+
+    if ((messages.length > 0 || responses.length > 0 || outcomes.length > 0) && billingRecords.length === 0) {
+      pushAction({
+        id: `action:generate-cost-record:${campaign.id}`,
+        campaignId: campaign.id,
+        mentorProfileId: null,
+        messageDraftId: null,
+        followUpId: null,
+        responseId: null,
+        priority: "low",
+        type: "generate_cost_record",
+        title: "Generate a resource cost record",
+        description: "This campaign has operating activity but no stored billing/resource record yet.",
+        recommendedAction: "Open Billing and generate a process-measured cost record for transparent Resource Cost x 2 pricing.",
+        dueAt: null,
+      });
+    }
+
+    for (const mentor of mentors) {
+      const assessment = state.matchAssessments.find((item) => item.mentorProfileId === mentor.id);
+      const mentorMessages = messages.filter((message) => message.mentorProfileId === mentor.id);
+      const mentorResponses = responses.filter((response) => response.mentorProfileId === mentor.id);
+      const mentorFollowUps = followUps.filter((followUp) => followUp.mentorProfileId === mentor.id);
+      const mentorOutcomes = outcomes.filter((outcome) => outcome.mentorProfileId === mentor.id);
+      const latestOutcome = latestByCreatedAt(mentorOutcomes);
+      const latestResponse = latestByCreatedAt(mentorResponses);
+      const terminalOutcome = latestOutcome && ["booked", "helpful", "declined", "no_response", "not_relevant", "closed"].includes(latestOutcome.status);
+
+      for (const followUp of mentorFollowUps) {
+        const due = followUp.status === "scheduled" && new Date(followUp.dueAt).getTime() <= currentTime;
+        if (!due) continue;
+        pushAction({
+          id: `action:follow-up-due:${followUp.id}`,
+          campaignId: campaign.id,
+          mentorProfileId: mentor.id,
+          messageDraftId: followUp.messageDraftId,
+          followUpId: followUp.id,
+          responseId: null,
+          priority: "high",
+          type: "follow_up_due",
+          title: `Follow up with ${mentor.name}`,
+          description: `Follow-up was due ${followUp.dueAt}.`,
+          recommendedAction: "Review the suggested follow-up, perform the manual outreach step if appropriate, then complete or cancel this follow-up.",
+          dueAt: followUp.dueAt,
+        });
+      }
+
+      if (latestResponse && !terminalOutcome) {
+        const priority: NextActionPriority = latestResponse.classification === "interested" || latestResponse.classification === "more_info" ? "high" : "medium";
+        pushAction({
+          id: `action:record-response-outcome:${latestResponse.id}`,
+          campaignId: campaign.id,
+          mentorProfileId: mentor.id,
+          messageDraftId: latestResponse.messageDraftId,
+          followUpId: null,
+          responseId: latestResponse.id,
+          priority,
+          type: "record_response_outcome",
+          title: `Decide outcome for ${mentor.name}`,
+          description: latestResponse.nextAction || `Latest response is ${latestResponse.classification.replace("_", " ")}.`,
+          recommendedAction: "Record the outcome, close the loop, or schedule a follow-up based on the response.",
+          dueAt: null,
+        });
+      }
+
+      if (terminalOutcome) continue;
+
+      if (!mentorMessages.length) {
+        const weakFit = assessment && assessment.score < 60;
+        pushAction({
+          id: `action:${weakFit ? "review-fit" : "draft-message"}:${mentor.id}`,
+          campaignId: campaign.id,
+          mentorProfileId: mentor.id,
+          messageDraftId: null,
+          followUpId: null,
+          responseId: null,
+          priority: weakFit ? "low" : "medium",
+          type: weakFit ? "review_fit" : "draft_message",
+          title: weakFit ? `Review fit before drafting for ${mentor.name}` : `Draft outreach for ${mentor.name}`,
+          description: weakFit ? "This mentor has a weaker automated fit score." : "This mentor has no message draft yet.",
+          recommendedAction: weakFit ? "Inspect the profile and notes before deciding whether to draft outreach." : "Create a personalized draft and keep it in the approval queue.",
+          dueAt: null,
+        });
+      }
+
+      for (const message of mentorMessages) {
+        if (message.status === "draft") {
+          const qualityReview = state.messageQualityReviews.find((review) => review.messageDraftId === message.id) || upsertMessageQualityReview(state, message);
+          const blocked = qualityReview?.status === "blocked";
+          pushAction({
+            id: `action:${blocked ? "fix-blocked-draft" : "review-draft"}:${message.id}`,
+            campaignId: campaign.id,
+            mentorProfileId: mentor.id,
+            messageDraftId: message.id,
+            followUpId: null,
+            responseId: null,
+            priority: blocked ? "high" : "medium",
+            type: blocked ? "fix_blocked_draft" : "review_draft",
+            title: blocked ? `Fix blocked draft for ${mentor.name}` : `Review draft for ${mentor.name}`,
+            description: blocked ? (qualityReview?.warningsJson.join(" ") || "Message quality blocks approval.") : "Draft is waiting for explicit approval.",
+            recommendedAction: blocked ? "Edit unresolved tokens or quality blockers before approving." : "Review the message, edit if needed, then approve or reject it.",
+            dueAt: null,
+          });
+        }
+
+        if (message.status === "approved") {
+          pushAction({
+            id: `action:confirm-manual-send:${message.id}`,
+            campaignId: campaign.id,
+            mentorProfileId: mentor.id,
+            messageDraftId: message.id,
+            followUpId: null,
+            responseId: null,
+            priority: "high",
+            type: "confirm_manual_send",
+            title: `Confirm manual send for ${mentor.name}`,
+            description: "Approved message is waiting for manual delivery evidence.",
+            recommendedAction: "Copy/send the approved message manually, then paste delivery evidence before marking it sent.",
+            dueAt: null,
+          });
+        }
+      }
+    }
+  }
+
+  return actions.sort((left, right) => {
+    const priorityDelta = priorityWeight(left.priority) - priorityWeight(right.priority);
+    if (priorityDelta !== 0) return priorityDelta;
+    const leftDue = left.dueAt ? new Date(left.dueAt).getTime() : Number.POSITIVE_INFINITY;
+    const rightDue = right.dueAt ? new Date(right.dueAt).getTime() : Number.POSITIVE_INFINITY;
+    if (leftDue !== rightDue) return leftDue - rightDue;
+    return left.title.localeCompare(right.title);
+  });
+}
+
 function attachCampaignDetails(state: LedgerState, campaignId: string) {
   recalcCampaign(state, campaignId);
   const campaign = state.campaigns.find((item) => item.id === campaignId);
@@ -710,6 +916,7 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
     resourceSessions,
     billingRecords,
     outcomes,
+    nextActions: buildNextActionRecommendations(state, campaignId),
     auditEvents: state.auditEvents.filter(
       (item) =>
         item.entityId === campaignId ||
@@ -1077,6 +1284,7 @@ export function registerLedgerRoutes(app: Express) {
   app.get("/api/ledger/summary", route((_req, _res, state) => {
     state.campaigns.forEach((campaign) => recalcCampaign(state, campaign.id));
     const activeCampaigns = state.campaigns.filter((campaign) => campaign.status === "active");
+    const nextActions = buildNextActionRecommendations(state);
     const totals = state.campaigns.reduce(
       (acc, campaign) => ({
         mentors: acc.mentors + campaign.totalMentors,
@@ -1087,15 +1295,25 @@ export function registerLedgerRoutes(app: Express) {
         responses: acc.responses + campaign.responsesReceived,
         followUpsDue: acc.followUpsDue + campaign.followUpsDue,
         finalCost: acc.finalCost + state.billingRecords.filter((item) => item.campaignId === campaign.id).reduce((sum, item) => sum + item.finalCost, 0),
+        nextActions: acc.nextActions + nextActions.filter((item) => item.campaignId === campaign.id).length,
       }),
-      { mentors: 0, strongMatches: 0, drafts: 0, approvals: 0, sent: 0, responses: 0, followUpsDue: 0, finalCost: 0 }
+      { mentors: 0, strongMatches: 0, drafts: 0, approvals: 0, sent: 0, responses: 0, followUpsDue: 0, finalCost: 0, nextActions: 0 }
     );
 
     return {
       activeCampaigns,
       totals,
+      nextActions: nextActions.slice(0, 8),
       recentActivity: state.auditEvents.slice(0, 8),
     };
+  }));
+
+  app.get("/api/actions", route((req, res, state) => {
+    const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : undefined;
+    if (campaignId && !requireCampaign(state, campaignId)) {
+      return jsonError(res, 404, "Campaign not found");
+    }
+    return { actions: buildNextActionRecommendations(state, campaignId) };
   }));
 
   app.get("/api/projects", route((_req, _res, state) => ({ projects: state.projects })));
@@ -1191,6 +1409,12 @@ export function registerLedgerRoutes(app: Express) {
   app.get("/api/campaigns/:id", route((req, res, state) => {
     const details = attachCampaignDetails(state, routeId(req));
     return details || jsonError(res, 404, "Campaign not found");
+  }));
+
+  app.get("/api/campaigns/:id/actions", route((req, res, state) => {
+    const campaignId = routeId(req);
+    if (!requireCampaign(state, campaignId)) return jsonError(res, 404, "Campaign not found");
+    return { actions: buildNextActionRecommendations(state, campaignId) };
   }));
 
   app.post("/api/campaigns/:id/mentors", route((req, res, state) => {

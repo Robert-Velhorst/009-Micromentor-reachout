@@ -153,6 +153,31 @@ export type OutreachOutcome = {
   updatedAt: string;
 };
 
+export type NextActionRecommendation = {
+  id: string;
+  campaignId: string;
+  mentorProfileId: string | null;
+  messageDraftId: string | null;
+  followUpId: string | null;
+  responseId: string | null;
+  priority: "high" | "medium" | "low";
+  type:
+    | "add_mentors"
+    | "draft_message"
+    | "review_fit"
+    | "fix_blocked_draft"
+    | "review_draft"
+    | "confirm_manual_send"
+    | "follow_up_due"
+    | "record_response_outcome"
+    | "generate_cost_record";
+  title: string;
+  description: string;
+  recommendedAction: string;
+  dueAt: string | null;
+  createdFrom: "derived_from_ledger";
+};
+
 export type AuditEvent = {
   id: string;
   entityType: string;
@@ -173,7 +198,9 @@ export type LedgerSummary = {
     responses: number;
     followUpsDue: number;
     finalCost: number;
+    nextActions: number;
   };
+  nextActions: NextActionRecommendation[];
   recentActivity: AuditEvent[];
 };
 
@@ -234,6 +261,7 @@ export type CampaignDetails = {
   resourceSessions: ResourceUsageSession[];
   billingRecords: BillingRecord[];
   outcomes: OutreachOutcome[];
+  nextActions: NextActionRecommendation[];
   auditEvents: AuditEvent[];
 };
 
@@ -298,6 +326,8 @@ export const ledgerApi = {
       method: "POST",
       body: JSON.stringify({ scope, confirm: true }),
     }),
+  actions: (campaignId?: string) =>
+    request<{ actions: NextActionRecommendation[] }>(campaignId ? `/api/actions?campaignId=${encodeURIComponent(campaignId)}` : "/api/actions"),
   summary: () => request<LedgerSummary>("/api/ledger/summary"),
   campaigns: () => request<{ campaigns: Campaign[] }>("/api/campaigns"),
   campaign: (id: string) => request<CampaignDetails>(`/api/campaigns/${id}`),

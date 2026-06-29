@@ -36,6 +36,7 @@ import {
   type MentorImportResult,
   type MentorProfile,
   type MentorResponse,
+  type NextActionRecommendation,
   type OutreachOutcome,
   type RuntimeStatus,
   type UsageReport,
@@ -104,6 +105,12 @@ const stageLabel: Record<string, string> = {
   responded: "Responded",
   follow_up: "Follow-up",
   closed: "Closed",
+};
+
+const actionPriorityTone: Record<NextActionRecommendation["priority"], string> = {
+  high: "border-red-200 bg-red-50 text-red-700",
+  medium: "border-amber-200 bg-amber-50 text-amber-700",
+  low: "border-slate-200 bg-slate-50 text-slate-700",
 };
 
 function latestCampaign(campaigns: Campaign[]) {
@@ -234,6 +241,7 @@ export default function Home() {
   const pendingReview = (details?.messages || []).filter((message) => message.status === "draft");
   const approvedMessages = (details?.messages || []).filter((message) => message.status === "approved");
   const sentMessages = (details?.messages || []).filter((message) => message.status === "sent");
+  const nextActions = details?.nextActions || summary?.nextActions || [];
   const progress = campaign?.messagesDrafted ? (campaign.messagesSent / campaign.messagesDrafted) * 100 : 0;
 
   const mutate = async (action: () => Promise<unknown>) => {
@@ -471,11 +479,15 @@ export default function Home() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="grid gap-4 px-5 md:grid-cols-4">
-              <MetricCard icon={<Users className="h-4 w-4 text-primary" />} label="Drafts" value={summary?.totals.drafts || 0} />
-              <MetricCard icon={<ClipboardCheck className="h-4 w-4 text-emerald-600" />} label="Approved" value={summary?.totals.approvals || 0} />
-              <MetricCard icon={<Send className="h-4 w-4 text-amber-600" />} label="Sent" value={summary?.totals.sent || 0} />
-              <MetricCard icon={<Euro className="h-4 w-4 text-sky-600" />} label="Final cost" value={formatCurrency(summary?.totals.finalCost || 0)} />
+            <CardContent className="space-y-4 px-5">
+              <div className="grid gap-4 md:grid-cols-5">
+                <MetricCard icon={<Users className="h-4 w-4 text-primary" />} label="Drafts" value={summary?.totals.drafts || 0} />
+                <MetricCard icon={<ClipboardCheck className="h-4 w-4 text-emerald-600" />} label="Approved" value={summary?.totals.approvals || 0} />
+                <MetricCard icon={<Send className="h-4 w-4 text-amber-600" />} label="Sent" value={summary?.totals.sent || 0} />
+                <MetricCard icon={<AlertTriangle className="h-4 w-4 text-red-600" />} label="Actions" value={summary?.totals.nextActions || nextActions.length} />
+                <MetricCard icon={<Euro className="h-4 w-4 text-sky-600" />} label="Final cost" value={formatCurrency(summary?.totals.finalCost || 0)} />
+              </div>
+              <NextActionPanel actions={nextActions.slice(0, 5)} />
             </CardContent>
           </Card>
 
@@ -724,6 +736,7 @@ export default function Home() {
               responses={selectedMentor ? responsesByMentor.get(selectedMentor.id) || [] : []}
               followUps={selectedMentor ? followUpsByMentor.get(selectedMentor.id) || [] : []}
               outcomes={selectedMentor ? outcomesByMentor.get(selectedMentor.id) || [] : []}
+              nextActions={selectedMentor ? nextActions.filter((action) => action.mentorProfileId === selectedMentor.id) : []}
               auditEvents={
                 selectedMentor
                   ? (details?.auditEvents || []).filter(
@@ -1113,6 +1126,7 @@ function MentorDetailPanel({
   responses,
   followUps,
   outcomes,
+  nextActions,
   auditEvents,
   onCreateDraft,
 }: {
@@ -1124,6 +1138,7 @@ function MentorDetailPanel({
   responses: CampaignDetails["responses"];
   followUps: CampaignDetails["followUps"];
   outcomes: CampaignDetails["outcomes"];
+  nextActions: NextActionRecommendation[];
   auditEvents: CampaignDetails["auditEvents"];
   onCreateDraft: (mentor: MentorProfile) => void;
 }) {
@@ -1181,6 +1196,11 @@ function MentorDetailPanel({
               <MiniStat label="Drafts" value={messages.length} />
               <MiniStat label="Sends" value={sendAttempts.length} />
               <MiniStat label="Replies" value={responses.length} />
+            </div>
+
+            <div className="rounded-md border p-3">
+              <div className="mb-2 text-sm font-medium">Next actions</div>
+              <ActionList actions={nextActions.slice(0, 3)} emptyText="No immediate action for this mentor." />
             </div>
 
             <div className="rounded-md border p-3">
@@ -1272,6 +1292,49 @@ function MentorDetailPanel({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function NextActionPanel({ actions }: { actions: NextActionRecommendation[] }) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">Recommended next actions</div>
+          <div className="text-xs text-muted-foreground">Derived from persisted campaign state</div>
+        </div>
+        <Badge variant="outline" className="rounded-md">
+          {actions.length}
+        </Badge>
+      </div>
+      <ActionList actions={actions} emptyText="No immediate action. Add mentors, draft outreach, or record responses to create the next operating step." />
+    </div>
+  );
+}
+
+function ActionList({ actions, emptyText }: { actions: NextActionRecommendation[]; emptyText: string }) {
+  if (!actions.length) {
+    return <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{emptyText}</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {actions.map((action) => (
+        <div key={action.id} className="rounded-md border bg-background p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">{action.title}</div>
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">{action.description}</div>
+            </div>
+            <Badge variant="outline" className={`rounded-md ${actionPriorityTone[action.priority]}`}>
+              {action.priority}
+            </Badge>
+          </div>
+          <div className="mt-2 text-xs leading-5 text-muted-foreground">{action.recommendedAction}</div>
+          {action.dueAt ? <div className="mt-2 text-xs text-muted-foreground">Due {formatDate(action.dueAt)}</div> : null}
+        </div>
+      ))}
+    </div>
   );
 }
 

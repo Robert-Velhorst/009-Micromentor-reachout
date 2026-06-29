@@ -8,6 +8,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
 - Require approval before a message can be manually confirmed as sent.
 - Review draft quality before approval, including unresolved template tokens, personalization coverage, length, reading time, and call-to-action checks.
+- Show deterministic next-action recommendations for drafts, approvals, due follow-ups, response outcomes, and resource-cost records.
 - Record delivery evidence instead of faking external sends.
 - Track response classifications and follow-up suggestions.
 - Generate local process-measured resource-cost records using `Resource Cost x 2 = Final Price`.
@@ -26,11 +27,13 @@ The Express server now exposes operational API routes before serving the fronten
 - `POST /api/workspace/restore`
 - `POST /api/workspace/reset`
 - `GET /api/ledger/summary`
+- `GET /api/actions`
 - `GET|POST /api/projects`
 - `PATCH /api/projects/:id`
 - `GET|POST /api/campaigns`
 - `PATCH /api/campaigns/:id`
 - `GET /api/campaigns/:id`
+- `GET /api/campaigns/:id/actions`
 - `GET|POST /api/campaigns/:id/mentors`
 - `POST /api/campaigns/:id/mentors/import`
 - `GET /api/campaigns/:id/mentors/export`
@@ -60,6 +63,8 @@ The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to 
 Resource sessions are process-level local measurements. MARO records Node CPU time, RSS memory over session duration, local ledger file size, and observed API payload bytes. It does not use random simulated usage as billing evidence.
 
 Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates the required ledger arrays before replacing local data. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
+
+Next actions are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation.
 
 ## Requirements
 

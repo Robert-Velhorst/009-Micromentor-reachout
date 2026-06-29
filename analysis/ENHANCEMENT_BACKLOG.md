@@ -28,6 +28,8 @@ Acceptance:
 
 Why first: this turns MARO from a draft generator into a repeatable outreach workflow.
 
+Status: Partially implemented in the operating-ledger branch with persisted campaigns, mentor stages, message statuses, responses, follow-ups, outcomes, and deterministic next-action recommendations for draft review, blocked drafts, manual send confirmation, due follow-ups, response outcome decisions, and resource-cost records.
+
 ### P0 - Robust CSV Import, Export, And Deduplication
 
 Problem: bulk import currently splits pasted rows on commas, which breaks quoted CSV values and gives no validation or duplicate warning.

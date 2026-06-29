@@ -150,6 +150,8 @@ try {
   });
   const messageId = draftResult.draft.id;
   assert(draftResult.qualityReview.messageDraftId === messageId, "Draft creation did not return a quality review");
+  const draftActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(draftActions.actions.some((action) => action.type === "review_draft" && action.messageDraftId === messageId), "Next actions did not include draft review");
 
   const blockedDraft = await api(`/api/messages/${messageId}`, {
     method: "PATCH",
@@ -159,6 +161,8 @@ try {
     }),
   });
   assert(blockedDraft.qualityReview.status === "blocked", "Broken template token did not block message quality");
+  const blockedActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(blockedActions.actions.some((action) => action.type === "fix_blocked_draft" && action.messageDraftId === messageId), "Next actions did not include blocked draft repair");
   await expectFailure(
     `/api/messages/${messageId}/approve`,
     {
@@ -191,6 +195,8 @@ try {
     method: "POST",
     body: JSON.stringify({ decisionReason: "Smoke approval" }),
   });
+  const approvedActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(approvedActions.actions.some((action) => action.type === "confirm_manual_send" && action.messageDraftId === messageId), "Next actions did not include manual send confirmation");
 
   await api(`/api/messages/${messageId}/send-attempt`, {
     method: "POST",
@@ -207,13 +213,15 @@ try {
       campaignId,
       mentorProfileId: mentorId,
       messageDraftId: messageId,
-      dueAt: new Date(Date.now() + 86400000).toISOString(),
+      dueAt: new Date(Date.now() - 60000).toISOString(),
       suggestedMessage: "Manual smoke follow-up.",
     }),
   });
+  const dueActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(dueActions.actions.some((action) => action.type === "follow_up_due" && action.followUpId === manualFollowUp.followUp.id), "Next actions did not include due follow-up");
   await api(`/api/follow-ups/${manualFollowUp.followUp.id}/cancel`, { method: "POST" });
 
-  await api("/api/responses", {
+  const responseResult = await api("/api/responses", {
     method: "POST",
     body: JSON.stringify({
       campaignId,
@@ -224,6 +232,8 @@ try {
       nextAction: "Book a short call.",
     }),
   });
+  const responseActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(responseActions.actions.some((action) => action.type === "record_response_outcome" && action.responseId === responseResult.response.id), "Next actions did not include response outcome decision");
 
   const outcome = await api("/api/outcomes", {
     method: "POST",
@@ -260,6 +270,8 @@ try {
   assert(details.outcomes.length === 1, "Outcome detail was not persisted");
   assert(details.followUps.some((followUp) => followUp.status === "completed"), "Completed follow-up was not persisted");
   assert(details.followUps.some((followUp) => followUp.status === "cancelled"), "Cancelled follow-up was not persisted");
+  assert(Array.isArray(details.nextActions), "Campaign details did not include next actions");
+  assert(details.nextActions.some((action) => action.type === "draft_message" || action.type === "generate_cost_record"), "Next actions did not include remaining operational work");
   assert(details.auditEvents.length >= 10, "Audit trail was not recorded");
 
   const backup = await api("/api/workspace/backup");
