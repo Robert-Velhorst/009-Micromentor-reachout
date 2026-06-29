@@ -248,6 +248,10 @@ try {
   const draftActions = await api(`/api/campaigns/${campaignId}/actions`);
   assert(draftActions.actions.some((action) => action.type === "review_draft" && action.messageDraftId === messageId), "Next actions did not include draft review");
   assert(
+    draftActions.actions.some((action) => action.type === "review_duplicate_profile" && action.mentorProfileId === duplicateMentor.mentor.id),
+    "Next actions did not identify the duplicate mentor profile"
+  );
+  assert(
     !draftActions.actions.some((action) => action.type === "draft_message" && action.mentorProfileId === duplicateMentor.mentor.id),
     "Next actions recommended duplicate outreach for an already drafted mentor identity"
   );

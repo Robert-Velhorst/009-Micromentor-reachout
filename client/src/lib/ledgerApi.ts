@@ -225,6 +225,7 @@ export type NextActionRecommendation = {
     | "add_mentors"
     | "draft_message"
     | "review_fit"
+    | "review_duplicate_profile"
     | "fix_blocked_draft"
     | "review_draft"
     | "confirm_manual_send"

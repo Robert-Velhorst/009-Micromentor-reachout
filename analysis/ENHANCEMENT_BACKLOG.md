@@ -49,7 +49,7 @@ Acceptance:
 
 Why first: real MicroMentor workflows usually start with a list, not manual row entry.
 
-Status: Implemented in the operating-ledger branch. CSV parsing supports quoted values, import preview, duplicate/missing-name skips, mentor export, `.csv` file loading in the command center, configurable source-column mapping for name/company/role/goal/profile/notes/priority/stage/source, campaign-history CSV export with message status, send timestamp, response, follow-up, outcome, and notes, plus API smoke coverage for mapped headers and history export. Manual duplicate records can remain for source history, but active/sent duplicate outreach drafts are blocked by mentor identity/profile URL and duplicate draft recommendations are suppressed.
+Status: Implemented in the operating-ledger branch. CSV parsing supports quoted values, import preview, duplicate/missing-name skips, mentor export, `.csv` file loading in the command center, configurable source-column mapping for name/company/role/goal/profile/notes/priority/stage/source, campaign-history CSV export with message status, send timestamp, response, follow-up, outcome, and notes, plus API smoke coverage for mapped headers and history export. Manual duplicate records can remain for source history, but active/sent duplicate outreach drafts are blocked by mentor identity/profile URL, duplicate draft recommendations are suppressed, and duplicate-profile review actions are surfaced.
 
 ### P1 - Template Quality Checks
 
@@ -212,7 +212,7 @@ Done:
 - Added optional passphrase-based encrypted local ledger storage for sensitive mentor, message, and campaign data.
 - Added UI privacy mode to hide sensitive command-center text until revealed.
 - Added manual profile handoff controls that copy revealed drafts without introducing automated external sending.
-- Added duplicate outreach guards so one mentor identity/profile cannot receive multiple active or sent campaign drafts through manual/API paths.
+- Added duplicate outreach guards and review actions so one mentor identity/profile cannot receive multiple active or sent campaign drafts through manual/API paths, and the operator can see which profile needs duplicate review.
 - Added release-gate checks that fail on missing security headers, weakened CSP self-only directives, Google Fonts reintroduction, or external asset URLs in the production app shell.
 
 Do next:

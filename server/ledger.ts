@@ -20,6 +20,7 @@ type NextActionType =
   | "add_mentors"
   | "draft_message"
   | "review_fit"
+  | "review_duplicate_profile"
   | "fix_blocked_draft"
   | "review_draft"
   | "confirm_manual_send"
@@ -1208,6 +1209,24 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
       if (terminalOutcome) continue;
 
       const duplicateActiveDraft = activeDraftForMentorPerson(state, campaign.id, mentor);
+      const canonicalDuplicate = canonicalMentorProfileForPerson(state, mentor);
+      if (canonicalDuplicate && canonicalDuplicate.id !== mentor.id) {
+        pushAction({
+          id: `action:review-duplicate-profile:${mentor.id}`,
+          campaignId: campaign.id,
+          mentorProfileId: mentor.id,
+          messageDraftId: null,
+          followUpId: null,
+          responseId: null,
+          priority: "medium",
+          type: "review_duplicate_profile",
+          title: `Review duplicate profile for ${mentor.name}`,
+          description: `${mentor.name} appears to match ${canonicalDuplicate.name} by identity or profile URL.`,
+          recommendedAction: "Keep the source record for history, but use the existing mentor profile for outreach unless this is a genuinely different person.",
+          dueAt: null,
+        });
+      }
+
       if (!mentorMessages.length && !duplicateActiveDraft) {
         const weakFit = assessment && assessment.score < 60;
         pushAction({
@@ -1602,6 +1621,21 @@ function relatedMentorProfileIds(state: LedgerState, mentor: MentorProfile) {
       })
       .map((item) => item.id)
   );
+}
+
+function relatedMentorProfiles(state: LedgerState, mentor: MentorProfile) {
+  const relatedIds = relatedMentorProfileIds(state, mentor);
+  return state.mentorProfiles
+    .filter((item) => relatedIds.has(item.id))
+    .sort((left, right) => {
+      const createdDelta = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+      return createdDelta !== 0 ? createdDelta : left.id.localeCompare(right.id);
+    });
+}
+
+function canonicalMentorProfileForPerson(state: LedgerState, mentor: MentorProfile) {
+  const relatedProfiles = relatedMentorProfiles(state, mentor);
+  return relatedProfiles.length > 1 ? relatedProfiles[0] : null;
 }
 
 function activeDraftForMentorPerson(state: LedgerState, campaignId: string, mentor: MentorProfile) {
