@@ -28,6 +28,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Shoulder-surfing reduction: session privacy mode hides mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
 - Manual handoff safety: review queues can open the stored mentor profile URL and copy the revealed reviewed draft, but the app still does not automate external sending.
 - Failure transparency: failed manual send attempts are audit logged and remain retryable instead of being hidden, converted into sent state, or allowed to schedule follow-ups.
+- Low-cognitive-load operations: dashboard next actions now open the relevant campaign tab directly and preserve mentor context where available, reducing manual navigation during review, follow-up, billing, and outcome work.
 - Installer dependency and removal risk: the Windows installer embeds the Node runtime and built app, so the end user does not need a separate Node/npm install; it also writes installed-version metadata and registers a current-user uninstall entry.
 - Static type drift: fixed legacy `Map`, `calendar`, and `usePersistFn` type errors; `npm run check` now passes.
 - Release regression risk: added `npm run check:release` to run TypeScript checks, the production encrypted-ledger API smoke test, production surface checks, and the Windows installer build on Windows hosts.

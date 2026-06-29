@@ -68,6 +68,7 @@ type MentorForm = {
 };
 
 type CsvColumnKey = keyof Required<MentorCsvColumnMap>;
+type LedgerTab = "ledger" | "mentors" | "review" | "responses" | "billing" | "audit";
 type ResultFilter = "all" | "awaiting_outcome" | "follow_up_due" | "booked" | "declined" | "no_response" | "open";
 
 const csvColumnFields: Array<{ key: CsvColumnKey; label: string; required?: boolean }> = [
@@ -153,6 +154,29 @@ const actionPriorityTone: Record<NextActionRecommendation["priority"], string> =
   high: "border-red-200 bg-red-50 text-red-700",
   medium: "border-amber-200 bg-amber-50 text-amber-700",
   low: "border-slate-200 bg-slate-50 text-slate-700",
+};
+
+const actionTabMap: Record<NextActionRecommendation["type"], LedgerTab> = {
+  add_mentors: "mentors",
+  draft_message: "mentors",
+  review_fit: "mentors",
+  review_duplicate_profile: "mentors",
+  fix_blocked_draft: "review",
+  review_draft: "review",
+  confirm_manual_send: "review",
+  follow_up_due: "responses",
+  record_response_outcome: "responses",
+  generate_cost_record: "billing",
+  generate_invoice_record: "billing",
+};
+
+const actionTabLabel: Record<LedgerTab, string> = {
+  ledger: "Ledger",
+  mentors: "Mentors",
+  review: "Review",
+  responses: "Responses",
+  billing: "Billing",
+  audit: "Audit",
 };
 
 const resultFilters: Array<{ value: ResultFilter; label: string }> = [
@@ -287,6 +311,7 @@ export default function Home() {
   const [workspaceBackupText, setWorkspaceBackupText] = useState("");
   const [workspacePreview, setWorkspacePreview] = useState<WorkspaceSummary | null>(null);
   const [workspaceStatus, setWorkspaceStatus] = useState("");
+  const [activeTab, setActiveTab] = useState<LedgerTab>("ledger");
   const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
 
   const loadLedger = async (campaignId?: string) => {
@@ -481,6 +506,25 @@ export default function Home() {
       const result = await ledgerApi.importMentorCsv(activeCampaignId, csvText, preview, compactColumnMap(csvColumnMap));
       setCsvImportResult(result);
     });
+
+  const openNextAction = async (action: NextActionRecommendation) => {
+    if (action.campaignId && action.campaignId !== activeCampaignId) {
+      await loadLedger(action.campaignId);
+    }
+
+    if (action.mentorProfileId) {
+      setSelectedMentorId(action.mentorProfileId);
+      setQuery("");
+    }
+
+    if (action.type === "follow_up_due") {
+      setResultFilter("follow_up_due");
+    } else if (action.type === "record_response_outcome") {
+      setResultFilter("awaiting_outcome");
+    }
+
+    setActiveTab(actionTabMap[action.type]);
+  };
 
   const readCsvFile = async (file: File | null) => {
     setCsvFileStatus("");
@@ -768,7 +812,7 @@ export default function Home() {
                 <MetricCard icon={<AlertTriangle className="h-4 w-4 text-red-600" />} label="Actions" value={summary?.totals.nextActions || nextActions.length} />
                 <MetricCard icon={<Euro className="h-4 w-4 text-sky-600" />} label="Final cost" value={formatCurrency(summary?.totals.finalCost || 0)} />
               </div>
-              <NextActionPanel actions={nextActions.slice(0, 5)} />
+              <NextActionPanel actions={nextActions.slice(0, 5)} onOpenAction={(action) => void openNextAction(action)} />
             </CardContent>
           </Card>
 
@@ -825,7 +869,7 @@ export default function Home() {
           </div>
         </section>
 
-        <Tabs defaultValue="ledger" className="mt-5 gap-4">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as LedgerTab)} className="mt-5 gap-4">
           <div className="overflow-x-auto">
             <TabsList className="h-10 rounded-md">
               <TabsTrigger value="ledger" className="rounded-md">
@@ -1900,7 +1944,13 @@ function MentorDetailPanel({
   );
 }
 
-function NextActionPanel({ actions }: { actions: NextActionRecommendation[] }) {
+function NextActionPanel({
+  actions,
+  onOpenAction,
+}: {
+  actions: NextActionRecommendation[];
+  onOpenAction: (action: NextActionRecommendation) => void;
+}) {
   return (
     <div className="rounded-md border bg-muted/20 p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -1912,12 +1962,24 @@ function NextActionPanel({ actions }: { actions: NextActionRecommendation[] }) {
           {actions.length}
         </Badge>
       </div>
-      <ActionList actions={actions} emptyText="No immediate action. Add mentors, draft outreach, or record responses to create the next operating step." />
+      <ActionList
+        actions={actions}
+        emptyText="No immediate action. Add mentors, draft outreach, or record responses to create the next operating step."
+        onOpenAction={onOpenAction}
+      />
     </div>
   );
 }
 
-function ActionList({ actions, emptyText }: { actions: NextActionRecommendation[]; emptyText: string }) {
+function ActionList({
+  actions,
+  emptyText,
+  onOpenAction,
+}: {
+  actions: NextActionRecommendation[];
+  emptyText: string;
+  onOpenAction?: (action: NextActionRecommendation) => void;
+}) {
   if (!actions.length) {
     return <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{emptyText}</div>;
   }
@@ -1937,6 +1999,14 @@ function ActionList({ actions, emptyText }: { actions: NextActionRecommendation[
           </div>
           <div className="mt-2 text-xs leading-5 text-muted-foreground">{action.recommendedAction}</div>
           {action.dueAt ? <div className="mt-2 text-xs text-muted-foreground">Due {formatDate(action.dueAt)}</div> : null}
+          {onOpenAction ? (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+              <div className="text-xs text-muted-foreground">Opens {actionTabLabel[actionTabMap[action.type]]}</div>
+              <Button variant="outline" size="sm" className="h-8 rounded-md" onClick={() => onOpenAction(action)}>
+                Open action
+              </Button>
+            </div>
+          ) : null}
         </div>
       ))}
     </div>
