@@ -2079,10 +2079,10 @@ function RuntimeExposurePanel({
           disabled={!runtimeStatus?.tunnel.publicUrl}
         />
         <div className="grid grid-cols-2 gap-2 text-sm">
+          <MiniStat label="Version" value={runtimeStatus?.version || "Loading"} />
           <MiniStat label="Mode" value={runtimeStatus?.mode || "Loading"} />
           <MiniStat label="Auth" value={basicAuth ? "Basic auth" : "Not set"} />
           <MiniStat label="Ledger" value={encryptedStorage ? "Encrypted" : healthStatus ? "Plain JSON" : "Loading"} />
-          <MiniStat label="Schema" value={healthStatus?.schemaVersion || "Loading"} />
         </div>
         {copyStatus ? <div className="text-xs text-muted-foreground">{copyStatus}</div> : null}
         {publicWithoutAuth ? (

@@ -10,6 +10,9 @@ const appRoot = path.join(artifactsRoot, "app");
 const appZip = path.join(artifactsRoot, "maro-app.zip");
 const csharpSource = path.join(artifactsRoot, "MAROInstaller.cs");
 const installerPath = path.join(root, "artifacts", "MARO-Windows11-Setup.exe");
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const appVersion = String(packageJson.version || "0.0.0");
+const publisher = "Noodzakelijk Online";
 const cscPath = path.join(
   process.env.SystemRoot || "C:\\Windows",
   "Microsoft.NET",
@@ -94,6 +97,7 @@ set "APP_DIR=%~dp0"
 set "HOST=127.0.0.1"
 if not defined PORT set "PORT=3000"
 set "NODE_ENV=production"
+set "MARO_APP_VERSION=${appVersion}"
 set "APP_URL=http://127.0.0.1:%PORT%/"
 echo MARO is starting on %APP_URL%
 start "MARO local server" /min "%APP_DIR%runtime\\node.exe" "%APP_DIR%dist\\index.cjs"
@@ -116,14 +120,55 @@ exit /b 0
 );
 
 writeText(
+  path.join(appRoot, "Uninstall-MARO.cmd"),
+  `@echo off
+setlocal
+set "APP_DIR=%~dp0"
+if "%APP_DIR%"=="" exit /b 1
+if not exist "%APP_DIR%MARO.install.json" (
+  echo This does not look like a MARO install directory.
+  exit /b 1
+)
+set "START_MENU=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\MARO"
+set "DESKTOP_LINK=%USERPROFILE%\\Desktop\\MARO.lnk"
+reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MARO" /f >nul 2>nul
+del "%DESKTOP_LINK%" >nul 2>nul
+rmdir /s /q "%START_MENU%" >nul 2>nul
+echo MARO will be removed from %APP_DIR%
+cd /d "%TEMP%"
+start "MARO uninstall cleanup" /min cmd /c "timeout /t 2 /nobreak >nul & rmdir /s /q ""%APP_DIR%"""
+exit /b 0
+`
+);
+
+writeText(
+  path.join(appRoot, "MARO.install.json"),
+  JSON.stringify(
+    {
+      name: "MARO",
+      displayName: "MARO - Micromentor Reachout Console",
+      version: appVersion,
+      publisher,
+      installedBy: "MARO Windows installer",
+    },
+    null,
+    2
+  )
+);
+
+writeText(
   path.join(appRoot, "README-INSTALL.txt"),
   `MARO - Micromentor Reachout Console
+Version ${appVersion}
 
 Open MARO from the Start Menu shortcut named "MARO".
 
 The app runs locally at http://127.0.0.1:3000/.
 If ngrok is installed and authenticated, the launcher also opens an ngrok tunnel.
 Set NGROK_BASIC_AUTH before launching if you want ngrok basic authentication.
+
+To remove MARO, use Windows Settings > Apps > Installed apps, or run the Start Menu shortcut named "Uninstall MARO".
+Close any MARO server or ngrok windows before uninstalling.
 `
 );
 
@@ -150,12 +195,23 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
+using Microsoft.Win32;
+
+[assembly: AssemblyTitle("MARO Windows 11 Setup")]
+[assembly: AssemblyDescription("Installer for MARO - Micromentor Reachout Console")]
+[assembly: AssemblyCompany("${publisher}")]
+[assembly: AssemblyProduct("MARO")]
+[assembly: AssemblyCopyright("Copyright ${publisher}")]
+[assembly: AssemblyVersion("${appVersion}.0")]
+[assembly: AssemblyFileVersion("${appVersion}.0")]
 
 namespace MAROInstaller
 {
     internal static class Program
     {
         private const string ResourceName = "MaroPayloadZip";
+        private const string AppVersion = "${appVersion}";
+        private const string Publisher = "${publisher}";
 
         private static int Main()
         {
@@ -200,6 +256,20 @@ namespace MAROInstaller
                         Path.Combine(installDir, "MARO.cmd"),
                         installDir
                     );
+                    CreateShortcut(
+                        Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.Programs),
+                            "MARO",
+                            "Uninstall MARO.lnk"
+                        ),
+                        Path.Combine(installDir, "Uninstall-MARO.cmd"),
+                        installDir
+                    );
+                }
+
+                if (Environment.GetEnvironmentVariable("MARO_SKIP_REGISTRY") != "1")
+                {
+                    RegisterUninstallEntry(installDir);
                 }
 
                 Console.WriteLine("MARO has been installed to " + installDir);
@@ -238,6 +308,41 @@ namespace MAROInstaller
                     input.CopyTo(output);
                 }
             }
+        }
+
+        private static void RegisterUninstallEntry(string installDir)
+        {
+            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MARO"))
+            {
+                if (key == null)
+                {
+                    throw new InvalidOperationException("Could not create MARO uninstall registry key.");
+                }
+
+                char quote = '"';
+                string uninstallCommand = quote + Path.Combine(installDir, "Uninstall-MARO.cmd") + quote;
+                key.SetValue("DisplayName", "MARO - Micromentor Reachout Console", RegistryValueKind.String);
+                key.SetValue("DisplayVersion", AppVersion, RegistryValueKind.String);
+                key.SetValue("Publisher", Publisher, RegistryValueKind.String);
+                key.SetValue("InstallLocation", installDir, RegistryValueKind.String);
+                key.SetValue("UninstallString", uninstallCommand, RegistryValueKind.String);
+                key.SetValue("QuietUninstallString", uninstallCommand, RegistryValueKind.String);
+                key.SetValue("DisplayIcon", Path.Combine(installDir, "MARO.cmd"), RegistryValueKind.String);
+                key.SetValue("NoModify", 1, RegistryValueKind.DWord);
+                key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+                key.SetValue("EstimatedSize", EstimateInstallSizeKb(installDir), RegistryValueKind.DWord);
+            }
+        }
+
+        private static int EstimateInstallSizeKb(string installDir)
+        {
+            long bytes = 0;
+            foreach (string file in Directory.GetFiles(installDir, "*", SearchOption.AllDirectories))
+            {
+                bytes += new FileInfo(file).Length;
+            }
+
+            return Math.Max(1, (int)(bytes / 1024));
         }
 
         private static void CreateShortcut(string shortcutPath, string targetPath, string workingDirectory)

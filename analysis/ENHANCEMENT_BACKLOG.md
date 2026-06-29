@@ -161,6 +161,8 @@ Acceptance:
 
 Why later: important for distribution trust, but requires certificate/release infrastructure.
 
+Status: Partially implemented in the operating-ledger branch. The installer writes installed-version metadata, exposes the app version through `GET /api/runtime/status` and the command center, creates a Start Menu uninstall shortcut, and registers a current-user Add/Remove Programs uninstall entry. Authenticode signing and signed update checks still require certificate and release infrastructure.
+
 ### P2 - Test Coverage And Release Gates
 
 Problem: current validation relies mostly on typecheck/build/manual installer tests. The app has enough workflow logic to justify focused automated tests.

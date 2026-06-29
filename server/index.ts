@@ -4,6 +4,7 @@ import path from "path";
 import { registerLedgerRoutes } from "./ledger";
 
 const serverDir = path.dirname(path.resolve(process.argv[1] || "."));
+const appVersion = process.env.MARO_APP_VERSION || process.env.MARO_BUILD_VERSION || "development";
 
 function hostAlias(host: string) {
   return host === "localhost" ? "127.0.0.1" : host;
@@ -92,6 +93,7 @@ async function startServer() {
     const tunnel = await detectTunnelStatus(host, port);
     res.json({
       mode: isProduction ? "production" : "development",
+      version: appVersion,
       host,
       port,
       localUrl: `http://${host}:${port}`,

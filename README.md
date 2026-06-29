@@ -131,7 +131,7 @@ set NGROK_BASIC_AUTH=user:password
 npm run dev
 ```
 
-The command center reads `GET /api/runtime/status` to show the local URL, detected ngrok tunnel URL, and basic-auth status. If ngrok is active and `NGROK_BASIC_AUTH` is not set, MARO shows a first-viewport warning before you share the tunnel URL.
+The command center reads `GET /api/runtime/status` to show the app version, local URL, detected ngrok tunnel URL, and basic-auth status. If ngrok is active and `NGROK_BASIC_AUTH` is not set, MARO shows a first-viewport warning before you share the tunnel URL.
 
 ## Windows Installer
 
@@ -147,7 +147,9 @@ The generated installer is written to:
 artifacts/MARO-Windows11-Setup.exe
 ```
 
-The installer embeds the built app and a Node runtime, installs MARO into `%LOCALAPPDATA%\MARO`, creates launch shortcuts, starts the local server, opens the browser, and opens an ngrok tunnel automatically when ngrok is available on PATH.
+The installer embeds the built app and a Node runtime, installs MARO into `%LOCALAPPDATA%\MARO`, writes installed-version metadata, creates launch and uninstall shortcuts, registers an Add/Remove Programs uninstall entry for the current Windows user, starts the local server, opens the browser, and opens an ngrok tunnel automatically when ngrok is available on PATH.
+
+To remove an installed copy, use Windows Settings > Apps > Installed apps, or run the Start Menu shortcut named `Uninstall MARO`. Close MARO server and ngrok windows before uninstalling.
 
 ## Checks
 

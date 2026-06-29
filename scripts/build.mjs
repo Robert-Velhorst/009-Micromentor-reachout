@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const isWindows = process.platform === "win32";
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const appVersion = String(packageJson.version || "0.0.0");
 
 function run(command, args, cwd) {
   return new Promise((resolve, reject) => {
@@ -77,6 +79,7 @@ await withBuildRoot(async (buildRoot) => {
       "--bundle",
       "--format=cjs",
       "--outfile=dist/index.cjs",
+      `--define:process.env.MARO_BUILD_VERSION=${JSON.stringify(appVersion)}`,
     ],
     buildRoot
   );

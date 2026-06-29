@@ -261,6 +261,7 @@ export type LedgerSummary = {
 
 export type RuntimeStatus = {
   mode: "production" | "development";
+  version: string;
   host: string;
   port: number;
   localUrl: string;

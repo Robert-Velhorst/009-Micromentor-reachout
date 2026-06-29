@@ -5,6 +5,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const dataDir = path.join(root, "artifacts", "smoke-ledger-data");
 const ledgerFile = path.join(dataDir, "maro-ledger.json");
 const port = Number(process.env.MARO_SMOKE_PORT || 3197);
@@ -88,6 +89,7 @@ try {
   assert(!("path" in health.storage), "Health storage status should not expose a local filesystem path");
 
   const runtime = await api("/api/runtime/status");
+  assert(runtime.version === packageJson.version, "Runtime status did not report the package app version");
   assert(runtime.localUrl === baseUrl, "Runtime status did not report the smoke local URL");
   assert(runtime.tunnel.active === false, "Runtime status should not report an active tunnel during smoke test");
   assert(runtime.auth.basicAuthConfigured === false, "Runtime status unexpectedly reported basic auth in smoke test");
