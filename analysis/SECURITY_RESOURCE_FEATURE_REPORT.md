@@ -33,8 +33,8 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 ## Resource Analysis
 
 - Initial production JS observed earlier in the work: about 303.66 KB minified, 95.20 KB gzip.
-- Final production JS: 230.55 KB minified, 71.40 KB gzip.
-- Final production CSS: 106.78 KB minified, 16.98 KB gzip.
+- Current production JS after the operating-ledger, privacy, handoff, and CSV-mapping slices: 270.31 KB minified, 79.68 KB gzip.
+- Current production CSS: 107.69 KB minified, 17.21 KB gzip.
 - Final served public payload directory: about 338 KB, down from tens of MB because unused legacy public images/zips are no longer copied into production builds.
 - Final installer: 33.0 MB, dominated by the embedded Node runtime.
 - Runtime optimizations applied: removed unused app providers, deferred mentor search input, debounced localStorage writes, cleaned stale production public assets, and bundled only the current server/runtime payload.
@@ -58,7 +58,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 
 Detailed prioritization and acceptance criteria are in `analysis/ENHANCEMENT_BACKLOG.md`.
 
-- CSV import/export with column mapping and duplicate detection.
+- Campaign-history CSV export beyond mentor rows.
 - Campaign history with outcomes: contacted, replied, booked, declined, follow-up due.
 - Template scoring and personalization checks before copying a message.
 - Browser-extension form-fill handoff that keeps the final send action manual and reviewable.

@@ -483,6 +483,16 @@ function normalize(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+const mentorStages: MentorStage[] = ["new", "matched", "drafted", "approved", "contacted", "responded", "follow_up", "closed"];
+
+function parseMentorStage(value: unknown) {
+  const stage = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return mentorStages.includes(stage as MentorStage) ? (stage as MentorStage) : null;
+}
+
 function parseCsv(text: string) {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -1395,7 +1405,7 @@ function createMentorRecord(state: LedgerState, campaign: OutreachCampaign, body
     availability: String(body?.availability || "Unknown"),
     contactMethod: String(body?.contactMethod || "manual"),
     rawProfileJson: { ...body, company },
-    stage: "matched",
+    stage: parseMentorStage(body?.stage) || "matched",
     notes: String(body?.notes || ""),
     createdAt,
     updatedAt: createdAt,
@@ -1671,9 +1681,19 @@ export function registerLedgerRoutes(app: Express) {
     const rows = parseCsv(csvText);
     if (rows.length < 2) return jsonError(res, 400, "CSV must include a header row and at least one mentor row");
     const headers = rows[0].map((header) => normalize(header));
-    const field = (row: string[], names: string[]) => {
-      for (const name of names) {
-        const index = headers.indexOf(name);
+    const rawColumnMap = req.body?.columnMap && typeof req.body.columnMap === "object" ? req.body.columnMap as Record<string, unknown> : {};
+    const mappedHeader = (name: string) => {
+      const value = rawColumnMap[name];
+      return typeof value === "string" ? normalize(value) : "";
+    };
+    const field = (row: string[], name: string, aliases: string[]) => {
+      const mapped = mappedHeader(name);
+      if (mapped) {
+        const mappedIndex = headers.indexOf(mapped);
+        if (mappedIndex >= 0) return row[mappedIndex] || "";
+      }
+      for (const alias of aliases) {
+        const index = headers.indexOf(alias);
         if (index >= 0) return row[index] || "";
       }
       return "";
@@ -1685,14 +1705,16 @@ export function registerLedgerRoutes(app: Express) {
 
     rows.slice(1).forEach((row, index) => {
       const payload = {
-        name: field(row, ["name", "mentor", "full name"]),
-        company: field(row, ["company", "organization", "organisation"]),
-        headline: field(row, ["headline", "role", "title"]),
-        bio: field(row, ["bio", "goal", "context", "description"]),
-        skills: field(row, ["skills", "skill"]),
-        profileUrl: field(row, ["profileurl", "profile url", "url", "source url"]),
-        notes: field(row, ["notes", "note"]),
-        source: field(row, ["source"]) || campaign.source,
+        name: field(row, "name", ["name", "mentor", "full name"]),
+        company: field(row, "company", ["company", "organization", "organisation"]),
+        headline: field(row, "headline", ["headline", "role", "title"]),
+        bio: field(row, "bio", ["bio", "goal", "context", "description"]),
+        skills: field(row, "skills", ["skills", "skill"]),
+        profileUrl: field(row, "profileUrl", ["profileurl", "profile url", "url", "source url", "profile"]),
+        notes: field(row, "notes", ["notes", "note"]),
+        source: field(row, "source", ["source"]) || campaign.source,
+        priority: field(row, "priority", ["priority"]),
+        stage: field(row, "stage", ["stage", "status", "outcome"]),
       };
       const rowNumber = index + 2;
       if (!payload.name.trim()) {

@@ -36,6 +36,7 @@ import {
   type HealthStatus,
   type LedgerSummary,
   type MessageDraft,
+  type MentorCsvColumnMap,
   type MentorImportResult,
   type MentorProfile,
   type MentorResponse,
@@ -63,6 +64,39 @@ type MentorForm = {
   profileUrl: string;
   notes: string;
 };
+
+type CsvColumnKey = keyof Required<MentorCsvColumnMap>;
+
+const csvColumnFields: Array<{ key: CsvColumnKey; label: string; required?: boolean }> = [
+  { key: "name", label: "Name", required: true },
+  { key: "company", label: "Company" },
+  { key: "headline", label: "Headline / role" },
+  { key: "bio", label: "Bio / goal" },
+  { key: "skills", label: "Skills" },
+  { key: "profileUrl", label: "URL / profile" },
+  { key: "notes", label: "Notes" },
+  { key: "source", label: "Source" },
+  { key: "priority", label: "Priority" },
+  { key: "stage", label: "Stage" },
+];
+
+const csvColumnAliases: Record<CsvColumnKey, string[]> = {
+  name: ["name", "mentor", "full name"],
+  company: ["company", "organization", "organisation", "org"],
+  headline: ["headline", "role", "title"],
+  bio: ["bio", "goal", "context", "description"],
+  skills: ["skills", "skill"],
+  profileUrl: ["profileurl", "profile url", "url", "source url", "profile"],
+  notes: ["notes", "note"],
+  source: ["source"],
+  priority: ["priority"],
+  stage: ["stage", "status", "outcome"],
+};
+
+const emptyCsvColumnMap = csvColumnFields.reduce(
+  (result, field) => ({ ...result, [field.key]: "" }),
+  {} as Record<CsvColumnKey, string>
+);
 
 const defaultCampaignForm: CampaignForm = {
   title: "",
@@ -129,6 +163,59 @@ function groupBy<T>(items: T[], getKey: (item: T) => string) {
   return map;
 }
 
+function parseCsvHeaderCells(text: string) {
+  const cells: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      cells.push(cell.trim());
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      break;
+    } else {
+      cell += char;
+    }
+  }
+
+  cells.push(cell.trim());
+  return cells.filter(Boolean);
+}
+
+function normalizeCsvHeader(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function inferCsvColumnMap(headers: string[], current: Record<CsvColumnKey, string>) {
+  const normalizedHeaders = new Map(headers.map((header) => [normalizeCsvHeader(header), header]));
+  return csvColumnFields.reduce((next, field) => {
+    const currentHeader = current[field.key];
+    if (currentHeader && normalizedHeaders.has(normalizeCsvHeader(currentHeader))) {
+      next[field.key] = currentHeader;
+      return next;
+    }
+    const matchedAlias = csvColumnAliases[field.key].find((alias) => normalizedHeaders.has(alias));
+    next[field.key] = matchedAlias ? normalizedHeaders.get(matchedAlias) || "" : "";
+    return next;
+  }, { ...emptyCsvColumnMap });
+}
+
+function compactColumnMap(columnMap: Record<CsvColumnKey, string>): MentorCsvColumnMap {
+  return csvColumnFields.reduce((result, field) => {
+    const value = columnMap[field.key].trim();
+    if (value) result[field.key] = value;
+    return result;
+  }, {} as MentorCsvColumnMap);
+}
+
 function downloadText(filename: string, text: string, type = "text/plain;charset=utf-8") {
   const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
@@ -158,6 +245,8 @@ export default function Home() {
   const [outcomeStatus, setOutcomeStatus] = useState<Record<string, OutreachOutcome["status"]>>({});
   const [usageReport, setUsageReport] = useState<UsageReport | null>(null);
   const [csvText, setCsvText] = useState(sampleCsv);
+  const [csvColumnMap, setCsvColumnMap] = useState<Record<CsvColumnKey, string>>(emptyCsvColumnMap);
+  const [csvFileStatus, setCsvFileStatus] = useState("");
   const [csvImportResult, setCsvImportResult] = useState<MentorImportResult | null>(null);
   const [selectedMentorId, setSelectedMentorId] = useState("");
   const [privacyMode, setPrivacyMode] = useState(true);
@@ -201,6 +290,13 @@ export default function Home() {
     // Load once on mount; subsequent refreshes are explicit after mutations.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const csvHeaders = useMemo(() => parseCsvHeaderCells(csvText), [csvText]);
+  const csvHeaderKey = csvHeaders.join("\u001f");
+
+  useEffect(() => {
+    setCsvColumnMap((current) => inferCsvColumnMap(csvHeaders, current));
+  }, [csvHeaderKey]);
 
   const campaign = details?.campaign || null;
   const assessmentsByMentor = useMemo(
@@ -338,9 +434,26 @@ export default function Home() {
   const importMentorCsv = (preview: boolean) =>
     mutate(async () => {
       if (!activeCampaignId) throw new Error("Select a campaign first");
-      const result = await ledgerApi.importMentorCsv(activeCampaignId, csvText, preview);
+      const result = await ledgerApi.importMentorCsv(activeCampaignId, csvText, preview, compactColumnMap(csvColumnMap));
       setCsvImportResult(result);
     });
+
+  const readCsvFile = async (file: File | null) => {
+    setCsvFileStatus("");
+    setCsvImportResult(null);
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".csv") && file.type && file.type !== "text/csv") {
+      setCsvFileStatus("Unsupported file type.");
+      return;
+    }
+    try {
+      const text = await file.text();
+      setCsvText(text);
+      setCsvFileStatus(`Loaded ${file.name}.`);
+    } catch {
+      setCsvFileStatus("Unable to read CSV file.");
+    }
+  };
 
   const exportMentorCsv = async () => {
     if (!activeCampaignId) return;
@@ -868,17 +981,65 @@ export default function Home() {
                 <CardTitle className="text-lg">CSV intake</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 px-5">
+                <Input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="rounded-md"
+                  onChange={(event) => void readCsvFile(event.target.files?.[0] || null)}
+                />
+                {csvFileStatus ? <div className="text-xs text-muted-foreground">{csvFileStatus}</div> : null}
                 <Textarea
                   value={csvText}
-                  onChange={(event) => setCsvText(event.target.value)}
+                  onChange={(event) => {
+                    setCsvText(event.target.value);
+                    setCsvImportResult(null);
+                  }}
                   className="min-h-40 rounded-md font-mono text-xs"
                   placeholder="name,company,headline,bio,skills,profileUrl,notes"
                 />
+                {csvHeaders.length ? (
+                  <div className="rounded-md border bg-muted/20 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-medium">Column mapping</div>
+                      <Badge variant="outline" className="rounded-md">
+                        {csvHeaders.length} headers
+                      </Badge>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {csvColumnFields.map((field) => (
+                        <label key={field.key} className="grid gap-1 text-xs text-muted-foreground">
+                          <span>
+                            {field.label}
+                            {field.required ? " *" : ""}
+                          </span>
+                          <select
+                            value={csvColumnMap[field.key]}
+                            onChange={(event) =>
+                              setCsvColumnMap((current) => ({
+                                ...current,
+                                [field.key]: event.target.value,
+                              }))
+                            }
+                            className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+                          >
+                            <option value="">Do not import</option>
+                            {csvHeaders.map((header) => (
+                              <option key={`${field.key}:${header}`} value={header}>
+                                {header}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+                    {!csvColumnMap.name ? <div className="mt-2 text-xs text-red-600">Map a name column before importing.</div> : null}
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-2 gap-2">
-                  <Button variant="outline" className="rounded-md" onClick={() => void importMentorCsv(true)} disabled={!csvText.trim() || !activeCampaignId}>
+                  <Button variant="outline" className="rounded-md" onClick={() => void importMentorCsv(true)} disabled={!csvText.trim() || !activeCampaignId || !csvColumnMap.name}>
                     Preview
                   </Button>
-                  <Button className="rounded-md" onClick={() => void importMentorCsv(false)} disabled={!csvText.trim() || !activeCampaignId}>
+                  <Button className="rounded-md" onClick={() => void importMentorCsv(false)} disabled={!csvText.trim() || !activeCampaignId || !csvColumnMap.name}>
                     Import
                   </Button>
                 </div>

@@ -340,6 +340,8 @@ export type MentorImportResult = {
   imported: MentorProfile[];
 };
 
+export type MentorCsvColumnMap = Partial<Record<"name" | "company" | "headline" | "bio" | "skills" | "profileUrl" | "notes" | "source" | "priority" | "stage", string>>;
+
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(url, {
     ...options,
@@ -423,10 +425,10 @@ export const ledgerApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
-  importMentorCsv: (campaignId: string, csvText: string, preview = false) =>
+  importMentorCsv: (campaignId: string, csvText: string, preview = false, columnMap?: MentorCsvColumnMap) =>
     request<MentorImportResult>(`/api/campaigns/${campaignId}/mentors/import`, {
       method: "POST",
-      body: JSON.stringify({ csvText, preview }),
+      body: JSON.stringify({ csvText, preview, columnMap }),
     }),
   exportMentorCsv: (campaignId: string) =>
     request<{ filename: string; csv: string }>(`/api/campaigns/${campaignId}/mentors/export`),
