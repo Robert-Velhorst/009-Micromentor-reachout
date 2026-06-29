@@ -1207,7 +1207,8 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
 
       if (terminalOutcome) continue;
 
-      if (!mentorMessages.length) {
+      const duplicateActiveDraft = activeDraftForMentorPerson(state, campaign.id, mentor);
+      if (!mentorMessages.length && !duplicateActiveDraft) {
         const weakFit = assessment && assessment.score < 60;
         pushAction({
           id: `action:${weakFit ? "review-fit" : "draft-message"}:${mentor.id}`,
@@ -1589,6 +1590,43 @@ function duplicateMentorProfiles(state: LedgerState, campaignId: string, body: R
   });
 }
 
+function relatedMentorProfileIds(state: LedgerState, mentor: MentorProfile) {
+  const profileUrl = normalize(mentor.profileUrl || "");
+  return new Set(
+    state.mentorProfiles
+      .filter((item) => {
+        if (item.campaignId !== mentor.campaignId) return false;
+        const sameIdentity = item.mentorIdentityId === mentor.mentorIdentityId;
+        const sameProfileUrl = profileUrl.length > 0 && normalize(item.profileUrl || "") === profileUrl;
+        return sameIdentity || sameProfileUrl;
+      })
+      .map((item) => item.id)
+  );
+}
+
+function activeDraftForMentorPerson(state: LedgerState, campaignId: string, mentor: MentorProfile) {
+  const relatedIds = relatedMentorProfileIds(state, mentor);
+  return state.messageDrafts.find(
+    (message) =>
+      message.campaignId === campaignId &&
+      relatedIds.has(message.mentorProfileId) &&
+      message.status !== "rejected"
+  );
+}
+
+function sentDraftForMentorPerson(state: LedgerState, draft: MessageDraft) {
+  const mentor = state.mentorProfiles.find((item) => item.id === draft.mentorProfileId);
+  if (!mentor) return null;
+  const relatedIds = relatedMentorProfileIds(state, mentor);
+  return state.messageDrafts.find(
+    (message) =>
+      message.id !== draft.id &&
+      message.campaignId === draft.campaignId &&
+      relatedIds.has(message.mentorProfileId) &&
+      message.status === "sent"
+  ) || null;
+}
+
 function createMentorRecord(state: LedgerState, campaign: OutreachCampaign, body: Record<string, unknown>) {
   const name = String(body?.name || "").trim();
   if (!name) {
@@ -1655,6 +1693,13 @@ function createMessageDraftRecord(state: LedgerState, campaign: OutreachCampaign
   const mentor = state.mentorProfiles.find((item) => item.id === String(body?.mentorProfileId));
   if (!mentor || mentor.campaignId !== campaign.id) {
     return { error: "Valid mentorProfileId is required" };
+  }
+  const duplicateDraft = activeDraftForMentorPerson(state, campaign.id, mentor);
+  if (duplicateDraft) {
+    return {
+      error: "Duplicate outreach guard: this mentor identity already has an active or sent draft in this campaign.",
+      status: 409,
+    };
   }
   const createdAt = now();
   const assessment = state.matchAssessments.find((item) => item.mentorProfileId === mentor.id);
@@ -2083,7 +2128,11 @@ export function registerLedgerRoutes(app: Express) {
     const campaign = requireCampaign(state, routeId(req));
     if (!campaign) return jsonError(res, 404, "Campaign not found");
     const result = createMessageDraftRecord(state, campaign, req.body || {});
-    return "error" in result ? jsonError(res, 400, String(result.error)) : result;
+    if ("error" in result) {
+      const status = "status" in result && typeof result.status === "number" ? result.status : 400;
+      return jsonError(res, status, String(result.error));
+    }
+    return result;
   }));
 
   app.get("/api/campaigns/:id/messages", route((req, res, state) => {
@@ -2105,7 +2154,11 @@ export function registerLedgerRoutes(app: Express) {
     const campaign = requireCampaign(state, campaignId);
     if (!campaign) return jsonError(res, 404, "Campaign not found");
     const result = createMessageDraftRecord(state, campaign, req.body || {});
-    return "error" in result ? jsonError(res, 400, String(result.error)) : result;
+    if ("error" in result) {
+      const status = "status" in result && typeof result.status === "number" ? result.status : 400;
+      return jsonError(res, status, String(result.error));
+    }
+    return result;
   }));
 
   app.patch("/api/messages/:id", route((req, res, state) => {
@@ -2187,6 +2240,9 @@ export function registerLedgerRoutes(app: Express) {
     const createdAt = now();
     const evidence = String(req.body?.deliveryEvidence || "").trim();
     if (!evidence) return jsonError(res, 400, "Manual delivery evidence is required");
+    if (sentDraftForMentorPerson(state, draft)) {
+      return jsonError(res, 409, "Duplicate outreach guard: this mentor identity already has confirmed sent outreach in this campaign");
+    }
     draft.status = "sent";
     draft.updatedAt = createdAt;
     const attempt: MessageSendAttempt = {

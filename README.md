@@ -12,6 +12,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Show deterministic next-action recommendations for drafts, approvals, due follow-ups, response outcomes, and resource-cost records.
 - Record delivery evidence instead of faking external sends.
 - Import mentors from pasted CSV text or `.csv` files with configurable source-column mapping and duplicate preview.
+- Block duplicate active or sent outreach drafts for the same mentor identity or profile URL within a campaign.
 - Export mentor rows and full campaign history CSVs with message status, send timestamp, response, follow-up, outcome, and notes.
 - Track response classifications and follow-up suggestions, including automatic cancellation of pending follow-ups when a mentor declines or is unavailable.
 - Review campaign results with response rate, booking rate, positive outcome rate, overdue follow-ups, and outcome filters.
@@ -80,6 +81,8 @@ Invoice reports are persisted local ledger snapshots generated from stored billi
 Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates the required ledger arrays, including message quality reviews and invoice records, before replacing local data. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
 
 Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation. Generated drafts and automatic follow-up suggestions use each campaign's stored tone and follow-up timing rule. Pending follow-ups are cancelled when a recorded response says the mentor is not interested or unavailable.
+
+Manual duplicate mentor records can remain in the ledger for source history, but MARO blocks active or sent duplicate outreach for the same mentor identity/profile in a campaign and suppresses duplicate draft recommendations in next actions.
 
 ## Requirements
 

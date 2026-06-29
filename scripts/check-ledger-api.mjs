@@ -224,6 +224,18 @@ try {
   assert(mappedImport.imported[0].stage === "new", "Mapped mentor stage did not persist");
   const declineMentorId = mappedImport.imported[0].id;
 
+  const duplicateMentor = await api(`/api/campaigns/${campaignId}/mentors`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Ada Tester",
+      company: "Ledger Labs",
+      headline: "Duplicate profile row",
+      bio: "A manually entered duplicate profile for duplicate outreach guard coverage.",
+      skills: "automation",
+    }),
+  });
+  assert(duplicateMentor.duplicateCount >= 1, "Manual duplicate mentor was not detected");
+
   const draftResult = await api(`/api/campaigns/${campaignId}/messages`, {
     method: "POST",
     body: JSON.stringify({ mentorProfileId: mentorId }),
@@ -235,6 +247,18 @@ try {
   assert(draftResult.qualityReview.messageDraftId === messageId, "Draft creation did not return a quality review");
   const draftActions = await api(`/api/campaigns/${campaignId}/actions`);
   assert(draftActions.actions.some((action) => action.type === "review_draft" && action.messageDraftId === messageId), "Next actions did not include draft review");
+  assert(
+    !draftActions.actions.some((action) => action.type === "draft_message" && action.mentorProfileId === duplicateMentor.mentor.id),
+    "Next actions recommended duplicate outreach for an already drafted mentor identity"
+  );
+  await expectFailure(
+    `/api/campaigns/${campaignId}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify({ mentorProfileId: duplicateMentor.mentor.id }),
+    },
+    409
+  );
 
   const blockedDraft = await api(`/api/messages/${messageId}`, {
     method: "PATCH",
@@ -391,7 +415,7 @@ try {
 
   const details = await api(`/api/campaigns/${campaignId}`);
   assert(details.campaign.criteriaJson.followUpAfterDays === 3, "Campaign details did not include follow-up rule");
-  assert(details.campaign.totalMentors === 3, "Campaign mentor count was not persisted");
+  assert(details.campaign.totalMentors === 4, "Campaign mentor count was not persisted");
   assert(details.campaign.messagesDrafted === 2, "Draft count was not persisted");
   assert(details.campaign.messagesSent === 2, "Sent count was not persisted");
   assert(details.campaign.responsesReceived === 2, "Response count was not persisted");
@@ -423,7 +447,7 @@ try {
 
   const backup = await api("/api/workspace/backup");
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
-  assert(backup.summary.mentors === 3, "Workspace backup did not include mentor count");
+  assert(backup.summary.mentors === 4, "Workspace backup did not include mentor count");
   assert(backup.summary.qualityReviews === 2, "Workspace backup did not include quality review count");
   assert(backup.summary.invoiceRecords === 1, "Workspace backup did not include invoice count");
   const restorePreview = await api("/api/workspace/restore/preview", {
@@ -460,7 +484,7 @@ try {
   });
   assert(resetQueue.summary.drafts === 0, "Queue reset did not clear drafts");
   assert(resetQueue.summary.invoiceRecords === 0, "Queue reset did not clear invoice records");
-  assert(resetQueue.summary.mentors === 3, "Queue reset should preserve mentors");
+  assert(resetQueue.summary.mentors === 4, "Queue reset should preserve mentors");
   const restored = await api("/api/workspace/restore", {
     method: "POST",
     body: JSON.stringify({ backupJson: JSON.stringify(backup), confirm: true }),
