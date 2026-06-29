@@ -48,6 +48,22 @@ async function api(pathname, options = {}) {
   return body;
 }
 
+async function fetchText(pathname) {
+  const response = await fetch(`${baseUrl}${pathname}`);
+  return {
+    response,
+    text: await response.text(),
+  };
+}
+
+function headerValue(response, name) {
+  return response.headers.get(name) || "";
+}
+
+function assertIncludes(value, expected, message) {
+  assert(value.includes(expected), `${message}: missing ${expected}`);
+}
+
 async function expectFailure(pathname, options, status) {
   try {
     await api(pathname, options);
@@ -93,6 +109,29 @@ try {
   assert(runtime.localUrl === baseUrl, "Runtime status did not report the smoke local URL");
   assert(runtime.tunnel.active === false, "Runtime status should not report an active tunnel during smoke test");
   assert(runtime.auth.basicAuthConfigured === false, "Runtime status unexpectedly reported basic auth in smoke test");
+
+  const rootPage = await fetchText("/");
+  assert(rootPage.response.status === 200, "Root page did not return HTTP 200");
+  assert(!rootPage.text.includes("fonts.googleapis.com"), "Root HTML still references Google Fonts CSS");
+  assert(!rootPage.text.includes("fonts.gstatic.com"), "Root HTML still references Google Fonts files");
+  assert(!rootPage.text.match(/\b(?:src|href)=["']https?:\/\//i), "Root HTML includes an external production asset URL");
+
+  const csp = headerValue(rootPage.response, "content-security-policy");
+  assertIncludes(csp, "default-src 'self'", "CSP did not keep default sources self-only");
+  assertIncludes(csp, "base-uri 'self'", "CSP did not restrict base URI");
+  assertIncludes(csp, "frame-ancestors 'none'", "CSP did not block framing");
+  assertIncludes(csp, "object-src 'none'", "CSP did not block object embeds");
+  assertIncludes(csp, "img-src 'self' data: blob:", "CSP did not restrict image sources");
+  assertIncludes(csp, "font-src 'self'", "CSP did not keep fonts self-hosted");
+  assertIncludes(csp, "style-src 'self' 'unsafe-inline'", "CSP did not restrict style sources");
+  assertIncludes(csp, "script-src 'self'", "CSP did not restrict script sources");
+  assertIncludes(csp, "connect-src 'self'", "CSP did not restrict connection sources");
+  assert(!csp.includes("fonts.googleapis.com"), "CSP still allows Google Fonts CSS");
+  assert(!csp.includes("fonts.gstatic.com"), "CSP still allows Google Fonts files");
+  assert(headerValue(rootPage.response, "x-content-type-options").toLowerCase() === "nosniff", "Missing X-Content-Type-Options nosniff header");
+  assert(headerValue(rootPage.response, "x-frame-options").toUpperCase() === "DENY", "Missing X-Frame-Options DENY header");
+  assert(headerValue(rootPage.response, "referrer-policy").toLowerCase() === "no-referrer", "Missing Referrer-Policy no-referrer header");
+  assertIncludes(headerValue(rootPage.response, "permissions-policy"), "camera=()", "Missing restrictive Permissions-Policy header");
 
   const campaignResult = await api("/api/campaigns", {
     method: "POST",

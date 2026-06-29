@@ -161,6 +161,6 @@ npm run check:api
 npm run check:release
 ```
 
-`npm run check:release` runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, and the Windows installer build on Windows hosts.
+`npm run check:release` runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, production surface checks for CSP/security headers and external asset regressions, and the Windows installer build on Windows hosts.
 
 Security, resource, and feature analysis notes are in `analysis/SECURITY_RESOURCE_FEATURE_REPORT.md`.

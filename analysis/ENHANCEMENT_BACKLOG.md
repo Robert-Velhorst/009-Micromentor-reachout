@@ -179,13 +179,14 @@ Acceptance:
 
 Why later: valuable once the next feature slice introduces more state transitions.
 
-Status: Implemented as a local release gate. `npm run check:release` now runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, and the Windows installer build on Windows hosts. The smoke test covers CSV parsing/import/export, mapped headers, duplicate skips, template quality blocking, approval-before-send enforcement, follow-up state transitions, response/outcome tracking, billing records, invoice report generation, backup/restore/reset validation, encryption-at-rest, and next-action coverage including invoice-report recommendations.
+Status: Implemented as a local release gate. `npm run check:release` now runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, production surface checks for CSP/security headers and external asset regressions, and the Windows installer build on Windows hosts. The smoke test covers root route serving, restrictive CSP, browser hardening headers, no external production asset URLs in the app shell, CSV parsing/import/export, mapped headers, duplicate skips, template quality blocking, approval-before-send enforcement, follow-up state transitions, response/outcome tracking, billing records, invoice report generation, backup/restore/reset validation, encryption-at-rest, and next-action coverage including invoice-report recommendations.
 
 ## Resource Usage Enhancements
 
 Done:
 - Persisted local invoice/usage-report records generated from stored billing records. Invoice reports are audit logged, included in workspace backup/restore/reset summaries, and explicitly documented as local records rather than external charges.
 - Removed Google Fonts requests and switched to local system font stacks so private/offline installs do not contact external font hosts during normal rendering.
+- Added production surface assertions to the release gate so root HTML, CSP, browser hardening headers, and external asset regressions are checked before installer builds.
 
 Do next:
 - Virtualize mentor and queue tables only after real lists exceed a few hundred rows. The current UI does not need virtualization yet.
@@ -206,6 +207,7 @@ Done:
 - Added optional passphrase-based encrypted local ledger storage for sensitive mentor, message, and campaign data.
 - Added UI privacy mode to hide sensitive command-center text until revealed.
 - Added manual profile handoff controls that copy revealed drafts without introducing automated external sending.
+- Added release-gate checks that fail on missing security headers, weakened CSP self-only directives, Google Fonts reintroduction, or external asset URLs in the production app shell.
 
 Do next:
 - Keep CSP self-only for production assets unless a future integration has an explicit privacy review and documented need.
