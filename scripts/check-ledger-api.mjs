@@ -114,6 +114,7 @@ try {
   assert(rootPage.response.status === 200, "Root page did not return HTTP 200");
   assert(!rootPage.text.includes("fonts.googleapis.com"), "Root HTML still references Google Fonts CSS");
   assert(!rootPage.text.includes("fonts.gstatic.com"), "Root HTML still references Google Fonts files");
+  assert(!rootPage.text.includes("__manus__/debug-collector"), "Root HTML includes the development debug collector");
   assert(!rootPage.text.match(/\b(?:src|href)=["']https?:\/\//i), "Root HTML includes an external production asset URL");
 
   const csp = headerValue(rootPage.response, "content-security-policy");

@@ -22,7 +22,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Public bind risk: the server previously inherited a broad host stance. Fixed by defaulting production/server runs to `127.0.0.1`; ngrok now targets `http://127.0.0.1:<port>` explicitly.
 - Missing browser hardening headers: added `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`, and a restrictive CSP.
 - Production error disclosure: `ErrorBoundary` no longer shows stack traces outside development builds.
-- Dev log ingestion DoS risk: the Vite debug collector now caps request payloads at 256 KB before writing logs.
+- Dev log ingestion DoS and resource-churn risk: the Vite debug collector is now disabled unless `MARO_DEBUG_COLLECTOR=1` is set, and still caps request payloads at 256 KB before writing logs when explicitly enabled.
 - Ngrok access control: launcher supports optional `NGROK_BASIC_AUTH` so a tunnel can require basic auth.
 - Local ledger confidentiality: setting `MARO_LEDGER_PASSPHRASE` stores the ledger as an AES-256-GCM encrypted envelope instead of plaintext JSON.
 - Shoulder-surfing reduction: session privacy mode hides mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
@@ -31,7 +31,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Static type drift: fixed legacy `Map`, `calendar`, and `usePersistFn` type errors; `npm run check` now passes.
 - Release regression risk: added `npm run check:release` to run TypeScript checks, the production encrypted-ledger API smoke test, production surface checks, and the Windows installer build on Windows hosts.
 - External font privacy: removed Google Fonts preconnect/stylesheet requests and tightened CSP font/style directives back to self-only sources plus inline styles required by the bundled UI.
-- Production surface regression risk: the encrypted-ledger smoke test now fails if the root app shell reintroduces external production asset URLs, Google Fonts references, missing browser hardening headers, or weakened CSP directives.
+- Production surface regression risk: the encrypted-ledger smoke test now fails if the root app shell reintroduces external production asset URLs, Google Fonts references, development debug-collector injection, missing browser hardening headers, or weakened CSP directives.
 - Workspace restore integrity: restore validation now requires message-quality and invoice-record arrays, preventing accepted backups from silently dropping review or billing-report history.
 - Outreach control integrity: campaign-level tone and follow-up timing are persisted and used for generated drafts plus automatic follow-up suggestions after manual send confirmation, keeping workflow automation aligned with the operator's configured rules. Negative responses now cancel pending follow-ups instead of leaving accidental outreach work queued.
 
@@ -42,7 +42,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Current production CSS after removing external webfont references: 108.11 KB minified, 17.27 KB gzip.
 - Final served public payload directory: about 338 KB, down from tens of MB because unused legacy public images/zips are no longer copied into production builds.
 - Final installer: 33.0 MB, dominated by the embedded Node runtime.
-- Runtime optimizations applied: removed unused app providers, deferred mentor search input, debounced localStorage writes, cleaned stale production public assets, and bundled only the current server/runtime payload.
+- Runtime optimizations applied: removed unused app providers, deferred mentor search input, debounced localStorage writes, cleaned stale production public assets, made development debug logging opt-in, and bundled only the current server/runtime payload.
 
 ## Validation
 
@@ -51,7 +51,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - `npm run check:release`: passed.
 - `node scripts/ngrok.mjs`: correctly fails fast here because ngrok is not installed on PATH.
 - Safe installer run with `MARO_INSTALL_DIR`, `MARO_SKIP_SHORTCUTS=1`, `MARO_SKIP_REGISTRY=1`, and `MARO_SKIP_LAUNCH=1`: passed.
-- Release smoke server: returned HTTP 200 for `/`, enforced restrictive CSP directives, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`, and verified the root app shell had no external asset URLs or Google Fonts references.
+- Release smoke server: returned HTTP 200 for `/`, enforced restrictive CSP directives, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`, and verified the root app shell had no external asset URLs, Google Fonts references, or development debug-collector injection.
 
 ## Remaining Risks
 

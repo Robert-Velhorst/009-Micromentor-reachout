@@ -191,6 +191,7 @@ Done:
 - Persisted local invoice/usage-report records generated from stored billing records. Invoice reports are audit logged, included in workspace backup/restore/reset summaries, and explicitly documented as local records rather than external charges.
 - Removed Google Fonts requests and switched to local system font stacks so private/offline installs do not contact external font hosts during normal rendering.
 - Added production surface assertions to the release gate so root HTML, CSP, browser hardening headers, and external asset regressions are checked before installer builds.
+- Made the Vite browser debug collector opt-in with `MARO_DEBUG_COLLECTOR=1`, avoiding background log ingestion and `.manus-logs` churn during normal development.
 
 Do next:
 - Virtualize mentor and queue tables only after real lists exceed a few hundred rows. The current UI does not need virtualization yet.

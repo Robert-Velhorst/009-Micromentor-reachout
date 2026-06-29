@@ -16,6 +16,7 @@ const LOG_DIR = path.join(PROJECT_ROOT, ".manus-logs");
 const MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024; // 1MB per log file
 const TRIM_TARGET_BYTES = Math.floor(MAX_LOG_SIZE_BYTES * 0.6); // Trim to 60% to avoid constant re-trimming
 const MAX_DEBUG_PAYLOAD_BYTES = 256 * 1024;
+const DEBUG_COLLECTOR_ENABLED = process.env.MARO_DEBUG_COLLECTOR === "1";
 
 type LogSource = "browserConsole" | "networkRequests" | "sessionReplay";
 
@@ -159,7 +160,11 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), vitePluginManusDebugCollector()];
+const plugins = [
+  react(),
+  tailwindcss(),
+  ...(DEBUG_COLLECTOR_ENABLED ? [vitePluginManusDebugCollector()] : []),
+];
 
 export default defineConfig({
   plugins,

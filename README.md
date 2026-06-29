@@ -109,6 +109,13 @@ For a local Vite-only development server:
 npm run dev:vite
 ```
 
+The browser debug collector is disabled by default to avoid background request logging and `.manus-logs` churn during normal development. Enable it only for focused UI diagnostics:
+
+```sh
+set MARO_DEBUG_COLLECTOR=1
+npm run dev:vite
+```
+
 ## Production Build
 
 ```sh
