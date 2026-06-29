@@ -221,12 +221,16 @@ try {
   assert(mappedImport.importedCount === 1, "Mapped CSV import did not import exactly one mentor");
   assert(mappedImport.imported[0].profileUrl === "https://example.com/katherine", "Mapped profile URL did not persist");
   assert(mappedImport.imported[0].stage === "new", "Mapped mentor stage did not persist");
+  const declineMentorId = mappedImport.imported[0].id;
 
   const draftResult = await api(`/api/campaigns/${campaignId}/messages`, {
     method: "POST",
     body: JSON.stringify({ mentorProfileId: mentorId }),
   });
   const messageId = draftResult.draft.id;
+  assert(draftResult.draft.body.includes("I'll be direct and keep this practical."), "Draft did not apply the campaign tone rule");
+  assert(draftResult.draft.body.includes("Find a practical automation mentor"), "Draft did not preserve the campaign goal");
+  assert(!draftResult.draft.body.includes('"..'), "Draft match reason contained duplicate punctuation");
   assert(draftResult.qualityReview.messageDraftId === messageId, "Draft creation did not return a quality review");
   const draftActions = await api(`/api/campaigns/${campaignId}/actions`);
   assert(draftActions.actions.some((action) => action.type === "review_draft" && action.messageDraftId === messageId), "Next actions did not include draft review");
@@ -288,6 +292,8 @@ try {
       86400000
   );
   assert(scheduledFollowUpDelayDays === 3, "Automatic follow-up did not use the campaign follow-up rule");
+  assert(followUpsAfterSend.followUps[0].suggestedMessage.includes("Find a practical automation mentor"), "Automatic follow-up did not preserve the campaign goal");
+  assert(followUpsAfterSend.followUps[0].suggestedMessage.includes("I'll be direct and keep this practical."), "Automatic follow-up did not preserve the campaign tone");
   await api(`/api/follow-ups/${followUpsAfterSend.followUps[0].id}/complete`, { method: "POST" });
 
   const manualFollowUp = await api("/api/follow-ups", {
@@ -330,6 +336,35 @@ try {
   });
   assert(outcome.outcome.status === "booked", "Outcome was not recorded");
 
+  const declinedDraft = await api(`/api/campaigns/${campaignId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ mentorProfileId: declineMentorId }),
+  });
+  await api(`/api/messages/${declinedDraft.draft.id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ decisionReason: "Smoke decline path approval" }),
+  });
+  await api(`/api/messages/${declinedDraft.draft.id}/send-attempt`, {
+    method: "POST",
+    body: JSON.stringify({ deliveryEvidence: "Confirmed manually for decline path" }),
+  });
+  const declineFollowUpsBeforeResponse = await api(`/api/campaigns/${campaignId}/follow-ups`);
+  const declineFollowUp = declineFollowUpsBeforeResponse.followUps.find((followUp) => followUp.messageDraftId === declinedDraft.draft.id);
+  assert(declineFollowUp?.status === "scheduled", "Decline-path follow-up was not scheduled before response");
+  await api("/api/responses", {
+    method: "POST",
+    body: JSON.stringify({
+      campaignId,
+      mentorProfileId: declineMentorId,
+      messageDraftId: declinedDraft.draft.id,
+      classification: "not_interested",
+      body: "Not a fit right now.",
+    }),
+  });
+  const declineFollowUpsAfterResponse = await api(`/api/campaigns/${campaignId}/follow-ups`);
+  const cancelledDeclineFollowUp = declineFollowUpsAfterResponse.followUps.find((followUp) => followUp.id === declineFollowUp.id);
+  assert(cancelledDeclineFollowUp?.status === "cancelled", "Not-interested response did not cancel the pending follow-up");
+
   const sessionResult = await api("/api/resource-sessions", {
     method: "POST",
     body: JSON.stringify({ campaignId }),
@@ -356,21 +391,21 @@ try {
   const details = await api(`/api/campaigns/${campaignId}`);
   assert(details.campaign.criteriaJson.followUpAfterDays === 3, "Campaign details did not include follow-up rule");
   assert(details.campaign.totalMentors === 3, "Campaign mentor count was not persisted");
-  assert(details.campaign.messagesDrafted === 1, "Draft count was not persisted");
-  assert(details.campaign.messagesSent === 1, "Sent count was not persisted");
-  assert(details.campaign.responsesReceived === 1, "Response count was not persisted");
+  assert(details.campaign.messagesDrafted === 2, "Draft count was not persisted");
+  assert(details.campaign.messagesSent === 2, "Sent count was not persisted");
+  assert(details.campaign.responsesReceived === 2, "Response count was not persisted");
   assert(details.billingRecords.length === 1, "Billing record was not generated");
   assert(details.invoiceRecords.length === 1, "Invoice record was not generated");
   assert(details.outcomes.length === 1, "Outcome detail was not persisted");
   assert(details.followUps.some((followUp) => followUp.status === "completed"), "Completed follow-up was not persisted");
   assert(details.followUps.some((followUp) => followUp.status === "cancelled"), "Cancelled follow-up was not persisted");
-  assert(details.results.totals.contacted === 1, "Campaign results did not include contacted mentor count");
+  assert(details.results.totals.contacted === 2, "Campaign results did not include contacted mentor count");
   assert(details.results.totals.booked === 1, "Campaign results did not include booked outcome count");
   assert(details.results.totals.overdueFollowUps === 0, "Campaign results did not clear completed/cancelled follow-ups");
   assert(details.results.rates.responseRate === 100, "Campaign results did not include response rate");
-  assert(details.results.rates.bookingRate === 100, "Campaign results did not include booking rate");
+  assert(details.results.rates.bookingRate === 50, "Campaign results did not include booking rate");
   assert(details.results.followUpBreakdown.completed === 1, "Campaign results did not include completed follow-up breakdown");
-  assert(details.results.followUpBreakdown.cancelled === 1, "Campaign results did not include cancelled follow-up breakdown");
+  assert(details.results.followUpBreakdown.cancelled === 2, "Campaign results did not include cancelled follow-up breakdown");
   assert(Array.isArray(details.nextActions), "Campaign details did not include next actions");
   assert(details.nextActions.some((action) => action.type === "draft_message" || action.type === "generate_cost_record"), "Next actions did not include remaining operational work");
   assert(details.auditEvents.length >= 10, "Audit trail was not recorded");
@@ -388,15 +423,15 @@ try {
   const backup = await api("/api/workspace/backup");
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
   assert(backup.summary.mentors === 3, "Workspace backup did not include mentor count");
-  assert(backup.summary.qualityReviews === 1, "Workspace backup did not include quality review count");
+  assert(backup.summary.qualityReviews === 2, "Workspace backup did not include quality review count");
   assert(backup.summary.invoiceRecords === 1, "Workspace backup did not include invoice count");
   const restorePreview = await api("/api/workspace/restore/preview", {
     method: "POST",
     body: JSON.stringify({ backupJson: JSON.stringify(backup) }),
   });
   assert(restorePreview.valid === true, "Workspace restore preview did not validate backup");
-  assert(restorePreview.summary.drafts === 1, "Workspace restore preview did not include draft count");
-  assert(restorePreview.summary.qualityReviews === 1, "Workspace restore preview did not include quality review count");
+  assert(restorePreview.summary.drafts === 2, "Workspace restore preview did not include draft count");
+  assert(restorePreview.summary.qualityReviews === 2, "Workspace restore preview did not include quality review count");
   assert(restorePreview.summary.invoiceRecords === 1, "Workspace restore preview did not include invoice count");
   const missingQualityReviewsBackup = structuredClone(backup);
   delete missingQualityReviewsBackup.ledger.messageQualityReviews;
@@ -429,12 +464,12 @@ try {
     method: "POST",
     body: JSON.stringify({ backupJson: JSON.stringify(backup), confirm: true }),
   });
-  assert(restored.summary.drafts === 1, "Workspace restore did not restore draft count");
-  assert(restored.summary.qualityReviews === 1, "Workspace restore did not restore quality review count");
+  assert(restored.summary.drafts === 2, "Workspace restore did not restore draft count");
+  assert(restored.summary.qualityReviews === 2, "Workspace restore did not restore quality review count");
   assert(restored.summary.invoiceRecords === 1, "Workspace restore did not restore invoice count");
   const restoredDetails = await api(`/api/campaigns/${campaignId}`);
-  assert(restoredDetails.campaign.messagesDrafted === 1, "Restored campaign draft count was not available");
-  assert(restoredDetails.qualityReviews.length === 1, "Restored quality review was not available");
+  assert(restoredDetails.campaign.messagesDrafted === 2, "Restored campaign draft count was not available");
+  assert(restoredDetails.qualityReviews.length === 2, "Restored quality review was not available");
   assert(restoredDetails.invoiceRecords.length === 1, "Restored invoice record was not available");
 
   const persistedLedger = fs.readFileSync(ledgerFile, "utf8");

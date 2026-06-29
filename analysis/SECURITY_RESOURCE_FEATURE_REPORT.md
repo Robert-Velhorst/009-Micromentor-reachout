@@ -33,7 +33,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - External font privacy: removed Google Fonts preconnect/stylesheet requests and tightened CSP font/style directives back to self-only sources plus inline styles required by the bundled UI.
 - Production surface regression risk: the encrypted-ledger smoke test now fails if the root app shell reintroduces external production asset URLs, Google Fonts references, missing browser hardening headers, or weakened CSP directives.
 - Workspace restore integrity: restore validation now requires message-quality and invoice-record arrays, preventing accepted backups from silently dropping review or billing-report history.
-- Outreach control integrity: campaign-level follow-up timing is persisted and used for automatic follow-up suggestions after manual send confirmation, keeping workflow automation aligned with the operator's configured rule.
+- Outreach control integrity: campaign-level tone and follow-up timing are persisted and used for generated drafts plus automatic follow-up suggestions after manual send confirmation, keeping workflow automation aligned with the operator's configured rules. Negative responses now cancel pending follow-ups instead of leaving accidental outreach work queued.
 
 ## Resource Analysis
 

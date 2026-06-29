@@ -532,6 +532,41 @@ function campaignFollowUpAfterDays(campaign: OutreachCampaign) {
   return campaignCriteria(campaign.criteriaJson).followUpAfterDays;
 }
 
+function campaignTone(campaign: OutreachCampaign) {
+  return campaignCriteria(campaign.criteriaJson).tone;
+}
+
+function toneOpening(tone: string) {
+  const lowerTone = tone.toLowerCase();
+  if (lowerTone.includes("direct") && lowerTone.includes("practical")) {
+    return "I'll be direct and keep this practical.";
+  }
+  if (lowerTone.includes("concise")) {
+    return "I'll keep this concise.";
+  }
+  if (lowerTone.includes("warm")) {
+    return "I wanted to reach out respectfully because your profile stood out.";
+  }
+  return `I wanted to keep this outreach ${tone}.`;
+}
+
+function sentenceFragment(value: string) {
+  return value.trim().replace(/[.!?]+$/, "");
+}
+
+function buildFirstTouchDraft(campaign: OutreachCampaign, mentor: MentorProfile, assessment: MatchAssessment | undefined) {
+  const matchReason = sentenceFragment(assessment?.reasonsJson[0] || "your background appears connected to this campaign");
+  return `Hi ${firstName(mentor.name)},\n\n${toneOpening(campaignTone(campaign))}\n\nI found your profile while working on: ${campaign.goal}\n\nYou look relevant because ${matchReason}.\n\nWould you be open to a short practical exchange?\n\nBest,\nRobert`;
+}
+
+function buildFollowUpSuggestion(campaign: OutreachCampaign, mentor: MentorProfile | undefined) {
+  return `Hi ${mentor ? firstName(mentor.name) : "there"},\n\nFollowing up briefly on my earlier MicroMentor note about: ${campaign.goal}\n\n${toneOpening(campaignTone(campaign))}\n\nWould a short exchange still be useful?`;
+}
+
+function responseCancelsFollowUps(classification: ResponseClassification) {
+  return classification === "not_interested" || classification === "unavailable";
+}
+
 const mentorStages: MentorStage[] = ["new", "matched", "drafted", "approved", "contacted", "responded", "follow_up", "closed"];
 
 function parseMentorStage(value: unknown) {
@@ -1626,7 +1661,7 @@ function createMessageDraftRecord(state: LedgerState, campaign: OutreachCampaign
   const subject = String(body?.subject || `Quick MicroMentor question for ${firstName(mentor.name)}`);
   const messageBody = String(
     body?.body ||
-      `Hi ${firstName(mentor.name)},\n\nI found your profile while working on: ${campaign.goal}\n\nYou look relevant because ${assessment?.reasonsJson[0] || "your background appears connected to this campaign"}.\n\nWould you be open to a short practical exchange?\n\nBest,\nRobert`
+      buildFirstTouchDraft(campaign, mentor, assessment)
   );
   const draft: MessageDraft = {
     id: randomUUID(),
@@ -2181,7 +2216,7 @@ export function registerLedgerRoutes(app: Express) {
       messageDraftId: draft.id,
       dueAt: addDays(new Date(createdAt), parsePositiveInteger(req.body?.followUpAfterDays, campaignFollowUpAfterDays(campaign))),
       status: "scheduled",
-      suggestedMessage: `Hi ${mentor ? firstName(mentor.name) : "there"},\n\nI wanted to follow up on my earlier MicroMentor note in case it got buried.\n\nWould a short exchange still be useful?`,
+      suggestedMessage: buildFollowUpSuggestion(campaign, mentor),
       createdAt,
       updatedAt: createdAt,
     };
@@ -2197,22 +2232,23 @@ export function registerLedgerRoutes(app: Express) {
     if (!requireCampaign(state, campaignId)) return jsonError(res, 404, "Campaign not found");
     const mentor = state.mentorProfiles.find((item) => item.id === mentorProfileId && item.campaignId === campaignId);
     if (!mentor) return jsonError(res, 400, "Valid mentorProfileId is required");
+    const classification = (req.body?.classification || "unknown") as ResponseClassification;
     const response: MentorResponse = {
       id: randomUUID(),
       campaignId,
       mentorProfileId,
       messageDraftId: req.body?.messageDraftId ? String(req.body.messageDraftId) : null,
-      classification: (req.body?.classification || "unknown") as ResponseClassification,
+      classification,
       body: String(req.body?.body || ""),
-      nextAction: String(req.body?.nextAction || "Review response and decide next action"),
+      nextAction: String(req.body?.nextAction || (responseCancelsFollowUps(classification) ? "Do not follow up unless the mentor explicitly reopens the conversation." : "Review response and decide next action")),
       createdAt: now(),
     };
     state.mentorResponses.unshift(response);
-    mentor.stage = "responded";
+    mentor.stage = responseCancelsFollowUps(classification) ? "closed" : "responded";
     mentor.updatedAt = response.createdAt;
     for (const followUp of state.followUpPlans) {
       if (followUp.mentorProfileId === mentor.id && followUp.status === "scheduled") {
-        followUp.status = "completed";
+        followUp.status = responseCancelsFollowUps(classification) ? "cancelled" : "completed";
         followUp.updatedAt = response.createdAt;
       }
     }
@@ -2279,8 +2315,10 @@ export function registerLedgerRoutes(app: Express) {
   app.post("/api/follow-ups", route((req, res, state) => {
     const campaignId = String(req.body?.campaignId || "");
     const mentorProfileId = String(req.body?.mentorProfileId || "");
-    if (!requireCampaign(state, campaignId)) return jsonError(res, 404, "Campaign not found");
-    if (!state.mentorProfiles.some((item) => item.id === mentorProfileId && item.campaignId === campaignId)) {
+    const campaign = requireCampaign(state, campaignId);
+    if (!campaign) return jsonError(res, 404, "Campaign not found");
+    const mentor = state.mentorProfiles.find((item) => item.id === mentorProfileId && item.campaignId === campaignId);
+    if (!mentor) {
       return jsonError(res, 400, "Valid mentorProfileId is required");
     }
     const createdAt = now();
@@ -2289,9 +2327,9 @@ export function registerLedgerRoutes(app: Express) {
       campaignId,
       mentorProfileId,
       messageDraftId: req.body?.messageDraftId ? String(req.body.messageDraftId) : null,
-      dueAt: req.body?.dueAt ? new Date(String(req.body.dueAt)).toISOString() : addDays(new Date(), campaignFollowUpAfterDays(requireCampaign(state, campaignId)!)),
+      dueAt: req.body?.dueAt ? new Date(String(req.body.dueAt)).toISOString() : addDays(new Date(), campaignFollowUpAfterDays(campaign)),
       status: "scheduled",
-      suggestedMessage: String(req.body?.suggestedMessage || "Short respectful follow-up."),
+      suggestedMessage: String(req.body?.suggestedMessage || buildFollowUpSuggestion(campaign, mentor)),
       createdAt,
       updatedAt: createdAt,
     };
