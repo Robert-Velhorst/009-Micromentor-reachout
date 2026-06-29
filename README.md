@@ -8,6 +8,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Store campaign-level message tone and follow-up timing rules, then apply them to generated drafts and follow-up suggestions.
 - Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
 - Require approval before a message can be manually confirmed as sent.
+- Record failed manual send attempts without marking messages sent or scheduling follow-ups.
 - Review draft quality before approval, including unresolved template tokens, personalization coverage, length, reading time, and call-to-action checks.
 - Show deterministic next-action recommendations for drafts, approvals, duplicate profile review, due follow-ups, response outcomes, and resource-cost records.
 - Record delivery evidence instead of faking external sends.
@@ -80,7 +81,7 @@ Invoice reports are persisted local ledger snapshots generated from stored billi
 
 Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates the required ledger arrays, including message quality reviews and invoice records, before replacing local data. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
 
-Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation. Generated drafts and automatic follow-up suggestions use each campaign's stored tone and follow-up timing rule. Pending follow-ups are cancelled when a recorded response says the mentor is not interested or unavailable.
+Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation. Generated drafts and automatic follow-up suggestions use each campaign's stored tone and follow-up timing rule. Pending follow-ups are cancelled when a recorded response says the mentor is not interested or unavailable. Failed manual send attempts remain visible in the review queue and do not create follow-up work.
 
 Manual duplicate mentor records can remain in the ledger for source history, but MARO blocks active or sent duplicate outreach for the same mentor identity/profile in a campaign, suppresses duplicate draft recommendations, and surfaces a duplicate-profile review action.
 

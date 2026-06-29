@@ -308,6 +308,24 @@ try {
   });
   const approvedActions = await api(`/api/campaigns/${campaignId}/actions`);
   assert(approvedActions.actions.some((action) => action.type === "confirm_manual_send" && action.messageDraftId === messageId), "Next actions did not include manual send confirmation");
+  await expectFailure(
+    `/api/messages/${messageId}/send-attempt`,
+    {
+      method: "POST",
+      body: JSON.stringify({ status: "failed" }),
+    },
+    400
+  );
+  const failedSendAttempt = await api(`/api/messages/${messageId}/send-attempt`, {
+    method: "POST",
+    body: JSON.stringify({ status: "failed", errorMessage: "Manual handoff window was unavailable" }),
+  });
+  assert(failedSendAttempt.attempt.status === "failed", "Failed send attempt was not recorded as failed");
+  assert(failedSendAttempt.draft.status === "approved", "Failed send attempt should leave the draft approved for retry");
+  const followUpsAfterFailedAttempt = await api(`/api/campaigns/${campaignId}/follow-ups`);
+  assert(followUpsAfterFailedAttempt.followUps.length === 0, "Failed send attempt should not schedule follow-up");
+  const retryActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(retryActions.actions.some((action) => action.type === "confirm_manual_send" && action.messageDraftId === messageId), "Failed send attempt should keep manual send confirmation open");
 
   await api(`/api/messages/${messageId}/send-attempt`, {
     method: "POST",

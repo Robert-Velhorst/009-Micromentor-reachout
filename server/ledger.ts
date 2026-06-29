@@ -2272,6 +2272,30 @@ export function registerLedgerRoutes(app: Express) {
     const campaign = requireCampaign(state, draft.campaignId);
     if (!campaign) return jsonError(res, 404, "Campaign not found");
     const createdAt = now();
+    const priorAttempts = state.messageSendAttempts.filter((item) => item.messageDraftId === draft.id);
+    const attemptStatus: SendStatus = req.body?.status === "failed" ? "failed" : "confirmed_sent";
+    if (attemptStatus === "failed") {
+      const errorMessage = String(req.body?.errorMessage || "").trim();
+      if (!errorMessage) return jsonError(res, 400, "Failure reason is required");
+      const attempt: MessageSendAttempt = {
+        id: randomUUID(),
+        messageDraftId: draft.id,
+        mentorProfileId: draft.mentorProfileId,
+        campaignId: draft.campaignId,
+        status: "failed",
+        channel: String(req.body?.channel || "manual"),
+        startedAt: createdAt,
+        finishedAt: createdAt,
+        errorMessage,
+        deliveryEvidence: "",
+        retryCount: priorAttempts.length,
+        createdAt,
+      };
+      state.messageSendAttempts.unshift(attempt);
+      recalcCampaign(state, draft.campaignId);
+      audit(state, "recorded_failed_send_attempt", "messageDraft", draft.id, { attempt, draft }, { riskLevel: "medium" });
+      return { draft, attempt };
+    }
     const evidence = String(req.body?.deliveryEvidence || "").trim();
     if (!evidence) return jsonError(res, 400, "Manual delivery evidence is required");
     if (sentDraftForMentorPerson(state, draft)) {
@@ -2290,7 +2314,7 @@ export function registerLedgerRoutes(app: Express) {
       finishedAt: createdAt,
       errorMessage: null,
       deliveryEvidence: evidence,
-      retryCount: 0,
+      retryCount: priorAttempts.length,
       createdAt,
     };
     state.messageSendAttempts.unshift(attempt);

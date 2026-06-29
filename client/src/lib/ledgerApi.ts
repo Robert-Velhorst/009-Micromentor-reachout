@@ -493,6 +493,11 @@ export const ledgerApi = {
       method: "POST",
       body: JSON.stringify({ channel: "manual", deliveryEvidence }),
     }),
+  recordFailedSendAttempt: (messageId: string, errorMessage: string) =>
+    request<{ draft: MessageDraft; attempt: MessageSendAttempt }>(`/api/messages/${messageId}/send-attempt`, {
+      method: "POST",
+      body: JSON.stringify({ channel: "manual", status: "failed", errorMessage }),
+    }),
   recordResponse: (payload: {
     campaignId: string;
     mentorProfileId: string;

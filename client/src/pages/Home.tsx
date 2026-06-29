@@ -265,6 +265,7 @@ export default function Home() {
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(defaultCampaignForm);
   const [mentorForm, setMentorForm] = useState<MentorForm>(defaultMentorForm);
   const [sendEvidence, setSendEvidence] = useState<Record<string, string>>({});
+  const [sendFailureNotes, setSendFailureNotes] = useState<Record<string, string>>({});
   const [responseText, setResponseText] = useState<Record<string, string>>({});
   const [responseClass, setResponseClass] = useState<Record<string, MentorResponse["classification"]>>({});
   const [draftEdits, setDraftEdits] = useState<Record<string, Pick<MessageDraft, "subject" | "body">>>({});
@@ -1254,6 +1255,22 @@ export default function Home() {
                     <Send className="h-4 w-4" />
                     Confirm manually sent
                   </Button>
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <Input
+                      value={sendFailureNotes[message.id] || ""}
+                      onChange={(event) => setSendFailureNotes((current) => ({ ...current, [message.id]: event.target.value }))}
+                      placeholder="Record failed manual attempt"
+                      className="rounded-md"
+                    />
+                    <Button
+                      variant="outline"
+                      className="rounded-md border-red-200 text-red-700 hover:bg-red-50 hover:text-red-700"
+                      onClick={() => void mutate(() => ledgerApi.recordFailedSendAttempt(message.id, sendFailureNotes[message.id] || ""))}
+                      disabled={!sendFailureNotes[message.id]?.trim()}
+                    >
+                      Record failed
+                    </Button>
+                  </div>
                 </div>
               )}
             />
@@ -2242,6 +2259,8 @@ function ReviewColumn({
         {messages.map((message) => {
           const mentor = details?.mentors.find((item) => item.id === message.mentorProfileId);
           const quality = qualityByMessage.get(message.id);
+          const sendAttempts = details?.sendAttempts.filter((attempt) => attempt.messageDraftId === message.id) || [];
+          const latestSendAttempt = sendAttempts[0] || null;
           const draftBodyKey = `draft-body:${message.id}`;
           const draftBodyVisible = isSensitiveVisible(draftBodyKey);
           return (
@@ -2255,6 +2274,11 @@ function ReviewColumn({
                   {message.status}
                 </Badge>
               </div>
+              {latestSendAttempt?.status === "failed" ? (
+                <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-700">
+                  Last manual send attempt failed: {latestSendAttempt.errorMessage || "No failure reason recorded."}
+                </div>
+              ) : null}
               {quality ? <MessageQualityBox quality={quality} /> : null}
               <Input
                 value={draftEdits[message.id]?.subject ?? message.subject}
