@@ -14,6 +14,7 @@ type ResponseClassification = "interested" | "not_interested" | "more_info" | "u
 type FollowUpStatus = "scheduled" | "completed" | "cancelled";
 type ResourceSessionStatus = "active" | "ended";
 type OutcomeStatus = "open" | "booked" | "helpful" | "declined" | "no_response" | "not_relevant" | "closed";
+type InvoiceStatus = "generated" | "void";
 type NextActionPriority = "high" | "medium" | "low";
 type NextActionType =
   | "add_mentors"
@@ -24,7 +25,8 @@ type NextActionType =
   | "confirm_manual_send"
   | "follow_up_due"
   | "record_response_outcome"
-  | "generate_cost_record";
+  | "generate_cost_record"
+  | "generate_invoice_record";
 
 type Operator = {
   id: string;
@@ -226,6 +228,36 @@ type BillingRecord = {
   generatedAt: string;
 };
 
+type InvoiceRecord = {
+  id: string;
+  campaignId: string;
+  invoiceNumber: string;
+  status: InvoiceStatus;
+  currency: "EUR";
+  rawResourceCost: number;
+  finalCost: number;
+  pricingFormula: string;
+  measurementNote: string;
+  lineItemsJson: Array<{
+    billingRecordId: string;
+    resourceUsageSessionId: string;
+    rawResourceCost: number;
+    finalCost: number;
+    generatedAt: string;
+  }>;
+  totalsJson: {
+    mentors: number;
+    messagesDrafted: number;
+    messagesApproved: number;
+    messagesSent: number;
+    responsesReceived: number;
+    followUpsDue: number;
+    outcomesRecorded: number;
+  };
+  generatedAt: string;
+  createdAt: string;
+};
+
 type OutreachOutcome = {
   id: string;
   campaignId: string;
@@ -283,6 +315,7 @@ type LedgerState = {
   followUpPlans: FollowUpPlan[];
   resourceUsageSessions: ResourceUsageSession[];
   billingRecords: BillingRecord[];
+  invoiceRecords: InvoiceRecord[];
   outreachOutcomes: OutreachOutcome[];
   auditEvents: AuditEvent[];
 };
@@ -474,6 +507,7 @@ function createSeedState(): LedgerState {
     followUpPlans: [],
     resourceUsageSessions: [],
     billingRecords: [],
+    invoiceRecords: [],
     outreachOutcomes: [],
     auditEvents: [
       {
@@ -518,6 +552,7 @@ function normalizeState(state: Partial<LedgerState>): LedgerState {
       endSnapshot: session.endSnapshot || null,
     })),
     billingRecords: state.billingRecords || [],
+    invoiceRecords: state.invoiceRecords || [],
     outreachOutcomes: state.outreachOutcomes || [],
     auditEvents: state.auditEvents || [],
   };
@@ -565,6 +600,7 @@ function workspaceSummary(state: LedgerState) {
     outcomes: state.outreachOutcomes.length,
     resourceSessions: state.resourceUsageSessions.length,
     billingRecords: state.billingRecords.length,
+    invoiceRecords: state.invoiceRecords.length,
     auditEvents: state.auditEvents.length,
   };
 }
@@ -635,6 +671,7 @@ function resetWorkspaceScope(state: LedgerState, scope: WorkspaceResetScope) {
   state.followUpPlans = [];
   state.resourceUsageSessions = [];
   state.billingRecords = [];
+  state.invoiceRecords = [];
   state.outreachOutcomes = [];
 
   if (scope === "mentors") {
@@ -732,6 +769,7 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
     const followUps = state.followUpPlans.filter((followUp) => followUp.campaignId === campaign.id);
     const outcomes = state.outreachOutcomes.filter((outcome) => outcome.campaignId === campaign.id);
     const billingRecords = state.billingRecords.filter((record) => record.campaignId === campaign.id);
+    const invoiceRecords = state.invoiceRecords.filter((record) => record.campaignId === campaign.id);
 
     if (!mentors.length) {
       pushAction({
@@ -763,6 +801,23 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
         title: "Generate a resource cost record",
         description: "This campaign has operating activity but no stored billing/resource record yet.",
         recommendedAction: "Open Billing and generate a process-measured cost record for transparent Resource Cost x 2 pricing.",
+        dueAt: null,
+      });
+    }
+
+    if (billingRecords.length > 0 && invoiceRecords.length === 0) {
+      pushAction({
+        id: `action:generate-invoice-record:${campaign.id}`,
+        campaignId: campaign.id,
+        mentorProfileId: null,
+        messageDraftId: null,
+        followUpId: null,
+        responseId: null,
+        priority: "low",
+        type: "generate_invoice_record",
+        title: "Generate an invoice report",
+        description: "This campaign has billing records but no stored invoice/usage-report snapshot.",
+        recommendedAction: "Generate a local invoice report after reviewing the cost breakdown. This records a report only; it does not charge anyone.",
         dueAt: null,
       });
     }
@@ -900,6 +955,8 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
   const resourceSessionIds = new Set(resourceSessions.map((item) => item.id));
   const billingRecords = state.billingRecords.filter((item) => item.campaignId === campaignId);
   const billingRecordIds = new Set(billingRecords.map((item) => item.id));
+  const invoiceRecords = state.invoiceRecords.filter((item) => item.campaignId === campaignId);
+  const invoiceRecordIds = new Set(invoiceRecords.map((item) => item.id));
   const outcomes = state.outreachOutcomes.filter((item) => item.campaignId === campaignId);
   const outcomeIds = new Set(outcomes.map((item) => item.id));
 
@@ -915,6 +972,7 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
     followUps,
     resourceSessions,
     billingRecords,
+    invoiceRecords,
     outcomes,
     nextActions: buildNextActionRecommendations(state, campaignId),
     auditEvents: state.auditEvents.filter(
@@ -926,6 +984,7 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
         responseIds.has(item.entityId) ||
         resourceSessionIds.has(item.entityId) ||
         billingRecordIds.has(item.entityId) ||
+        invoiceRecordIds.has(item.entityId) ||
         outcomeIds.has(item.entityId)
     ),
   };
@@ -1098,6 +1157,73 @@ function route(handler: (req: Request, res: Response, state: LedgerState) => unk
       jsonError(res, 500, "Internal ledger error");
     }
   };
+}
+
+function buildUsageReport(details: NonNullable<ReturnType<typeof attachCampaignDetails>>, generatedAt = now()) {
+  const totalRawResourceCost = details.billingRecords.reduce((sum, item) => sum + item.rawResourceCost, 0);
+  const totalFinalCost = details.billingRecords.reduce((sum, item) => sum + item.finalCost, 0);
+
+  return {
+    reportId: `usage-${details.campaign.id}-${new Date(generatedAt).getTime()}`,
+    generatedAt,
+    campaign: details.campaign,
+    totals: {
+      mentors: details.campaign.totalMentors,
+      messagesDrafted: details.campaign.messagesDrafted,
+      messagesApproved: details.campaign.messagesApproved,
+      messagesSent: details.campaign.messagesSent,
+      responsesReceived: details.campaign.responsesReceived,
+      followUpsDue: details.campaign.followUpsDue,
+      outcomesRecorded: details.outcomes.length,
+      rawResourceCost: totalRawResourceCost,
+      finalCost: totalFinalCost,
+      currency: "EUR" as const,
+    },
+    pricingFormula: PRICING_FORMULA,
+    measurementNote: "This report uses stored process-level local measurements. It is not an external charge.",
+    billingRecords: details.billingRecords,
+    invoiceRecords: details.invoiceRecords,
+  };
+}
+
+function createInvoiceRecord(state: LedgerState, campaignId: string) {
+  const details = attachCampaignDetails(state, campaignId);
+  if (!details) return null;
+  const generatedAt = now();
+  const usageReport = buildUsageReport(details, generatedAt);
+  const invoiceRecord: InvoiceRecord = {
+    id: randomUUID(),
+    campaignId,
+    invoiceNumber: `MARO-${new Date(generatedAt).toISOString().slice(0, 10).replaceAll("-", "")}-${String(state.invoiceRecords.length + 1).padStart(4, "0")}`,
+    status: "generated",
+    currency: "EUR",
+    rawResourceCost: usageReport.totals.rawResourceCost,
+    finalCost: usageReport.totals.finalCost,
+    pricingFormula: PRICING_FORMULA,
+    measurementNote: usageReport.measurementNote,
+    lineItemsJson: details.billingRecords.map((record) => ({
+      billingRecordId: record.id,
+      resourceUsageSessionId: record.resourceUsageSessionId,
+      rawResourceCost: record.rawResourceCost,
+      finalCost: record.finalCost,
+      generatedAt: record.generatedAt,
+    })),
+    totalsJson: {
+      mentors: usageReport.totals.mentors,
+      messagesDrafted: usageReport.totals.messagesDrafted,
+      messagesApproved: usageReport.totals.messagesApproved,
+      messagesSent: usageReport.totals.messagesSent,
+      responsesReceived: usageReport.totals.responsesReceived,
+      followUpsDue: usageReport.totals.followUpsDue,
+      outcomesRecorded: usageReport.totals.outcomesRecorded,
+    },
+    generatedAt,
+    createdAt: generatedAt,
+  };
+  state.invoiceRecords.unshift(invoiceRecord);
+  usageReport.invoiceRecords = [invoiceRecord, ...details.invoiceRecords];
+  audit(state, "generated_invoice_report", "invoiceRecord", invoiceRecord.id, { invoiceRecord, usageReport }, { riskLevel: "medium" });
+  return { invoiceRecord, usageReport };
 }
 
 function requireCampaign(state: LedgerState, campaignId: string) {
@@ -1959,8 +2085,10 @@ export function registerLedgerRoutes(app: Express) {
   app.get("/api/billing", route((req, _res, state) => {
     const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : null;
     const records = campaignId ? state.billingRecords.filter((item) => item.campaignId === campaignId) : state.billingRecords;
+    const invoices = campaignId ? state.invoiceRecords.filter((item) => item.campaignId === campaignId) : state.invoiceRecords;
     return {
       records,
+      invoices,
       totalRawResourceCost: records.reduce((sum, item) => sum + item.rawResourceCost, 0),
       totalFinalCost: records.reduce((sum, item) => sum + item.finalCost, 0),
       currency: "EUR",
@@ -1972,28 +2100,29 @@ export function registerLedgerRoutes(app: Express) {
   app.get("/api/campaigns/:id/usage-report", route((req, res, state) => {
     const details = attachCampaignDetails(state, routeId(req));
     if (!details) return jsonError(res, 404, "Campaign not found");
-    const totalRawResourceCost = details.billingRecords.reduce((sum, item) => sum + item.rawResourceCost, 0);
-    const totalFinalCost = details.billingRecords.reduce((sum, item) => sum + item.finalCost, 0);
-    return {
-      reportId: `usage-${details.campaign.id}-${Date.now()}`,
-      generatedAt: now(),
-      campaign: details.campaign,
-      totals: {
-        mentors: details.campaign.totalMentors,
-        messagesDrafted: details.campaign.messagesDrafted,
-        messagesApproved: details.campaign.messagesApproved,
-        messagesSent: details.campaign.messagesSent,
-        responsesReceived: details.campaign.responsesReceived,
-        followUpsDue: details.campaign.followUpsDue,
-        outcomesRecorded: details.outcomes.length,
-        rawResourceCost: totalRawResourceCost,
-        finalCost: totalFinalCost,
-        currency: "EUR",
-      },
-      pricingFormula: PRICING_FORMULA,
-      measurementNote: "This report uses stored process-level local measurements. It is not an external charge.",
-      billingRecords: details.billingRecords,
-    };
+    return buildUsageReport(details);
+  }));
+
+  app.get("/api/invoices", route((req, _res, state) => {
+    const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : null;
+    const invoices = campaignId ? state.invoiceRecords.filter((item) => item.campaignId === campaignId) : state.invoiceRecords;
+    return { invoices };
+  }));
+
+  app.get("/api/campaigns/:id/invoices", route((req, res, state) => {
+    const campaignId = routeId(req);
+    if (!requireCampaign(state, campaignId)) return jsonError(res, 404, "Campaign not found");
+    return { invoices: state.invoiceRecords.filter((item) => item.campaignId === campaignId) };
+  }));
+
+  app.post("/api/campaigns/:id/invoices", route((req, res, state) => {
+    const campaignId = routeId(req);
+    if (!requireCampaign(state, campaignId)) return jsonError(res, 404, "Campaign not found");
+    const billingRecords = state.billingRecords.filter((item) => item.campaignId === campaignId);
+    if (!billingRecords.length) return jsonError(res, 409, "Generate at least one billing record before creating an invoice report");
+    const result = createInvoiceRecord(state, campaignId);
+    if (!result) return jsonError(res, 404, "Campaign not found");
+    return result;
   }));
 
   app.get("/api/audit", route((req, _res, state) => {

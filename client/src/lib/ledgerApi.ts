@@ -120,11 +120,42 @@ export type MentorResponse = {
 export type BillingRecord = {
   id: string;
   campaignId: string;
+  resourceUsageSessionId: string;
   rawResourceCost: number;
   finalCost: number;
   currency: "EUR";
   pricingFormula: string;
   generatedAt: string;
+};
+
+export type InvoiceRecord = {
+  id: string;
+  campaignId: string;
+  invoiceNumber: string;
+  status: "generated" | "void";
+  currency: "EUR";
+  rawResourceCost: number;
+  finalCost: number;
+  pricingFormula: string;
+  measurementNote: string;
+  lineItemsJson: Array<{
+    billingRecordId: string;
+    resourceUsageSessionId: string;
+    rawResourceCost: number;
+    finalCost: number;
+    generatedAt: string;
+  }>;
+  totalsJson: {
+    mentors: number;
+    messagesDrafted: number;
+    messagesApproved: number;
+    messagesSent: number;
+    responsesReceived: number;
+    followUpsDue: number;
+    outcomesRecorded: number;
+  };
+  generatedAt: string;
+  createdAt: string;
 };
 
 export type ResourceUsageSession = {
@@ -237,6 +268,7 @@ export type WorkspaceSummary = {
   outcomes: number;
   resourceSessions: number;
   billingRecords: number;
+  invoiceRecords: number;
   auditEvents: number;
 };
 
@@ -260,6 +292,7 @@ export type CampaignDetails = {
   followUps: FollowUpPlan[];
   resourceSessions: ResourceUsageSession[];
   billingRecords: BillingRecord[];
+  invoiceRecords: InvoiceRecord[];
   outcomes: OutreachOutcome[];
   nextActions: NextActionRecommendation[];
   auditEvents: AuditEvent[];
@@ -283,6 +316,7 @@ export type UsageReport = {
   pricingFormula: string;
   measurementNote: string;
   billingRecords: BillingRecord[];
+  invoiceRecords: InvoiceRecord[];
 };
 
 export type MentorImportResult = {
@@ -455,6 +489,10 @@ export const ledgerApi = {
       body: JSON.stringify(payload),
     }),
   usageReport: (campaignId: string) => request<UsageReport>(`/api/campaigns/${campaignId}/usage-report`),
+  generateInvoice: (campaignId: string) =>
+    request<{ invoiceRecord: InvoiceRecord; usageReport: UsageReport }>(`/api/campaigns/${campaignId}/invoices`, {
+      method: "POST",
+    }),
   closeResourceSession: async (campaignId: string) => {
     const created = await request<{ session: { id: string } }>("/api/resource-sessions", {
       method: "POST",

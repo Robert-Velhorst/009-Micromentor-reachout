@@ -173,6 +173,9 @@ Why later: valuable once the next feature slice introduces more state transition
 
 ## Resource Usage Enhancements
 
+Done:
+- Persisted local invoice/usage-report records generated from stored billing records. Invoice reports are audit logged, included in workspace backup/restore/reset summaries, and explicitly documented as local records rather than external charges.
+
 Do next:
 - Virtualize mentor and queue tables only after real lists exceed a few hundred rows. The current UI does not need virtualization yet.
 - Move CSV parsing and backup restore validation into chunked browser work if files become large.

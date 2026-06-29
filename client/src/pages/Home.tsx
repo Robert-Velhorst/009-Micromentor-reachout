@@ -314,6 +314,18 @@ export default function Home() {
     }
   };
 
+  const generateInvoiceReport = async () => {
+    if (!activeCampaignId) return;
+    setError("");
+    try {
+      const result = await ledgerApi.generateInvoice(activeCampaignId);
+      setUsageReport(result.usageReport);
+      await loadLedger(activeCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to generate invoice report");
+    }
+  };
+
   const importMentorCsv = (preview: boolean) =>
     mutate(async () => {
       if (!activeCampaignId) throw new Error("Select a campaign first");
@@ -1005,6 +1017,8 @@ export default function Home() {
                   <div className="grid grid-cols-2 gap-2">
                     <MiniStat label="Due follow-ups" value={dueFollowUps.length} />
                     <MiniStat label="Billing records" value={details?.billingRecords.length || 0} />
+                    <MiniStat label="Invoices" value={details?.invoiceRecords.length || 0} />
+                    <MiniStat label="Final cost" value={formatCurrency((details?.billingRecords || []).reduce((sum, item) => sum + item.finalCost, 0))} />
                   </div>
                   {latestResourceSession ? (
                     <div className="rounded-md border bg-muted/20 p-3 text-sm">
@@ -1030,16 +1044,44 @@ export default function Home() {
                   <Button variant="outline" className="w-full rounded-md" onClick={() => void loadUsageReport()} disabled={!activeCampaignId}>
                     Load usage report
                   </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full rounded-md"
+                    onClick={() => void generateInvoiceReport()}
+                    disabled={!activeCampaignId || !(details?.billingRecords.length)}
+                  >
+                    Generate invoice report
+                  </Button>
                   {usageReport ? (
                     <div className="rounded-md border bg-muted/20 p-3 text-sm">
                       <div className="font-medium">Usage report</div>
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         <MiniStat label="Outcomes" value={usageReport.totals.outcomesRecorded} />
                         <MiniStat label="Final" value={formatCurrency(usageReport.totals.finalCost)} />
+                        <MiniStat label="Invoices" value={usageReport.invoiceRecords.length} />
+                        <MiniStat label="Line items" value={usageReport.billingRecords.length} />
                       </div>
                       <p className="mt-2 text-xs leading-5 text-muted-foreground">{usageReport.measurementNote}</p>
                     </div>
                   ) : null}
+                  {(details?.invoiceRecords || []).map((invoice) => (
+                    <div key={invoice.id} className="rounded-md border p-3 text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium">{invoice.invoiceNumber}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">Generated {formatDate(invoice.generatedAt)}</div>
+                        </div>
+                        <Badge variant="outline" className="rounded-md">
+                          {invoice.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <MiniStat label="Raw" value={formatCurrency(invoice.rawResourceCost)} />
+                        <MiniStat label="Final" value={formatCurrency(invoice.finalCost)} />
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{invoice.measurementNote}</p>
+                    </div>
+                  ))}
                   {(details?.billingRecords || []).map((record) => (
                     <div key={record.id} className="rounded-md border p-3 text-sm">
                       <div className="flex justify-between gap-3">
@@ -1063,6 +1105,7 @@ export default function Home() {
                   <SafetyLine text="Drafts must be approved before send confirmation." />
                   <SafetyLine text="Send status requires manual delivery evidence." />
                   <SafetyLine text="Responses and billing events are audit logged." />
+                  <SafetyLine text="Invoice reports are local records and do not charge anyone." />
                 </CardContent>
               </Card>
             </div>
@@ -1407,6 +1450,7 @@ function WorkspaceSummaryGrid({ summary }: { summary: WorkspaceSummary }) {
       <MiniStat label="Campaigns" value={summary.campaigns} />
       <MiniStat label="Mentors" value={summary.mentors} />
       <MiniStat label="Drafts" value={summary.drafts} />
+      <MiniStat label="Invoices" value={summary.invoiceRecords} />
       <MiniStat label="Audit" value={summary.auditEvents} />
     </div>
   );

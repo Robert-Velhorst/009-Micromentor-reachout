@@ -12,6 +12,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Record delivery evidence instead of faking external sends.
 - Track response classifications and follow-up suggestions.
 - Generate local process-measured resource-cost records using `Resource Cost x 2 = Final Price`.
+- Persist invoice/usage-report snapshots for campaign billing transparency without charging anyone.
 - Show whether the app is local-only or reachable through ngrok, including a warning when the tunnel is public without basic auth.
 - Export, validate, restore, and reset the local workspace with schema-versioned JSON backups.
 - Keep work local by default in a JSON ledger under `data/`.
@@ -40,6 +41,7 @@ The Express server now exposes operational API routes before serving the fronten
 - `GET|POST /api/campaigns/:id/messages`
 - `GET /api/campaigns/:id/follow-ups`
 - `GET /api/campaigns/:id/usage-report`
+- `GET|POST /api/campaigns/:id/invoices`
 - `GET|POST /api/mentors`
 - `GET|PATCH /api/mentors/:id`
 - `GET|POST /api/messages`
@@ -56,11 +58,14 @@ The Express server now exposes operational API routes before serving the fronten
 - `POST /api/resource-sessions`
 - `POST /api/resource-sessions/:id/end`
 - `GET /api/billing`
+- `GET /api/invoices`
 - `GET /api/audit`
 
 The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to store it elsewhere. Runtime ledger data is ignored by git.
 
 Resource sessions are process-level local measurements. MARO records Node CPU time, RSS memory over session duration, local ledger file size, and observed API payload bytes. It does not use random simulated usage as billing evidence.
+
+Invoice reports are persisted local ledger snapshots generated from stored billing records. They are audit logged and are not external charges, payment requests, or platform billing actions.
 
 Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates the required ledger arrays before replacing local data. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
 

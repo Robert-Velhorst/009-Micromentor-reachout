@@ -260,6 +260,12 @@ try {
   assert(usageReport.totals.outcomesRecorded === 1, "Usage report did not include outcomes");
   assert(usageReport.totals.finalCost > 0, "Usage report did not include final cost");
   assert(usageReport.measurementNote.includes("process-level"), "Usage report did not disclose process-level measurement");
+  assert(Array.isArray(usageReport.invoiceRecords), "Usage report did not include invoice record list");
+
+  const invoiceResult = await api(`/api/campaigns/${campaignId}/invoices`, { method: "POST" });
+  assert(invoiceResult.invoiceRecord.invoiceNumber.startsWith("MARO-"), "Invoice report did not include a MARO invoice number");
+  assert(invoiceResult.invoiceRecord.finalCost === usageReport.totals.finalCost, "Invoice report final cost did not match usage report");
+  assert(invoiceResult.usageReport.invoiceRecords.length === 1, "Generated usage report did not include the invoice snapshot");
 
   const details = await api(`/api/campaigns/${campaignId}`);
   assert(details.campaign.totalMentors === 2, "Campaign mentor count was not persisted");
@@ -267,6 +273,7 @@ try {
   assert(details.campaign.messagesSent === 1, "Sent count was not persisted");
   assert(details.campaign.responsesReceived === 1, "Response count was not persisted");
   assert(details.billingRecords.length === 1, "Billing record was not generated");
+  assert(details.invoiceRecords.length === 1, "Invoice record was not generated");
   assert(details.outcomes.length === 1, "Outcome detail was not persisted");
   assert(details.followUps.some((followUp) => followUp.status === "completed"), "Completed follow-up was not persisted");
   assert(details.followUps.some((followUp) => followUp.status === "cancelled"), "Cancelled follow-up was not persisted");
@@ -277,6 +284,7 @@ try {
   const backup = await api("/api/workspace/backup");
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
   assert(backup.summary.mentors === 2, "Workspace backup did not include mentor count");
+  assert(backup.summary.invoiceRecords === 1, "Workspace backup did not include invoice count");
   const restorePreview = await api("/api/workspace/restore/preview", {
     method: "POST",
     body: JSON.stringify({ backupJson: JSON.stringify(backup) }),
@@ -296,6 +304,7 @@ try {
     body: JSON.stringify({ scope: "queue", confirm: true }),
   });
   assert(resetQueue.summary.drafts === 0, "Queue reset did not clear drafts");
+  assert(resetQueue.summary.invoiceRecords === 0, "Queue reset did not clear invoice records");
   assert(resetQueue.summary.mentors === 2, "Queue reset should preserve mentors");
   const restored = await api("/api/workspace/restore", {
     method: "POST",
@@ -304,6 +313,7 @@ try {
   assert(restored.summary.drafts === 1, "Workspace restore did not restore draft count");
   const restoredDetails = await api(`/api/campaigns/${campaignId}`);
   assert(restoredDetails.campaign.messagesDrafted === 1, "Restored campaign draft count was not available");
+  assert(restoredDetails.invoiceRecords.length === 1, "Restored invoice record was not available");
 
   console.log(
     JSON.stringify(
@@ -313,6 +323,7 @@ try {
         mentorId,
         messageId,
         finalCost: restoredDetails.billingRecords[0].finalCost,
+        invoices: restoredDetails.invoiceRecords.length,
         outcomes: restoredDetails.outcomes.length,
         auditEvents: restoredDetails.auditEvents.length,
       },
