@@ -301,6 +301,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [projectForm, setProjectForm] = useState<ProjectForm>(defaultProjectForm);
+  const [projectEditForm, setProjectEditForm] = useState<ProjectForm>(defaultProjectForm);
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(defaultCampaignForm);
   const [mentorForm, setMentorForm] = useState<MentorForm>(defaultMentorForm);
   const [sendEvidence, setSendEvidence] = useState<Record<string, string>>({});
@@ -375,6 +376,16 @@ export default function Home() {
     () => projects.find((project) => project.id === campaign?.projectId) || projects[0] || null,
     [campaign?.projectId, projects]
   );
+  useEffect(() => {
+    setProjectEditForm({
+      title: campaignProject?.title || "",
+      description: campaignProject?.description || "",
+    });
+  }, [campaignProject?.description, campaignProject?.id, campaignProject?.title]);
+  const projectContextChanged =
+    Boolean(campaignProject) &&
+    (projectEditForm.title.trim() !== (campaignProject?.title || "") ||
+      projectEditForm.description.trim() !== (campaignProject?.description || ""));
   const assessmentsByMentor = useMemo(
     () => new Map((details?.assessments || []).map((assessment) => [assessment.mentorProfileId, assessment])),
     [details?.assessments]
@@ -469,6 +480,15 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Unable to create project");
     }
   };
+
+  const saveProjectContext = () =>
+    mutate(async () => {
+      if (!campaignProject) throw new Error("Select a project first");
+      await ledgerApi.updateProject(campaignProject.id, {
+        title: projectEditForm.title.trim(),
+        description: projectEditForm.description.trim(),
+      });
+    });
 
   const addMentor = () =>
     mutate(async () => {
@@ -1006,17 +1026,51 @@ export default function Home() {
                       {campaignProject?.description || "Projects group related mentor outreach campaigns."}
                     </div>
                   </div>
-                  <Input value={projectForm.title} onChange={(event) => setProjectForm((current) => ({ ...current, title: event.target.value }))} placeholder="Project title" className="rounded-md" />
-                  <Textarea
-                    value={projectForm.description}
-                    onChange={(event) => setProjectForm((current) => ({ ...current, description: event.target.value }))}
-                    placeholder="Project description"
-                    className="min-h-20 rounded-md"
-                  />
-                  <Button variant="outline" className="w-full rounded-md" onClick={() => void createProject()} disabled={!projectForm.title.trim()}>
-                    <Plus className="h-4 w-4" />
-                    Create project
-                  </Button>
+                  <div className="border-t pt-3">
+                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Active project</div>
+                    <Input
+                      value={projectEditForm.title}
+                      onChange={(event) => setProjectEditForm((current) => ({ ...current, title: event.target.value }))}
+                      placeholder="Active project title"
+                      className="mb-2 rounded-md"
+                      disabled={!campaignProject}
+                    />
+                    <Textarea
+                      value={projectEditForm.description}
+                      onChange={(event) => setProjectEditForm((current) => ({ ...current, description: event.target.value }))}
+                      placeholder="Active project description"
+                      className="mb-2 min-h-20 rounded-md"
+                      disabled={!campaignProject}
+                    />
+                    <Button
+                      variant="outline"
+                      className="w-full rounded-md"
+                      onClick={() => void saveProjectContext()}
+                      disabled={!campaignProject || !projectEditForm.title.trim() || !projectContextChanged}
+                    >
+                      <ClipboardCheck className="h-4 w-4" />
+                      Save project
+                    </Button>
+                  </div>
+                  <div className="border-t pt-3">
+                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">New project</div>
+                    <Input
+                      value={projectForm.title}
+                      onChange={(event) => setProjectForm((current) => ({ ...current, title: event.target.value }))}
+                      placeholder="New project title"
+                      className="mb-2 rounded-md"
+                    />
+                    <Textarea
+                      value={projectForm.description}
+                      onChange={(event) => setProjectForm((current) => ({ ...current, description: event.target.value }))}
+                      placeholder="New project description"
+                      className="mb-2 min-h-20 rounded-md"
+                    />
+                    <Button variant="outline" className="w-full rounded-md" onClick={() => void createProject()} disabled={!projectForm.title.trim()}>
+                      <Plus className="h-4 w-4" />
+                      Create project
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
 
