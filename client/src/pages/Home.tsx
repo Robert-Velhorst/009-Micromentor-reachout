@@ -743,6 +743,13 @@ export default function Home() {
       setQuery("");
     }
 
+    if (action.sourceRecordId && action.type === "add_mentors") {
+      setCsvSourceRecordId(action.sourceRecordId);
+      setMentorForm((current) => ({ ...current, sourceRecordId: action.sourceRecordId || "" }));
+      setSourceFilterId("");
+      setQuery("");
+    }
+
     if (action.type === "follow_up_due") {
       setResultFilter("follow_up_due");
     } else if (action.type === "record_response_outcome") {

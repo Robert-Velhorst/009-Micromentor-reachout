@@ -234,6 +234,16 @@ try {
   assert(updatedSource.source.importedCount === 2, "Source search update did not persist imported count");
   const sourceList = await api(`/api/campaigns/${campaignId}/sources`);
   assert(sourceList.sources.some((source) => source.id === sourceResult.source.id), "Campaign source list did not include source record");
+  const sourceActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(
+    sourceActions.actions.some(
+      (action) =>
+        action.type === "add_mentors" &&
+        action.sourceRecordId === sourceResult.source.id &&
+        action.title.includes("Import 4 mentor candidates")
+    ),
+    "Next actions did not recommend importing remaining source candidates"
+  );
 
   const mentorResult = await api(`/api/campaigns/${campaignId}/mentors`, {
     method: "POST",

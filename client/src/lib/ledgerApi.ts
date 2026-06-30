@@ -241,6 +241,7 @@ export type CampaignResults = {
 export type NextActionRecommendation = {
   id: string;
   campaignId: string;
+  sourceRecordId?: string | null;
   mentorProfileId: string | null;
   messageDraftId: string | null;
   followUpId: string | null;

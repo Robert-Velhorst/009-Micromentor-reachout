@@ -319,6 +319,7 @@ type CampaignResults = {
 type NextActionRecommendation = {
   id: string;
   campaignId: string;
+  sourceRecordId?: string | null;
   mentorProfileId: string | null;
   messageDraftId: string | null;
   followUpId: string | null;
@@ -1171,6 +1172,12 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
     const outcomes = state.outreachOutcomes.filter((outcome) => outcome.campaignId === campaign.id);
     const billingRecords = state.billingRecords.filter((record) => record.campaignId === campaign.id);
     const invoiceRecords = state.invoiceRecords.filter((record) => record.campaignId === campaign.id);
+    const sourcesWithRemainingResults = sourceRecords
+      .map((source) => ({
+        source,
+        remainingResults: Math.max(0, source.resultsFound - source.importedCount),
+      }))
+      .filter((item) => item.source.status !== "planned" && item.source.status !== "skipped" && item.remainingResults > 0);
 
     if (!sourceRecords.length) {
       pushAction({
@@ -1189,7 +1196,25 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
       });
     }
 
-    if (!mentors.length) {
+    for (const { source, remainingResults } of sourcesWithRemainingResults) {
+      pushAction({
+        id: `action:import-source-mentors:${source.id}`,
+        campaignId: campaign.id,
+        sourceRecordId: source.id,
+        mentorProfileId: null,
+        messageDraftId: null,
+        followUpId: null,
+        responseId: null,
+        priority: mentors.length ? "low" : "medium",
+        type: "add_mentors",
+        title: `Import ${remainingResults} mentor candidate${remainingResults === 1 ? "" : "s"} from ${source.name}`,
+        description: `${source.name} has ${source.resultsFound} recorded result${source.resultsFound === 1 ? "" : "s"} and ${source.importedCount} imported mentor${source.importedCount === 1 ? "" : "s"}.`,
+        recommendedAction: "Open Mentors with this source preselected, then import or add the remaining mentor profiles so fit scoring and draft recommendations can start.",
+        dueAt: null,
+      });
+    }
+
+    if (!mentors.length && !sourcesWithRemainingResults.length) {
       pushAction({
         id: `action:add-mentors:${campaign.id}`,
         campaignId: campaign.id,
