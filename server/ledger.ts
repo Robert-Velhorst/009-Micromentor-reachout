@@ -333,6 +333,26 @@ type NextActionRecommendation = {
   createdFrom: "derived_from_ledger";
 };
 
+type CampaignReadinessItem = {
+  id: string;
+  label: string;
+  status: "complete" | "attention" | "blocked";
+  completed: number;
+  total: number;
+  detail: string;
+  nextActionType: NextActionType | null;
+};
+
+type CampaignReadiness = {
+  score: number;
+  status: "ready" | "needs_work" | "blocked";
+  completedItems: number;
+  totalItems: number;
+  blockers: number;
+  attentionItems: number;
+  items: CampaignReadinessItem[];
+};
+
 type AuditEvent = {
   id: string;
   userId: string;
@@ -1151,6 +1171,160 @@ function buildCampaignResults(state: LedgerState, campaignId: string): CampaignR
   };
 }
 
+function buildCampaignReadiness(state: LedgerState, campaignId: string): CampaignReadiness {
+  const sourceRecords = state.mentorSources.filter((item) => item.campaignId === campaignId);
+  const mentors = state.mentorProfiles.filter((item) => item.campaignId === campaignId);
+  const mentorIds = new Set(mentors.map((mentor) => mentor.id));
+  const assessments = state.matchAssessments.filter((item) => item.campaignId === campaignId && mentorIds.has(item.mentorProfileId));
+  const messages = state.messageDrafts.filter((item) => item.campaignId === campaignId);
+  const messageIds = new Set(messages.map((message) => message.id));
+  const qualityReviews = state.messageQualityReviews.filter((review) => messageIds.has(review.messageDraftId));
+  const responses = state.mentorResponses.filter((item) => item.campaignId === campaignId);
+  const outcomes = state.outreachOutcomes.filter((item) => item.campaignId === campaignId);
+  const billingRecords = state.billingRecords.filter((item) => item.campaignId === campaignId);
+  const invoiceRecords = state.invoiceRecords.filter((item) => item.campaignId === campaignId);
+  const results = buildCampaignResults(state, campaignId);
+  const activeMentors = mentors.filter((mentor) => mentor.stage !== "closed");
+  const mentorsWithMessages = new Set(messages.map((message) => message.mentorProfileId));
+  const reviewedMessages = messages.filter((message) => message.status !== "draft").length;
+  const approvedMessages = messages.filter((message) => message.status === "approved" || message.status === "sent").length;
+  const sentMessages = messages.filter((message) => message.status === "sent").length;
+  const blockedQualityReviews = qualityReviews.filter((review) => review.status === "blocked").length;
+  const pendingApprovedMessages = messages.filter((message) => message.status === "approved").length;
+  const remainingSourceCandidates = sourceRecords.reduce((sum, source) => {
+    if (source.status === "planned" || source.status === "skipped") return sum;
+    return sum + Math.max(0, source.resultsFound - source.importedCount);
+  }, 0);
+  const recordedSourceResults = sourceRecords.reduce((sum, source) => sum + Math.max(0, source.resultsFound), 0);
+  const importedSourceResults = sourceRecords.reduce((sum, source) => sum + Math.max(0, Math.min(source.importedCount, source.resultsFound || source.importedCount)), 0);
+  const hasOperatingActivity = messages.length > 0 || responses.length > 0 || outcomes.length > 0;
+  const draftedActiveMentors = activeMentors.filter((mentor) => mentorsWithMessages.has(mentor.id)).length;
+  const allActiveMentorsDrafted = activeMentors.length > 0 && draftedActiveMentors === activeMentors.length;
+
+  const items: CampaignReadinessItem[] = [
+    {
+      id: "source-search",
+      label: "Source search",
+      status: sourceRecords.length ? "complete" : "attention",
+      completed: sourceRecords.length ? 1 : 0,
+      total: 1,
+      detail: sourceRecords.length ? `${sourceRecords.length} source search record${sourceRecords.length === 1 ? "" : "s"} stored.` : "Record at least one mentor source search.",
+      nextActionType: sourceRecords.length ? null : "record_source_search",
+    },
+    {
+      id: "source-candidates",
+      label: "Source candidates",
+      status: sourceRecords.length && remainingSourceCandidates === 0 ? "complete" : "attention",
+      completed: sourceRecords.length && recordedSourceResults ? Math.min(importedSourceResults, recordedSourceResults) : 0,
+      total: recordedSourceResults || 1,
+      detail:
+        !sourceRecords.length
+          ? "Record a source search before candidate import can be assessed."
+          : remainingSourceCandidates === 0
+          ? "No recorded source results are waiting to be imported."
+          : `${remainingSourceCandidates} recorded source candidate${remainingSourceCandidates === 1 ? "" : "s"} still need import or skip review.`,
+      nextActionType: !sourceRecords.length ? "record_source_search" : remainingSourceCandidates === 0 ? null : "add_mentors",
+    },
+    {
+      id: "mentor-profiles",
+      label: "Mentor profiles",
+      status: mentors.length ? "complete" : "blocked",
+      completed: mentors.length,
+      total: Math.max(1, mentors.length),
+      detail: mentors.length ? `${mentors.length} mentor profile${mentors.length === 1 ? "" : "s"} available for scoring.` : "Add or import mentor profiles before drafting.",
+      nextActionType: mentors.length ? null : "add_mentors",
+    },
+    {
+      id: "fit-assessments",
+      label: "Fit assessments",
+      status: mentors.length && assessments.length >= mentors.length ? "complete" : mentors.length ? "attention" : "blocked",
+      completed: assessments.length,
+      total: Math.max(1, mentors.length),
+      detail: mentors.length ? `${assessments.length} of ${mentors.length} mentor fit assessment${mentors.length === 1 ? "" : "s"} stored.` : "Mentor fit can be scored after profiles exist.",
+      nextActionType: mentors.length && assessments.length >= mentors.length ? null : "review_fit",
+    },
+    {
+      id: "message-drafts",
+      label: "Message drafts",
+      status: allActiveMentorsDrafted ? "complete" : activeMentors.length ? "attention" : "blocked",
+      completed: draftedActiveMentors,
+      total: Math.max(1, activeMentors.length),
+      detail: activeMentors.length
+        ? `${draftedActiveMentors} of ${activeMentors.length} active mentor${activeMentors.length === 1 ? "" : "s"} have drafts.`
+        : "No active mentors are ready for drafting.",
+      nextActionType: allActiveMentorsDrafted ? null : "draft_message",
+    },
+    {
+      id: "draft-review",
+      label: "Draft review",
+      status: blockedQualityReviews ? "blocked" : messages.length && reviewedMessages === messages.length ? "complete" : "attention",
+      completed: reviewedMessages,
+      total: Math.max(1, messages.length),
+      detail: blockedQualityReviews
+        ? `${blockedQualityReviews} draft quality review${blockedQualityReviews === 1 ? "" : "s"} block approval.`
+        : messages.length
+          ? `${reviewedMessages} of ${messages.length} draft${messages.length === 1 ? "" : "s"} have approval decisions.`
+          : "Drafts must be reviewed before any manual send confirmation.",
+      nextActionType: blockedQualityReviews ? "fix_blocked_draft" : messages.length && reviewedMessages === messages.length ? null : "review_draft",
+    },
+    {
+      id: "manual-delivery",
+      label: "Manual delivery",
+      status: approvedMessages && pendingApprovedMessages === 0 && sentMessages > 0 ? "complete" : approvedMessages ? "attention" : "attention",
+      completed: sentMessages,
+      total: Math.max(1, approvedMessages),
+      detail: pendingApprovedMessages
+        ? `${pendingApprovedMessages} approved message${pendingApprovedMessages === 1 ? "" : "s"} need manual delivery evidence.`
+        : sentMessages
+          ? `${sentMessages} approved message${sentMessages === 1 ? "" : "s"} confirmed sent manually.`
+          : "Approve and manually confirm at least one message before measuring outreach results.",
+      nextActionType: pendingApprovedMessages ? "confirm_manual_send" : null,
+    },
+    {
+      id: "response-outcomes",
+      label: "Response outcomes",
+      status: sentMessages && results.totals.openLoops === 0 ? "complete" : "attention",
+      completed: sentMessages ? Math.max(0, sentMessages - results.totals.openLoops) : 0,
+      total: Math.max(1, sentMessages),
+      detail: sentMessages
+        ? `${results.totals.openLoops} open loop${results.totals.openLoops === 1 ? "" : "s"} remain across responses and follow-ups.`
+        : "Outcomes become meaningful after manual sends are recorded.",
+      nextActionType: results.totals.openLoops ? "record_response_outcome" : null,
+    },
+    {
+      id: "cost-records",
+      label: "Cost records",
+      status: hasOperatingActivity && billingRecords.length > 0 ? "complete" : "attention",
+      completed: billingRecords.length ? 1 : 0,
+      total: 1,
+      detail: billingRecords.length ? `${billingRecords.length} process-measured billing record${billingRecords.length === 1 ? "" : "s"} stored.` : "Generate a local process-measured resource cost record after campaign activity.",
+      nextActionType: billingRecords.length ? null : "generate_cost_record",
+    },
+    {
+      id: "invoice-snapshot",
+      label: "Invoice snapshot",
+      status: billingRecords.length && invoiceRecords.length > 0 ? "complete" : "attention",
+      completed: invoiceRecords.length ? 1 : 0,
+      total: 1,
+      detail: invoiceRecords.length ? `${invoiceRecords.length} local invoice/usage snapshot${invoiceRecords.length === 1 ? "" : "s"} stored.` : "Persist an invoice report snapshot after reviewing resource costs.",
+      nextActionType: billingRecords.length && invoiceRecords.length === 0 ? "generate_invoice_record" : null,
+    },
+  ];
+
+  const completedItems = items.filter((item) => item.status === "complete").length;
+  const blockers = items.filter((item) => item.status === "blocked").length;
+  const attentionItems = items.filter((item) => item.status === "attention").length;
+  return {
+    score: Math.round((completedItems / items.length) * 100),
+    status: blockers ? "blocked" : completedItems === items.length ? "ready" : "needs_work",
+    completedItems,
+    totalItems: items.length,
+    blockers,
+    attentionItems,
+    items,
+  };
+}
+
 function buildNextActionRecommendations(state: LedgerState, campaignId?: string) {
   const actions: NextActionRecommendation[] = [];
   const targetCampaigns = campaignId
@@ -1444,6 +1618,7 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
     invoiceRecords,
     outcomes,
     results: buildCampaignResults(state, campaignId),
+    readiness: buildCampaignReadiness(state, campaignId),
     nextActions: buildNextActionRecommendations(state, campaignId),
     auditEvents: state.auditEvents.filter(
       (item) =>

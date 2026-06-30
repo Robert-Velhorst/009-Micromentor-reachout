@@ -33,6 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   type Campaign,
   type CampaignDetails,
+  type CampaignReadiness,
   type HealthStatus,
   type LedgerSummary,
   type MessageDraft,
@@ -345,6 +346,18 @@ function downloadText(filename: string, text: string, type = "text/plain;charset
   link.click();
   URL.revokeObjectURL(url);
 }
+
+const readinessTone: Record<CampaignReadiness["status"], string> = {
+  ready: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  needs_work: "border-amber-200 bg-amber-50 text-amber-700",
+  blocked: "border-red-200 bg-red-50 text-red-700",
+};
+
+const readinessItemTone: Record<CampaignReadiness["items"][number]["status"], string> = {
+  complete: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  attention: "border-amber-200 bg-amber-50 text-amber-700",
+  blocked: "border-red-200 bg-red-50 text-red-700",
+};
 
 export default function Home() {
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
@@ -1175,6 +1188,13 @@ export default function Home() {
                   <MiniStat label="Sent" value={campaign?.messagesSent || 0} />
                   <MiniStat label="Replies" value={campaign?.responsesReceived || 0} />
                 </div>
+                {details?.readiness ? (
+                  <CampaignReadinessPanel
+                    readiness={details.readiness}
+                    actions={nextActions}
+                    onOpenAction={(action) => void openNextAction(action)}
+                  />
+                ) : null}
               </CardContent>
             </Card>
 
@@ -2644,6 +2664,70 @@ function NextActionPanel({
         emptyText="No immediate action. Add mentors, draft outreach, or record responses to create the next operating step."
         onOpenAction={onOpenAction}
       />
+    </div>
+  );
+}
+
+function CampaignReadinessPanel({
+  readiness,
+  actions,
+  onOpenAction,
+}: {
+  readiness: CampaignReadiness;
+  actions: NextActionRecommendation[];
+  onOpenAction: (action: NextActionRecommendation) => void;
+}) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">Campaign readiness</div>
+          <div className="text-xs text-muted-foreground">
+            {readiness.completedItems} of {readiness.totalItems} operating checks complete
+          </div>
+        </div>
+        <Badge variant="outline" className={`rounded-md ${readinessTone[readiness.status]}`}>
+          {readiness.status.replace("_", " ")}
+        </Badge>
+      </div>
+      <div className="mb-3 grid gap-2 md:grid-cols-[1fr_auto] md:items-center">
+        <Progress value={readiness.score} className="h-2 rounded-md bg-muted" />
+        <div className="font-mono text-sm">{readiness.score}%</div>
+      </div>
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <MiniStat label="Blockers" value={readiness.blockers} />
+        <MiniStat label="Attention" value={readiness.attentionItems} />
+      </div>
+      <div className="space-y-2">
+        {readiness.items.map((item) => {
+          const matchingAction = item.nextActionType ? actions.find((action) => action.type === item.nextActionType) : undefined;
+          const itemProgress = Math.round((Math.min(item.completed, item.total) / Math.max(1, item.total)) * 100);
+          return (
+            <div key={item.id} className="rounded-md border bg-background p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{item.label}</div>
+                  <div className="mt-1 text-xs leading-5 text-muted-foreground">{item.detail}</div>
+                </div>
+                <Badge variant="outline" className={`rounded-md ${readinessItemTone[item.status]}`}>
+                  {item.status}
+                </Badge>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Progress value={itemProgress} className="h-1.5 rounded-md bg-muted" />
+                <div className="w-16 text-right font-mono text-xs text-muted-foreground">
+                  {item.completed}/{item.total}
+                </div>
+              </div>
+              {matchingAction ? (
+                <Button variant="outline" size="sm" className="mt-3 h-8 rounded-md" onClick={() => onOpenAction(matchingAction)}>
+                  Open action
+                </Button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

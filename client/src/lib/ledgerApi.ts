@@ -267,6 +267,26 @@ export type NextActionRecommendation = {
   createdFrom: "derived_from_ledger";
 };
 
+export type CampaignReadinessItem = {
+  id: string;
+  label: string;
+  status: "complete" | "attention" | "blocked";
+  completed: number;
+  total: number;
+  detail: string;
+  nextActionType: NextActionRecommendation["type"] | null;
+};
+
+export type CampaignReadiness = {
+  score: number;
+  status: "ready" | "needs_work" | "blocked";
+  completedItems: number;
+  totalItems: number;
+  blockers: number;
+  attentionItems: number;
+  items: CampaignReadinessItem[];
+};
+
 export type AuditEvent = {
   id: string;
   entityType: string;
@@ -369,6 +389,7 @@ export type CampaignDetails = {
   invoiceRecords: InvoiceRecord[];
   outcomes: OutreachOutcome[];
   results: CampaignResults;
+  readiness: CampaignReadiness;
   nextActions: NextActionRecommendation[];
   auditEvents: AuditEvent[];
 };

@@ -17,6 +17,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Record failed manual send attempts without marking messages sent or scheduling follow-ups.
 - Review draft quality before approval, including unresolved template tokens, personalization coverage, length, reading time, and call-to-action checks.
 - Show deterministic next-action recommendations for drafts, approvals, duplicate profile review, due follow-ups, response outcomes, and resource-cost records.
+- Review a campaign readiness checklist that scores source search, mentor import, fit review, drafts, approvals, manual delivery, outcomes, costs, and invoice snapshots.
 - Record delivery evidence instead of faking external sends.
 - Import mentors from pasted CSV text or `.csv` files with configurable source-column mapping and duplicate preview.
 - Block duplicate active or sent outreach drafts for the same mentor identity or profile URL within a campaign.

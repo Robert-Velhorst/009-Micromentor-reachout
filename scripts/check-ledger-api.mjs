@@ -576,6 +576,10 @@ try {
   assert(details.results.rates.bookingRate === 50, "Campaign results did not include booking rate");
   assert(details.results.followUpBreakdown.completed === 1, "Campaign results did not include completed follow-up breakdown");
   assert(details.results.followUpBreakdown.cancelled === 2, "Campaign results did not include cancelled follow-up breakdown");
+  assert(details.readiness.score > 0, "Campaign readiness score was not derived");
+  assert(details.readiness.totalItems >= 10, "Campaign readiness checklist did not include the operating lifecycle");
+  assert(details.readiness.items.some((item) => item.id === "source-candidates" && item.status === "attention"), "Campaign readiness did not flag remaining source candidates");
+  assert(details.readiness.items.some((item) => item.id === "invoice-snapshot" && item.status === "complete"), "Campaign readiness did not include completed invoice snapshot");
   assert(Array.isArray(details.nextActions), "Campaign details did not include next actions");
   assert(details.nextActions.some((action) => action.type === "draft_message" || action.type === "generate_cost_record"), "Next actions did not include remaining operational work");
   assert(details.auditEvents.length >= 10, "Audit trail was not recorded");
