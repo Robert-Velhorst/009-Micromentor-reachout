@@ -188,6 +188,14 @@ try {
   assert(campaignResult.campaign.projectId === projectResult.project.id, "Campaign did not persist selected project");
   assert(campaignResult.campaign.criteriaJson.followUpAfterDays === 3, "Campaign follow-up rule did not persist on create");
   assert(campaignResult.campaign.criteriaJson.tone === "direct, practical, respectful", "Campaign tone did not persist on create");
+  await expectFailure(
+    `/api/campaigns/${campaignId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status: "completed" }),
+    },
+    409
+  );
 
   const updatedCampaign = await api(`/api/campaigns/${campaignId}`, {
     method: "PATCH",

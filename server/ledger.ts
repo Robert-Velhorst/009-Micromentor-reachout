@@ -2372,7 +2372,18 @@ export function registerLedgerRoutes(app: Express) {
       campaign.projectId = req.body.projectId;
     }
     if (["active", "paused", "completed", "archived"].includes(String(req.body?.status))) {
-      campaign.status = String(req.body.status) as CampaignStatus;
+      const nextStatus = String(req.body.status) as CampaignStatus;
+      if (nextStatus === "completed") {
+        const readiness = buildCampaignReadiness(state, campaign.id);
+        if (readiness.status !== "ready") {
+          return jsonError(
+            res,
+            409,
+            `Campaign cannot be marked completed until readiness is ready. ${readiness.blockers} blockers and ${readiness.attentionItems} attention items remain.`
+          );
+        }
+      }
+      campaign.status = nextStatus;
     }
     if (req.body?.criteriaJson && typeof req.body.criteriaJson === "object") {
       campaign.criteriaJson = campaignCriteria(req.body.criteriaJson);

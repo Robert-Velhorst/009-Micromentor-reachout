@@ -515,6 +515,8 @@ export default function Home() {
       campaignSettingsForm.tone.trim() !== campaignTone(campaign) ||
       normalizedCampaignFollowUpDays !== String(campaignFollowUpDays(campaign))
     : false;
+  const completionBlockedByReadiness =
+    campaignSettingsForm.status === "completed" && details?.readiness?.status !== "ready";
   const assessmentsByMentor = useMemo(
     () => new Map((details?.assessments || []).map((assessment) => [assessment.mentorProfileId, assessment])),
     [details?.assessments]
@@ -1152,6 +1154,7 @@ export default function Home() {
                         className="rounded-md"
                       />
                       <select
+                        aria-label="Campaign status"
                         value={campaignSettingsForm.status}
                         onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, status: event.target.value as Campaign["status"] }))}
                         className="h-10 w-full rounded-md border bg-background px-3 text-sm"
@@ -1162,6 +1165,11 @@ export default function Home() {
                         <option value="archived">Archived</option>
                       </select>
                     </div>
+                    {completionBlockedByReadiness && details?.readiness ? (
+                      <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                        Complete is blocked until campaign readiness is ready. {details.readiness.blockers} blockers and {details.readiness.attentionItems} attention items remain.
+                      </div>
+                    ) : null}
                     <Button
                       variant="outline"
                       className="w-full rounded-md"
@@ -1174,7 +1182,8 @@ export default function Home() {
                         !campaignSettingsForm.goal.trim() ||
                         !campaignSettingsForm.targetMentorType.trim() ||
                         !campaignSettingsForm.source.trim() ||
-                        !campaignSettingsForm.tone.trim()
+                        !campaignSettingsForm.tone.trim() ||
+                        completionBlockedByReadiness
                       }
                     >
                       <ClipboardCheck className="h-4 w-4" />
