@@ -31,6 +31,21 @@ export type Campaign = {
   followUpsDue: number;
 };
 
+export type MentorSource = {
+  id: string;
+  campaignId: string;
+  name: string;
+  sourceType: string;
+  searchQuery: string;
+  status: "planned" | "searched" | "imported" | "skipped";
+  resultsFound: number;
+  importedCount: number;
+  notes: string;
+  searchedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type MentorProfile = {
   id: string;
   campaignId: string;
@@ -231,6 +246,7 @@ export type NextActionRecommendation = {
   responseId: string | null;
   priority: "high" | "medium" | "low";
   type:
+    | "record_source_search"
     | "add_mentors"
     | "draft_message"
     | "review_fit"
@@ -310,6 +326,7 @@ export type WorkspaceSummary = {
   schemaVersion: number;
   projects: number;
   campaigns: number;
+  sourceRecords: number;
   mentors: number;
   identities: number;
   assessments: number;
@@ -336,6 +353,7 @@ export type WorkspaceBackup = {
 
 export type CampaignDetails = {
   campaign: Campaign;
+  sourceRecords: MentorSource[];
   mentors: MentorProfile[];
   assessments: MatchAssessment[];
   messages: MessageDraft[];
@@ -448,6 +466,24 @@ export const ledgerApi = {
     }),
   updateCampaign: (campaignId: string, payload: Partial<Pick<Campaign, "projectId" | "title" | "goal" | "targetMentorType" | "source" | "status" | "criteriaJson">>) =>
     request<{ campaign: Campaign }>(`/api/campaigns/${campaignId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  createSourceRecord: (campaignId: string, payload: {
+    name: string;
+    sourceType: string;
+    searchQuery: string;
+    status: MentorSource["status"];
+    resultsFound: number;
+    importedCount: number;
+    notes: string;
+  }) =>
+    request<{ source: MentorSource }>(`/api/campaigns/${campaignId}/sources`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateSourceRecord: (sourceId: string, payload: Partial<Pick<MentorSource, "name" | "sourceType" | "searchQuery" | "status" | "resultsFound" | "importedCount" | "notes" | "searchedAt">>) =>
+    request<{ source: MentorSource }>(`/api/sources/${sourceId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),

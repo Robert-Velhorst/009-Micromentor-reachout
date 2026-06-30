@@ -36,6 +36,7 @@ import {
   type HealthStatus,
   type LedgerSummary,
   type MessageDraft,
+  type MentorSource,
   type MentorCsvColumnMap,
   type MentorImportResult,
   type MentorProfile,
@@ -75,6 +76,16 @@ type MentorForm = {
   bio: string;
   skills: string;
   profileUrl: string;
+  notes: string;
+};
+
+type SourceForm = {
+  name: string;
+  sourceType: string;
+  searchQuery: string;
+  status: MentorSource["status"];
+  resultsFound: string;
+  importedCount: string;
   notes: string;
 };
 
@@ -121,6 +132,16 @@ const defaultCampaignForm: CampaignForm = {
   source: "MicroMentor/manual",
   tone: "respectful, concise, practical",
   followUpAfterDays: "7",
+};
+
+const defaultSourceForm: SourceForm = {
+  name: "MicroMentor manual search",
+  sourceType: "MicroMentor",
+  searchQuery: "",
+  status: "searched",
+  resultsFound: "0",
+  importedCount: "0",
+  notes: "",
 };
 
 const defaultCampaignSettingsForm: CampaignSettingsForm = {
@@ -183,6 +204,7 @@ const actionTabMap: Record<NextActionRecommendation["type"], LedgerTab> = {
   draft_message: "mentors",
   review_fit: "mentors",
   review_duplicate_profile: "mentors",
+  record_source_search: "ledger",
   fix_blocked_draft: "review",
   review_draft: "review",
   confirm_manual_send: "review",
@@ -313,6 +335,7 @@ export default function Home() {
   const [projectEditForm, setProjectEditForm] = useState<ProjectForm>(defaultProjectForm);
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(defaultCampaignForm);
   const [campaignSettingsForm, setCampaignSettingsForm] = useState<CampaignSettingsForm>(defaultCampaignSettingsForm);
+  const [sourceForm, setSourceForm] = useState<SourceForm>(defaultSourceForm);
   const [mentorForm, setMentorForm] = useState<MentorForm>(defaultMentorForm);
   const [sendEvidence, setSendEvidence] = useState<Record<string, string>>({});
   const [sendFailureNotes, setSendFailureNotes] = useState<Record<string, string>>({});
@@ -529,6 +552,21 @@ export default function Home() {
           requiredApproval: true,
         },
       });
+    });
+
+  const recordSourceSearch = () =>
+    mutate(async () => {
+      if (!activeCampaignId) throw new Error("Select a campaign first");
+      await ledgerApi.createSourceRecord(activeCampaignId, {
+        name: sourceForm.name.trim(),
+        sourceType: sourceForm.sourceType.trim(),
+        searchQuery: sourceForm.searchQuery.trim(),
+        status: sourceForm.status,
+        resultsFound: Number(sourceForm.resultsFound) || 0,
+        importedCount: Number(sourceForm.importedCount) || 0,
+        notes: sourceForm.notes.trim(),
+      });
+      setSourceForm(defaultSourceForm);
     });
 
   const createProject = async () => {
@@ -1194,6 +1232,99 @@ export default function Home() {
                     <Button variant="outline" className="w-full rounded-md" onClick={() => void createProject()} disabled={!projectForm.title.trim()}>
                       <Plus className="h-4 w-4" />
                       Create project
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-md py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-lg">Source searches</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 px-5">
+                  {(details?.sourceRecords || []).map((source) => (
+                    <div key={source.id} className="rounded-md border p-3 text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium">{source.name}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {source.sourceType} - {source.status}
+                            {source.searchedAt ? ` - ${formatDate(source.searchedAt)}` : ""}
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="rounded-md">
+                          {source.importedCount}/{source.resultsFound}
+                        </Badge>
+                      </div>
+                      {source.searchQuery ? <div className="mt-2 text-xs text-muted-foreground">Query: {source.searchQuery}</div> : null}
+                      {source.notes ? <div className="mt-2 text-xs leading-5 text-muted-foreground">{source.notes}</div> : null}
+                    </div>
+                  ))}
+                  {!details?.sourceRecords.length ? (
+                    <div className="rounded-md border border-dashed p-5 text-center text-sm text-muted-foreground">
+                      No source searches recorded yet.
+                    </div>
+                  ) : null}
+                  <div className="border-t pt-3">
+                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Record source</div>
+                    <Input
+                      value={sourceForm.name}
+                      onChange={(event) => setSourceForm((current) => ({ ...current, name: event.target.value }))}
+                      placeholder="Source search name"
+                      className="mb-2 rounded-md"
+                    />
+                    <div className="mb-2 grid gap-2 md:grid-cols-2">
+                      <Input
+                        value={sourceForm.sourceType}
+                        onChange={(event) => setSourceForm((current) => ({ ...current, sourceType: event.target.value }))}
+                        placeholder="Source type"
+                        className="rounded-md"
+                      />
+                      <select
+                        aria-label="Source status"
+                        value={sourceForm.status}
+                        onChange={(event) => setSourceForm((current) => ({ ...current, status: event.target.value as MentorSource["status"] }))}
+                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      >
+                        <option value="planned">Planned</option>
+                        <option value="searched">Searched</option>
+                        <option value="imported">Imported</option>
+                        <option value="skipped">Skipped</option>
+                      </select>
+                    </div>
+                    <Input
+                      value={sourceForm.searchQuery}
+                      onChange={(event) => setSourceForm((current) => ({ ...current, searchQuery: event.target.value }))}
+                      placeholder="Search query or filter"
+                      className="mb-2 rounded-md"
+                    />
+                    <div className="mb-2 grid gap-2 md:grid-cols-2">
+                      <Input
+                        type="number"
+                        min="0"
+                        value={sourceForm.resultsFound}
+                        onChange={(event) => setSourceForm((current) => ({ ...current, resultsFound: event.target.value }))}
+                        placeholder="Results found"
+                        className="rounded-md"
+                      />
+                      <Input
+                        type="number"
+                        min="0"
+                        value={sourceForm.importedCount}
+                        onChange={(event) => setSourceForm((current) => ({ ...current, importedCount: event.target.value }))}
+                        placeholder="Imported count"
+                        className="rounded-md"
+                      />
+                    </div>
+                    <Textarea
+                      value={sourceForm.notes}
+                      onChange={(event) => setSourceForm((current) => ({ ...current, notes: event.target.value }))}
+                      placeholder="Source notes"
+                      className="mb-2 min-h-20 rounded-md"
+                    />
+                    <Button variant="outline" className="w-full rounded-md" onClick={() => void recordSourceSearch()} disabled={!activeCampaignId || !sourceForm.name.trim()}>
+                      <Search className="h-4 w-4" />
+                      Record source
                     </Button>
                   </div>
                 </CardContent>
@@ -2374,6 +2505,7 @@ function WorkspaceSummaryGrid({ summary }: { summary: WorkspaceSummary }) {
   return (
     <div className="grid grid-cols-2 gap-2">
       <MiniStat label="Campaigns" value={summary.campaigns} />
+      <MiniStat label="Sources" value={summary.sourceRecords} />
       <MiniStat label="Mentors" value={summary.mentors} />
       <MiniStat label="Drafts" value={summary.drafts} />
       <MiniStat label="Invoices" value={summary.invoiceRecords} />

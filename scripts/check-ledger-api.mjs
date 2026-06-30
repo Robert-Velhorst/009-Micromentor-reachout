@@ -212,6 +212,29 @@ try {
   assert(updatedCampaign.campaign.criteriaJson.followUpAfterDays === 5, "Campaign update did not persist follow-up rule");
   assert(updatedCampaign.campaign.criteriaJson.tone === "direct, practical, edited", "Campaign update did not persist tone");
 
+  const sourceResult = await api(`/api/campaigns/${campaignId}/sources`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Smoke MicroMentor search",
+      sourceType: "MicroMentor",
+      searchQuery: "automation mentor operations",
+      status: "searched",
+      resultsFound: 6,
+      importedCount: 0,
+      notes: "Manual search record for smoke coverage",
+    }),
+  });
+  assert(sourceResult.source.status === "searched", "Source search create did not persist status");
+  assert(sourceResult.source.resultsFound === 6, "Source search create did not persist result count");
+  const updatedSource = await api(`/api/sources/${sourceResult.source.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "imported", importedCount: 2, notes: "Imported two from smoke source" }),
+  });
+  assert(updatedSource.source.status === "imported", "Source search update did not persist status");
+  assert(updatedSource.source.importedCount === 2, "Source search update did not persist imported count");
+  const sourceList = await api(`/api/campaigns/${campaignId}/sources`);
+  assert(sourceList.sources.some((source) => source.id === sourceResult.source.id), "Campaign source list did not include source record");
+
   const mentorResult = await api(`/api/campaigns/${campaignId}/mentors`, {
     method: "POST",
     body: JSON.stringify({
@@ -516,6 +539,8 @@ try {
 
   const details = await api(`/api/campaigns/${campaignId}`);
   assert(details.campaign.criteriaJson.followUpAfterDays === 5, "Campaign details did not include follow-up rule");
+  assert(details.sourceRecords.length === 1, "Campaign details did not include source records");
+  assert(details.sourceRecords[0].searchQuery === "automation mentor operations", "Campaign details source record did not preserve query");
   assert(details.campaign.totalMentors === 4, "Campaign mentor count was not persisted");
   assert(details.campaign.messagesDrafted === 3, "Draft count was not persisted");
   assert(details.campaign.messagesSent === 2, "Sent count was not persisted");
@@ -549,6 +574,7 @@ try {
   const backup = await api("/api/workspace/backup");
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
   assert(backup.summary.mentors === 4, "Workspace backup did not include mentor count");
+  assert(backup.summary.sourceRecords === 2, "Workspace backup did not include source record count");
   assert(backup.summary.qualityReviews === 3, "Workspace backup did not include quality review count");
   assert(backup.summary.invoiceRecords === 1, "Workspace backup did not include invoice count");
   const restorePreview = await api("/api/workspace/restore/preview", {
@@ -557,6 +583,7 @@ try {
   });
   assert(restorePreview.valid === true, "Workspace restore preview did not validate backup");
   assert(restorePreview.summary.drafts === 3, "Workspace restore preview did not include draft count");
+  assert(restorePreview.summary.sourceRecords === 2, "Workspace restore preview did not include source record count");
   assert(restorePreview.summary.qualityReviews === 3, "Workspace restore preview did not include quality review count");
   assert(restorePreview.summary.invoiceRecords === 1, "Workspace restore preview did not include invoice count");
   const missingQualityReviewsBackup = structuredClone(backup);
@@ -591,10 +618,12 @@ try {
     body: JSON.stringify({ backupJson: JSON.stringify(backup), confirm: true }),
   });
   assert(restored.summary.drafts === 3, "Workspace restore did not restore draft count");
+  assert(restored.summary.sourceRecords === 2, "Workspace restore did not restore source record count");
   assert(restored.summary.qualityReviews === 3, "Workspace restore did not restore quality review count");
   assert(restored.summary.invoiceRecords === 1, "Workspace restore did not restore invoice count");
   const restoredDetails = await api(`/api/campaigns/${campaignId}`);
   assert(restoredDetails.campaign.messagesDrafted === 3, "Restored campaign draft count was not available");
+  assert(restoredDetails.sourceRecords.length === 1, "Restored source record was not available");
   assert(restoredDetails.qualityReviews.length === 3, "Restored quality review was not available");
   assert(restoredDetails.invoiceRecords.length === 1, "Restored invoice record was not available");
 

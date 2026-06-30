@@ -15,8 +15,10 @@ type FollowUpStatus = "scheduled" | "completed" | "cancelled";
 type ResourceSessionStatus = "active" | "ended";
 type OutcomeStatus = "open" | "booked" | "helpful" | "declined" | "no_response" | "not_relevant" | "closed";
 type InvoiceStatus = "generated" | "void";
+type MentorSourceStatus = "planned" | "searched" | "imported" | "skipped";
 type NextActionPriority = "high" | "medium" | "low";
 type NextActionType =
+  | "record_source_search"
   | "add_mentors"
   | "draft_message"
   | "review_fit"
@@ -68,6 +70,21 @@ type CampaignCriteria = {
   tone: string;
   followUpAfterDays: number;
   requiredApproval: boolean;
+};
+
+type MentorSource = {
+  id: string;
+  campaignId: string;
+  name: string;
+  sourceType: string;
+  searchQuery: string;
+  status: MentorSourceStatus;
+  resultsFound: number;
+  importedCount: number;
+  notes: string;
+  searchedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type MentorIdentity = {
@@ -333,6 +350,7 @@ type LedgerState = {
   operators: Operator[];
   projects: OutreachProject[];
   campaigns: OutreachCampaign[];
+  mentorSources: MentorSource[];
   mentorIdentities: MentorIdentity[];
   mentorProfiles: MentorProfile[];
   matchAssessments: MatchAssessment[];
@@ -372,6 +390,7 @@ const LEDGER_ARRAY_KEYS = [
   "operators",
   "projects",
   "campaigns",
+  "mentorSources",
   "mentorIdentities",
   "mentorProfiles",
   "matchAssessments",
@@ -520,6 +539,12 @@ function parsePositiveInteger(value: unknown, fallback: number, min = 1, max = 9
   return Math.min(max, Math.max(min, Math.round(parsed)));
 }
 
+function parseNonNegativeInteger(value: unknown, fallback = 0, max = 100000) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(0, Math.round(parsed)));
+}
+
 function campaignCriteria(input: unknown): CampaignCriteria {
   const source = input && typeof input === "object" ? input as Record<string, unknown> : {};
   return {
@@ -527,6 +552,11 @@ function campaignCriteria(input: unknown): CampaignCriteria {
     followUpAfterDays: parsePositiveInteger(source.followUpAfterDays, 7),
     requiredApproval: source.requiredApproval === false ? false : true,
   };
+}
+
+function sourceStatus(value: unknown): MentorSourceStatus {
+  const status = String(value || "").trim().toLowerCase();
+  return ["planned", "searched", "imported", "skipped"].includes(status) ? (status as MentorSourceStatus) : "planned";
 }
 
 function campaignFollowUpAfterDays(campaign: OutreachCampaign) {
@@ -748,12 +778,27 @@ function createSeedState(): LedgerState {
     createdAt,
     updatedAt: createdAt,
   };
+  const source: MentorSource = {
+    id: "source-micromentor-manual",
+    campaignId: campaign.id,
+    name: "MicroMentor manual search",
+    sourceType: "MicroMentor",
+    searchQuery: "Startup, growth, operations, product, and automation mentors",
+    status: "planned",
+    resultsFound: 0,
+    importedCount: 0,
+    notes: "Default planned source for the first outreach wave. Record searched/imported counts after manual discovery.",
+    searchedAt: null,
+    createdAt,
+    updatedAt: createdAt,
+  };
 
   return {
     schemaVersion: 1,
     operators: [operator],
     projects: [project],
     campaigns: [campaign],
+    mentorSources: [source],
     mentorIdentities: [],
     mentorProfiles: [],
     matchAssessments: [],
@@ -793,6 +838,13 @@ function normalizeState(state: Partial<LedgerState>): LedgerState {
     campaigns: (state.campaigns || []).map((campaign) => ({
       ...campaign,
       criteriaJson: campaignCriteria(campaign.criteriaJson),
+    })),
+    mentorSources: (state.mentorSources || []).map((source) => ({
+      ...source,
+      status: sourceStatus(source.status),
+      resultsFound: parseNonNegativeInteger(source.resultsFound),
+      importedCount: parseNonNegativeInteger(source.importedCount),
+      searchedAt: source.searchedAt || null,
     })),
     mentorIdentities: state.mentorIdentities || [],
     mentorProfiles: state.mentorProfiles || [],
@@ -853,6 +905,7 @@ function workspaceSummary(state: LedgerState) {
     schemaVersion: state.schemaVersion,
     projects: state.projects.length,
     campaigns: state.campaigns.length,
+    sourceRecords: state.mentorSources.length,
     mentors: state.mentorProfiles.length,
     identities: state.mentorIdentities.length,
     assessments: state.matchAssessments.length,
@@ -940,6 +993,7 @@ function resetWorkspaceScope(state: LedgerState, scope: WorkspaceResetScope) {
   state.outreachOutcomes = [];
 
   if (scope === "mentors") {
+    state.mentorSources = [];
     state.mentorIdentities = [];
     state.mentorProfiles = [];
     state.matchAssessments = [];
@@ -1100,6 +1154,7 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
 
   for (const campaign of targetCampaigns) {
     recalcCampaign(state, campaign.id);
+    const sourceRecords = state.mentorSources.filter((source) => source.campaignId === campaign.id);
     const mentors = state.mentorProfiles.filter((mentor) => mentor.campaignId === campaign.id);
     const messages = state.messageDrafts.filter((message) => message.campaignId === campaign.id);
     const responses = state.mentorResponses.filter((response) => response.campaignId === campaign.id);
@@ -1107,6 +1162,23 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
     const outcomes = state.outreachOutcomes.filter((outcome) => outcome.campaignId === campaign.id);
     const billingRecords = state.billingRecords.filter((record) => record.campaignId === campaign.id);
     const invoiceRecords = state.invoiceRecords.filter((record) => record.campaignId === campaign.id);
+
+    if (!sourceRecords.length) {
+      pushAction({
+        id: `action:record-source-search:${campaign.id}`,
+        campaignId: campaign.id,
+        mentorProfileId: null,
+        messageDraftId: null,
+        followUpId: null,
+        responseId: null,
+        priority: "medium",
+        type: "record_source_search",
+        title: "Record source search",
+        description: "No source search has been recorded for this campaign.",
+        recommendedAction: "Record where you searched, the query used, and how many potential mentors were found before importing or drafting outreach.",
+        dueAt: null,
+      });
+    }
 
     if (!mentors.length) {
       pushAction({
@@ -1303,6 +1375,8 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
   recalcCampaign(state, campaignId);
   const campaign = state.campaigns.find((item) => item.id === campaignId);
   if (!campaign) return null;
+  const sourceRecords = state.mentorSources.filter((item) => item.campaignId === campaignId);
+  const sourceRecordIds = new Set(sourceRecords.map((item) => item.id));
   const mentors = state.mentorProfiles.filter((item) => item.campaignId === campaignId);
   const mentorIds = new Set(mentors.map((item) => item.id));
   const messages = state.messageDrafts.filter((item) => item.campaignId === campaignId);
@@ -1322,6 +1396,7 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
 
   return {
     campaign,
+    sourceRecords,
     mentors,
     assessments: state.matchAssessments.filter((item) => item.campaignId === campaignId),
     messages,
@@ -1339,6 +1414,7 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
     auditEvents: state.auditEvents.filter(
       (item) =>
         item.entityId === campaignId ||
+        sourceRecordIds.has(item.entityId) ||
         mentorIds.has(item.entityId) ||
         messageIds.has(item.entityId) ||
         followUpIds.has(item.entityId) ||
@@ -1778,6 +1854,51 @@ function resolveDuplicateMentorRecord(state: LedgerState, mentor: MentorProfile,
   return { mentor, canonicalMentor, cancelledFollowUps: beforeFollowUps.length };
 }
 
+function createSourceRecord(state: LedgerState, campaign: OutreachCampaign, body: Record<string, unknown>) {
+  const createdAt = now();
+  const name = String(body?.name || "").trim();
+  if (!name) return { error: "Source name is required", status: 400 };
+  const status = sourceStatus(body?.status);
+  const source: MentorSource = {
+    id: randomUUID(),
+    campaignId: campaign.id,
+    name,
+    sourceType: String(body?.sourceType || campaign.source || "manual").trim() || "manual",
+    searchQuery: String(body?.searchQuery || "").trim(),
+    status,
+    resultsFound: parseNonNegativeInteger(body?.resultsFound),
+    importedCount: parseNonNegativeInteger(body?.importedCount),
+    notes: String(body?.notes || "").trim(),
+    searchedAt: status === "planned" ? null : String(body?.searchedAt || createdAt),
+    createdAt,
+    updatedAt: createdAt,
+  };
+  state.mentorSources.unshift(source);
+  audit(state, "created_mentor_source", "mentorSource", source.id, source, { riskLevel: "low" });
+  return { source };
+}
+
+function updateSourceRecord(state: LedgerState, sourceId: string, body: Record<string, unknown>) {
+  const source = state.mentorSources.find((item) => item.id === sourceId);
+  if (!source) return { error: "Source record not found", status: 404 };
+  const before = { ...source };
+  if (typeof body?.name === "string" && body.name.trim()) source.name = body.name.trim();
+  if (typeof body?.sourceType === "string") source.sourceType = body.sourceType.trim() || source.sourceType;
+  if (typeof body?.searchQuery === "string") source.searchQuery = body.searchQuery.trim();
+  if (typeof body?.status === "string") source.status = sourceStatus(body.status);
+  if (body?.resultsFound !== undefined) source.resultsFound = parseNonNegativeInteger(body.resultsFound);
+  if (body?.importedCount !== undefined) source.importedCount = parseNonNegativeInteger(body.importedCount);
+  if (typeof body?.notes === "string") source.notes = body.notes.trim();
+  if (typeof body?.searchedAt === "string") {
+    source.searchedAt = body.searchedAt.trim() || null;
+  } else if (source.status !== "planned" && !source.searchedAt) {
+    source.searchedAt = now();
+  }
+  source.updatedAt = now();
+  audit(state, "updated_mentor_source", "mentorSource", source.id, source, { beforeState: before, riskLevel: "low" });
+  return { source };
+}
+
 function createMessageDraftRecord(state: LedgerState, campaign: OutreachCampaign, body: Record<string, unknown>) {
   const mentor = state.mentorProfiles.find((item) => item.id === String(body?.mentorProfileId));
   if (!mentor || mentor.campaignId !== campaign.id) {
@@ -2075,6 +2196,24 @@ export function registerLedgerRoutes(app: Express) {
     };
   }));
 
+  app.get("/api/campaigns/:id/sources", route((req, res, state) => {
+    const campaignId = routeId(req);
+    if (!requireCampaign(state, campaignId)) return jsonError(res, 404, "Campaign not found");
+    return { sources: state.mentorSources.filter((item) => item.campaignId === campaignId) };
+  }));
+
+  app.post("/api/campaigns/:id/sources", route((req, res, state) => {
+    const campaign = requireCampaign(state, routeId(req));
+    if (!campaign) return jsonError(res, 404, "Campaign not found");
+    const result = createSourceRecord(state, campaign, req.body || {});
+    return "error" in result ? jsonError(res, result.status ?? 400, result.error || "Source record failed") : result;
+  }));
+
+  app.patch("/api/sources/:id", route((req, res, state) => {
+    const result = updateSourceRecord(state, routeId(req), req.body || {});
+    return "error" in result ? jsonError(res, result.status ?? 400, result.error || "Source record update failed") : result;
+  }));
+
   app.post("/api/campaigns/:id/mentors/import", route((req, res, state) => {
     const campaign = requireCampaign(state, routeId(req));
     if (!campaign) return jsonError(res, 404, "Campaign not found");
@@ -2139,6 +2278,15 @@ export function registerLedgerRoutes(app: Express) {
     });
 
     if (!preview) {
+      const sourceRecordId = typeof req.body?.sourceRecordId === "string" ? req.body.sourceRecordId : "";
+      const sourceRecord = state.mentorSources.find((item) => item.id === sourceRecordId && item.campaignId === campaign.id);
+      if (sourceRecord) {
+        updateSourceRecord(state, sourceRecord.id, {
+          status: "imported",
+          importedCount: sourceRecord.importedCount + imported.length,
+          resultsFound: Math.max(sourceRecord.resultsFound, rows.length - 1),
+        });
+      }
       recalcCampaign(state, campaign.id);
       audit(state, "imported_mentor_csv", "campaign", campaign.id, { imported: imported.length, skipped }, { riskLevel: "medium" });
     }
