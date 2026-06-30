@@ -314,6 +314,28 @@ function campaignTone(campaign: Campaign | null) {
   return campaign?.criteriaJson?.tone || "respectful, concise, practical";
 }
 
+function sourceToForm(source: MentorSource): SourceForm {
+  return {
+    name: source.name,
+    sourceType: source.sourceType,
+    searchQuery: source.searchQuery,
+    status: source.status,
+    resultsFound: String(source.resultsFound),
+    importedCount: String(source.importedCount),
+    notes: source.notes,
+  };
+}
+
+function sourceEditChanged(source: MentorSource, form: SourceForm | undefined) {
+  if (!form) return false;
+  return (
+    form.status !== source.status ||
+    Number(form.resultsFound) !== source.resultsFound ||
+    Number(form.importedCount) !== source.importedCount ||
+    form.notes.trim() !== source.notes
+  );
+}
+
 function downloadText(filename: string, text: string, type = "text/plain;charset=utf-8") {
   const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
@@ -366,6 +388,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<LedgerTab>("ledger");
   const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
   const [sourceFilterId, setSourceFilterId] = useState("");
+  const [sourceEdits, setSourceEdits] = useState<Record<string, SourceForm>>({});
 
   const loadLedger = async (campaignId?: string) => {
     setLoading(true);
@@ -422,6 +445,13 @@ export default function Home() {
       setSourceFilterId("");
     }
   }, [details?.sourceRecords, sourceFilterId]);
+  useEffect(() => {
+    const next: Record<string, SourceForm> = {};
+    for (const source of details?.sourceRecords || []) {
+      next[source.id] = sourceToForm(source);
+    }
+    setSourceEdits(next);
+  }, [details?.sourceRecords]);
 
   const campaign = details?.campaign || null;
   const campaignProject = useMemo(
@@ -593,6 +623,18 @@ export default function Home() {
         notes: sourceForm.notes.trim(),
       });
       setSourceForm(defaultSourceForm);
+    });
+
+  const updateSourceSearch = (source: MentorSource) =>
+    mutate(async () => {
+      const edit = sourceEdits[source.id];
+      if (!edit) throw new Error("Source edit state was not available");
+      await ledgerApi.updateSourceRecord(source.id, {
+        status: edit.status,
+        resultsFound: Number(edit.resultsFound) || 0,
+        importedCount: Number(edit.importedCount) || 0,
+        notes: edit.notes.trim(),
+      });
     });
 
   const createProject = async () => {
@@ -1276,6 +1318,8 @@ export default function Home() {
                     const linkedMentors = (details?.mentors || []).filter((mentor) => mentor.sourceRecordId === source.id);
                     const strongLinkedMentors = linkedMentors.filter((mentor) => (assessmentsByMentor.get(mentor.id)?.score || 0) >= 70);
                     const remainingResults = Math.max(0, source.resultsFound - source.importedCount);
+                    const sourceEdit = sourceEdits[source.id] || sourceToForm(source);
+                    const sourceChanged = sourceEditChanged(source, sourceEdit);
                     return (
                       <div key={source.id} className="rounded-md border p-3 text-sm">
                         <div className="flex items-start justify-between gap-3">
@@ -1297,6 +1341,88 @@ export default function Home() {
                         </div>
                         {source.searchQuery ? <div className="mt-2 text-xs text-muted-foreground">Query: {source.searchQuery}</div> : null}
                         {source.notes ? <div className="mt-2 text-xs leading-5 text-muted-foreground">{source.notes}</div> : null}
+                        <div className="mt-3 rounded-md border bg-muted/20 p-3">
+                          <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Update search outcome</div>
+                          <div className="grid gap-2 md:grid-cols-3">
+                            <select
+                              aria-label={`Update status for ${source.name}`}
+                              value={sourceEdit.status}
+                              onChange={(event) =>
+                                setSourceEdits((current) => ({
+                                  ...current,
+                                  [source.id]: {
+                                    ...(current[source.id] || sourceEdit),
+                                    status: event.target.value as MentorSource["status"],
+                                  },
+                                }))
+                              }
+                              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                            >
+                              <option value="planned">Planned</option>
+                              <option value="searched">Searched</option>
+                              <option value="imported">Imported</option>
+                              <option value="skipped">Skipped</option>
+                            </select>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={sourceEdit.resultsFound}
+                              onChange={(event) =>
+                                setSourceEdits((current) => ({
+                                  ...current,
+                                  [source.id]: {
+                                    ...(current[source.id] || sourceEdit),
+                                    resultsFound: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="Results"
+                              aria-label={`Update results found for ${source.name}`}
+                              className="rounded-md"
+                            />
+                            <Input
+                              type="number"
+                              min="0"
+                              value={sourceEdit.importedCount}
+                              onChange={(event) =>
+                                setSourceEdits((current) => ({
+                                  ...current,
+                                  [source.id]: {
+                                    ...(current[source.id] || sourceEdit),
+                                    importedCount: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="Imported"
+                              aria-label={`Update imported count for ${source.name}`}
+                              className="rounded-md"
+                            />
+                          </div>
+                          <Textarea
+                            value={sourceEdit.notes}
+                            onChange={(event) =>
+                              setSourceEdits((current) => ({
+                                ...current,
+                                [source.id]: {
+                                  ...(current[source.id] || sourceEdit),
+                                  notes: event.target.value,
+                                },
+                              }))
+                            }
+                            placeholder="Search outcome notes"
+                            aria-label={`Update notes for ${source.name}`}
+                            className="mt-2 min-h-20 rounded-md"
+                          />
+                          <Button
+                            variant="outline"
+                            className="mt-2 w-full rounded-md"
+                            onClick={() => void updateSourceSearch(source)}
+                            disabled={!sourceChanged}
+                          >
+                            <ClipboardCheck className="h-4 w-4" />
+                            Update source
+                          </Button>
+                        </div>
                         <Button
                           variant="outline"
                           className="mt-3 w-full rounded-md"
