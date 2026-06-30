@@ -365,6 +365,7 @@ export default function Home() {
   const [workspaceStatus, setWorkspaceStatus] = useState("");
   const [activeTab, setActiveTab] = useState<LedgerTab>("ledger");
   const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
+  const [sourceFilterId, setSourceFilterId] = useState("");
 
   const loadLedger = async (campaignId?: string) => {
     setLoading(true);
@@ -416,6 +417,11 @@ export default function Home() {
       setMentorForm((current) => ({ ...current, sourceRecordId: "" }));
     }
   }, [details?.sourceRecords, mentorForm.sourceRecordId]);
+  useEffect(() => {
+    if (sourceFilterId && sourceFilterId !== "__unlinked__" && !details?.sourceRecords.some((source) => source.id === sourceFilterId)) {
+      setSourceFilterId("");
+    }
+  }, [details?.sourceRecords, sourceFilterId]);
 
   const campaign = details?.campaign || null;
   const campaignProject = useMemo(
@@ -504,12 +510,15 @@ export default function Home() {
   );
   const filteredMentors = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const mentors = details?.mentors || [];
+    let mentors = details?.mentors || [];
+    if (sourceFilterId === "__unlinked__") {
+      mentors = mentors.filter((mentor) => !mentor.sourceRecordId);
+    } else if (sourceFilterId) {
+      mentors = mentors.filter((mentor) => mentor.sourceRecordId === sourceFilterId);
+    }
     if (!needle) return mentors;
-    return mentors.filter((mentor) =>
-      `${mentor.name} ${mentor.headline} ${mentor.bio} ${mentor.skills.join(" ")}`.toLowerCase().includes(needle)
-    );
-  }, [details?.mentors, query]);
+    return mentors.filter((mentor) => `${mentor.name} ${mentor.headline} ${mentor.bio} ${mentor.skills.join(" ")}`.toLowerCase().includes(needle));
+  }, [details?.mentors, query, sourceFilterId]);
   const selectedMentor = useMemo(() => {
     const mentors = details?.mentors || [];
     return mentors.find((mentor) => mentor.id === selectedMentorId) || filteredMentors[0] || mentors[0] || null;
@@ -1263,24 +1272,45 @@ export default function Home() {
                   <CardTitle className="text-lg">Source searches</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 px-5">
-                  {(details?.sourceRecords || []).map((source) => (
-                    <div key={source.id} className="rounded-md border p-3 text-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-medium">{source.name}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {source.sourceType} - {source.status}
-                            {source.searchedAt ? ` - ${formatDate(source.searchedAt)}` : ""}
+                  {(details?.sourceRecords || []).map((source) => {
+                    const linkedMentors = (details?.mentors || []).filter((mentor) => mentor.sourceRecordId === source.id);
+                    const strongLinkedMentors = linkedMentors.filter((mentor) => (assessmentsByMentor.get(mentor.id)?.score || 0) >= 70);
+                    const remainingResults = Math.max(0, source.resultsFound - source.importedCount);
+                    return (
+                      <div key={source.id} className="rounded-md border p-3 text-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="font-medium">{source.name}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {source.sourceType} - {source.status}
+                              {source.searchedAt ? ` - ${formatDate(source.searchedAt)}` : ""}
+                            </div>
                           </div>
+                          <Badge variant="outline" className="rounded-md">
+                            {source.importedCount}/{source.resultsFound}
+                          </Badge>
                         </div>
-                        <Badge variant="outline" className="rounded-md">
-                          {source.importedCount}/{source.resultsFound}
-                        </Badge>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          <MiniStat label="Linked" value={linkedMentors.length} />
+                          <MiniStat label="Strong" value={strongLinkedMentors.length} />
+                          <MiniStat label="Remaining" value={remainingResults} />
+                        </div>
+                        {source.searchQuery ? <div className="mt-2 text-xs text-muted-foreground">Query: {source.searchQuery}</div> : null}
+                        {source.notes ? <div className="mt-2 text-xs leading-5 text-muted-foreground">{source.notes}</div> : null}
+                        <Button
+                          variant="outline"
+                          className="mt-3 w-full rounded-md"
+                          onClick={() => {
+                            setSourceFilterId(source.id);
+                            setQuery("");
+                            setActiveTab("mentors");
+                          }}
+                        >
+                          View mentors from source
+                        </Button>
                       </div>
-                      {source.searchQuery ? <div className="mt-2 text-xs text-muted-foreground">Query: {source.searchQuery}</div> : null}
-                      {source.notes ? <div className="mt-2 text-xs leading-5 text-muted-foreground">{source.notes}</div> : null}
-                    </div>
-                  ))}
+                    );
+                  })}
                   {!details?.sourceRecords.length ? (
                     <div className="rounded-md border border-dashed p-5 text-center text-sm text-muted-foreground">
                       No source searches recorded yet.
@@ -1396,13 +1426,40 @@ export default function Home() {
               <CardHeader className="px-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <CardTitle className="text-lg">Mentor profiles and fit scores</CardTitle>
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search mentors" className="h-9 rounded-md pl-9 sm:w-64" />
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <select
+                      aria-label="Mentor source search filter"
+                      value={sourceFilterId}
+                      onChange={(event) => setSourceFilterId(event.target.value)}
+                      className="h-9 rounded-md border bg-background px-3 text-sm"
+                    >
+                      <option value="">All sources</option>
+                      <option value="__unlinked__">No source search</option>
+                      {(details?.sourceRecords || []).map((source) => (
+                        <option key={source.id} value={source.id}>
+                          {source.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search mentors" className="h-9 rounded-md pl-9 sm:w-64" />
+                    </div>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="px-5">
+                {sourceFilterId ? (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-3 text-sm">
+                    <span>
+                      Showing {filteredMentors.length} mentor{filteredMentors.length === 1 ? "" : "s"} from{" "}
+                      {sourceFilterId === "__unlinked__" ? "unlinked intake" : sourceRecordsById.get(sourceFilterId)?.name || "selected source"}
+                    </span>
+                    <Button variant="outline" className="h-8 rounded-md" onClick={() => setSourceFilterId("")}>
+                      Clear source filter
+                    </Button>
+                  </div>
+                ) : null}
                 <div className="space-y-3">
                   {filteredMentors.map((mentor) => {
                     const assessment = assessmentsByMentor.get(mentor.id);
