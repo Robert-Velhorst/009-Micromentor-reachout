@@ -1208,6 +1208,8 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
         });
       }
 
+      if (mentor.stage === "closed") continue;
+
       if (terminalOutcome) continue;
 
       const duplicateActiveDraft = activeDraftForMentorPerson(state, campaign.id, mentor);
@@ -1729,6 +1731,53 @@ function createMentorRecord(state: LedgerState, campaign: OutreachCampaign, body
   return { mentor, assessment, duplicateCount: duplicateProfiles.length };
 }
 
+function resolveDuplicateMentorRecord(state: LedgerState, mentor: MentorProfile, body: Record<string, unknown>) {
+  if (mentor.stage === "closed") {
+    return { error: "Duplicate mentor profile is already resolved", status: 409 };
+  }
+  const canonicalMentorProfileId = body?.canonicalMentorProfileId ? String(body.canonicalMentorProfileId) : "";
+  const canonicalMentor = canonicalMentorProfileId
+    ? state.mentorProfiles.find((item) => item.id === canonicalMentorProfileId)
+    : canonicalMentorProfileForPerson(state, mentor);
+  if (!canonicalMentor || canonicalMentor.id === mentor.id || canonicalMentor.campaignId !== mentor.campaignId) {
+    return { error: "Valid canonical duplicate mentor profile is required", status: 400 };
+  }
+  if (!relatedMentorProfileIds(state, mentor).has(canonicalMentor.id)) {
+    return { error: "Selected canonical mentor is not a duplicate match", status: 409 };
+  }
+
+  const decidedAt = now();
+  const beforeMentor = { ...mentor };
+  const beforeFollowUps = state.followUpPlans
+    .filter((followUp) => followUp.mentorProfileId === mentor.id && followUp.status === "scheduled")
+    .map((followUp) => ({ ...followUp }));
+  mentor.mentorIdentityId = canonicalMentor.mentorIdentityId;
+  mentor.stage = "closed";
+  mentor.notes = [
+    mentor.notes,
+    `Duplicate resolved into ${canonicalMentor.name}${body?.resolutionNote ? `: ${String(body.resolutionNote)}` : ""}`,
+  ].filter(Boolean).join("\n");
+  mentor.updatedAt = decidedAt;
+
+  for (const followUp of state.followUpPlans) {
+    if (followUp.mentorProfileId === mentor.id && followUp.status === "scheduled") {
+      followUp.status = "cancelled";
+      followUp.updatedAt = decidedAt;
+    }
+  }
+
+  recalcCampaign(state, mentor.campaignId);
+  audit(
+    state,
+    "resolved_duplicate_mentor_profile",
+    "mentorProfile",
+    mentor.id,
+    { mentor, canonicalMentor, cancelledFollowUps: beforeFollowUps.length },
+    { beforeState: { mentor: beforeMentor, followUps: beforeFollowUps }, riskLevel: "medium" }
+  );
+  return { mentor, canonicalMentor, cancelledFollowUps: beforeFollowUps.length };
+}
+
 function createMessageDraftRecord(state: LedgerState, campaign: OutreachCampaign, body: Record<string, unknown>) {
   const mentor = state.mentorProfiles.find((item) => item.id === String(body?.mentorProfileId));
   if (!mentor || mentor.campaignId !== campaign.id) {
@@ -2206,6 +2255,17 @@ export function registerLedgerRoutes(app: Express) {
     recalcCampaign(state, mentor.campaignId);
     audit(state, "updated_mentor_profile", "mentorProfile", mentor.id, mentor, { beforeState: before, riskLevel: "medium" });
     return { mentor, assessment: state.matchAssessments.find((item) => item.mentorProfileId === mentor.id) };
+  }));
+
+  app.post("/api/mentors/:id/resolve-duplicate", route((req, res, state) => {
+    const mentor = state.mentorProfiles.find((item) => item.id === routeId(req));
+    if (!mentor) return jsonError(res, 404, "Mentor not found");
+    const result = resolveDuplicateMentorRecord(state, mentor, req.body || {});
+    if ("error" in result) {
+      const status = "status" in result && typeof result.status === "number" ? result.status : 400;
+      return jsonError(res, status, String(result.error));
+    }
+    return result;
   }));
 
   app.post("/api/campaigns/:id/messages", route((req, res, state) => {

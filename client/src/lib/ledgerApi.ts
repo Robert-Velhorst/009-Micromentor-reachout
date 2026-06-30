@@ -480,6 +480,11 @@ export const ledgerApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  resolveDuplicateMentor: (mentorId: string, payload: { canonicalMentorProfileId?: string; resolutionNote?: string } = {}) =>
+    request<{ mentor: MentorProfile; canonicalMentor: MentorProfile; cancelledFollowUps: number }>(`/api/mentors/${mentorId}/resolve-duplicate`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   importMentorCsv: (campaignId: string, csvText: string, preview = false, columnMap?: MentorCsvColumnMap) =>
     request<MentorImportResult>(`/api/campaigns/${campaignId}/mentors/import`, {
       method: "POST",

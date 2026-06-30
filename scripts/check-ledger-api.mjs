@@ -293,6 +293,23 @@ try {
     },
     409
   );
+  const resolvedDuplicate = await api(`/api/mentors/${duplicateMentor.mentor.id}/resolve-duplicate`, {
+    method: "POST",
+    body: JSON.stringify({ resolutionNote: "Smoke duplicate resolution" }),
+  });
+  assert(resolvedDuplicate.mentor.stage === "closed", "Resolved duplicate mentor was not closed");
+  assert(resolvedDuplicate.canonicalMentor.id === mentorId, "Duplicate was not resolved into the canonical mentor");
+  assert(resolvedDuplicate.mentor.notes.includes("Smoke duplicate resolution"), "Duplicate resolution note was not retained");
+  const resolvedDuplicateActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(
+    !resolvedDuplicateActions.actions.some((action) => action.type === "review_duplicate_profile" && action.mentorProfileId === duplicateMentor.mentor.id),
+    "Resolved duplicate mentor still produced a duplicate review action"
+  );
+  assert(
+    !resolvedDuplicateActions.actions.some((action) => action.type === "draft_message" && action.mentorProfileId === duplicateMentor.mentor.id),
+    "Resolved duplicate mentor still produced a draft recommendation"
+  );
+  await expectFailure(`/api/mentors/${duplicateMentor.mentor.id}/resolve-duplicate`, { method: "POST" }, 409);
 
   const blockedDraft = await api(`/api/messages/${messageId}`, {
     method: "PATCH",

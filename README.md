@@ -16,6 +16,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Record delivery evidence instead of faking external sends.
 - Import mentors from pasted CSV text or `.csv` files with configurable source-column mapping and duplicate preview.
 - Block duplicate active or sent outreach drafts for the same mentor identity or profile URL within a campaign.
+- Resolve duplicate mentor review actions without deleting source-history rows.
 - Export mentor rows and full campaign history CSVs with message status, send timestamp, response, follow-up, outcome, and notes.
 - Track response classifications and follow-up suggestions, including automatic cancellation of pending follow-ups when a mentor declines or is unavailable.
 - Review campaign results with response rate, booking rate, positive outcome rate, overdue follow-ups, and outcome filters.
@@ -56,6 +57,7 @@ The Express server now exposes operational API routes before serving the fronten
 - `GET|POST /api/campaigns/:id/invoices`
 - `GET|POST /api/mentors`
 - `GET|PATCH /api/mentors/:id`
+- `POST /api/mentors/:id/resolve-duplicate`
 - `GET|POST /api/messages`
 - `PATCH /api/messages/:id`
 - `POST /api/messages/:id/approve`
@@ -88,7 +90,7 @@ Projects group related outreach campaigns. Campaign creation and updates validat
 
 Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation. Generated drafts and automatic follow-up suggestions use each campaign's stored tone and follow-up timing rule. Scheduled follow-ups can be converted into linked message drafts, which then use the same review, approval, and manual send confirmation workflow as first-touch outreach. Pending follow-ups are cancelled when a recorded response says the mentor is not interested or unavailable. Failed manual send attempts remain visible in the review queue and do not create follow-up work.
 
-Manual duplicate mentor records can remain in the ledger for source history, but MARO blocks active or sent duplicate outreach for the same mentor identity/profile in a campaign, suppresses duplicate draft recommendations, and surfaces a duplicate-profile review action.
+Manual duplicate mentor records can remain in the ledger for source history, but MARO blocks active or sent duplicate outreach for the same mentor identity/profile in a campaign, suppresses duplicate draft recommendations, and surfaces a duplicate-profile review action. Resolving a duplicate links it to the canonical mentor identity, closes the duplicate row, cancels its pending follow-ups, and records an audit event without deleting historical source data.
 
 ## Requirements
 

@@ -601,6 +601,9 @@ export default function Home() {
     }
   };
 
+  const resolveDuplicateMentor = (mentor: MentorProfile) =>
+    mutate(() => ledgerApi.resolveDuplicateMentor(mentor.id, { resolutionNote: "Resolved from duplicate review action" }));
+
   const dueFollowUps = (details?.followUps || []).filter(
     (followUp) => followUp.status === "scheduled" && new Date(followUp.dueAt).getTime() <= Date.now()
   );
@@ -1193,6 +1196,7 @@ export default function Home() {
               onRevealSensitive={revealSensitive}
               onHideSensitive={hideSensitive}
               onCreateDraft={(mentor) => void mutate(() => ledgerApi.createDraft(activeCampaignId, mentor.id))}
+              onResolveDuplicate={(mentor) => void resolveDuplicateMentor(mentor)}
             />
 
             <Card className="rounded-md py-5">
@@ -1842,6 +1846,7 @@ function MentorDetailPanel({
   onRevealSensitive,
   onHideSensitive,
   onCreateDraft,
+  onResolveDuplicate,
 }: {
   mentor: MentorProfile | null;
   assessment: CampaignDetails["assessments"][number] | null;
@@ -1858,7 +1863,10 @@ function MentorDetailPanel({
   onRevealSensitive: (key: string) => void;
   onHideSensitive: (key: string) => void;
   onCreateDraft: (mentor: MentorProfile) => void;
+  onResolveDuplicate: (mentor: MentorProfile) => void;
 }) {
+  const duplicateAction = mentor ? nextActions.find((action) => action.type === "review_duplicate_profile") : null;
+
   return (
     <Card className="rounded-md py-5">
       <CardHeader className="px-5">
@@ -1918,6 +1926,12 @@ function MentorDetailPanel({
             <div className="rounded-md border p-3">
               <div className="mb-2 text-sm font-medium">Next actions</div>
               <ActionList actions={nextActions.slice(0, 3)} emptyText="No immediate action for this mentor." />
+              {mentor && duplicateAction ? (
+                <Button variant="outline" className="mt-3 w-full rounded-md" onClick={() => onResolveDuplicate(mentor)}>
+                  <Check className="h-4 w-4" />
+                  Resolve duplicate
+                </Button>
+              ) : null}
             </div>
 
             <div className="rounded-md border p-3">
