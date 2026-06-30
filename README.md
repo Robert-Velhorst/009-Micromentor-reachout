@@ -7,7 +7,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Manage outreach projects and campaigns.
 - Attach each outreach campaign to a project context so related mentor work stays grouped.
 - Edit active campaign goal, target mentor type, source, status, project, message tone, and follow-up timing rules from the command center.
-- Record planned, searched, skipped, and imported mentor-source searches with query, result count, import count, and notes.
+- Record planned, searched, skipped, and imported mentor-source searches with query, result count, import count, and notes, then link CSV imports back to the searched source.
 - Store campaign-level message tone and follow-up timing rules, then apply them to generated drafts and follow-up suggestions.
 - Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
 - Require approval before a message can be manually confirmed as sent.

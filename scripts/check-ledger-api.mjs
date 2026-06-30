@@ -269,9 +269,13 @@ try {
 
   const importResult = await api(`/api/campaigns/${campaignId}/mentors/import`, {
     method: "POST",
-    body: JSON.stringify({ csvText }),
+    body: JSON.stringify({ csvText, sourceRecordId: sourceResult.source.id }),
   });
   assert(importResult.importedCount === 1, "CSV import did not import exactly one mentor");
+  const sourceAfterCsvImport = await api(`/api/campaigns/${campaignId}/sources`);
+  const linkedImportSource = sourceAfterCsvImport.sources.find((source) => source.id === sourceResult.source.id);
+  assert(linkedImportSource.importedCount === 3, "Linked source record did not track CSV imported count");
+  assert(linkedImportSource.status === "imported", "Linked source record did not remain imported after CSV import");
   const exportResult = await api(`/api/campaigns/${campaignId}/mentors/export`);
   assert(exportResult.csv.includes("Grace Hopper"), "CSV export did not include imported mentor");
 

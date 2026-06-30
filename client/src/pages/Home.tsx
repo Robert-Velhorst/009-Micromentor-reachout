@@ -348,6 +348,7 @@ export default function Home() {
   const [usageReport, setUsageReport] = useState<UsageReport | null>(null);
   const [csvText, setCsvText] = useState(sampleCsv);
   const [csvColumnMap, setCsvColumnMap] = useState<Record<CsvColumnKey, string>>(emptyCsvColumnMap);
+  const [csvSourceRecordId, setCsvSourceRecordId] = useState("");
   const [csvFileStatus, setCsvFileStatus] = useState("");
   const [csvImportResult, setCsvImportResult] = useState<MentorImportResult | null>(null);
   const [selectedMentorId, setSelectedMentorId] = useState("");
@@ -403,6 +404,11 @@ export default function Home() {
   useEffect(() => {
     setCsvColumnMap((current) => inferCsvColumnMap(csvHeaders, current));
   }, [csvHeaderKey]);
+  useEffect(() => {
+    if (csvSourceRecordId && !details?.sourceRecords.some((source) => source.id === csvSourceRecordId)) {
+      setCsvSourceRecordId("");
+    }
+  }, [csvSourceRecordId, details?.sourceRecords]);
 
   const campaign = details?.campaign || null;
   const campaignProject = useMemo(
@@ -657,7 +663,8 @@ export default function Home() {
   const importMentorCsv = (preview: boolean) =>
     mutate(async () => {
       if (!activeCampaignId) throw new Error("Select a campaign first");
-      const result = await ledgerApi.importMentorCsv(activeCampaignId, csvText, preview, compactColumnMap(csvColumnMap));
+      const sourceRecordId = details?.sourceRecords.some((source) => source.id === csvSourceRecordId) ? csvSourceRecordId : undefined;
+      const result = await ledgerApi.importMentorCsv(activeCampaignId, csvText, preview, compactColumnMap(csvColumnMap), sourceRecordId);
       setCsvImportResult(result);
     });
 
@@ -1549,6 +1556,22 @@ export default function Home() {
                   className="min-h-40 rounded-md font-mono text-xs"
                   placeholder="name,company,headline,bio,skills,profileUrl,notes"
                 />
+                <label className="grid gap-1 text-xs text-muted-foreground">
+                  <span>Link import to source search</span>
+                  <select
+                    aria-label="CSV import source search"
+                    value={csvSourceRecordId}
+                    onChange={(event) => setCsvSourceRecordId(event.target.value)}
+                    className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+                  >
+                    <option value="">No source link</option>
+                    {(details?.sourceRecords || []).map((source) => (
+                      <option key={source.id} value={source.id}>
+                        {source.name} ({source.importedCount}/{source.resultsFound})
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 {csvHeaders.length ? (
                   <div className="rounded-md border bg-muted/20 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">

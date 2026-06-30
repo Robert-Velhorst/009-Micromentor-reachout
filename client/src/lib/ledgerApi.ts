@@ -521,10 +521,10 @@ export const ledgerApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  importMentorCsv: (campaignId: string, csvText: string, preview = false, columnMap?: MentorCsvColumnMap) =>
+  importMentorCsv: (campaignId: string, csvText: string, preview = false, columnMap?: MentorCsvColumnMap, sourceRecordId?: string) =>
     request<MentorImportResult>(`/api/campaigns/${campaignId}/mentors/import`, {
       method: "POST",
-      body: JSON.stringify({ csvText, preview, columnMap }),
+      body: JSON.stringify({ csvText, preview, columnMap, sourceRecordId }),
     }),
   exportMentorCsv: (campaignId: string) =>
     request<{ filename: string; csv: string }>(`/api/campaigns/${campaignId}/mentors/export`),
