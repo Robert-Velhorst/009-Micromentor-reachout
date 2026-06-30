@@ -194,6 +194,7 @@ Done:
 - Removed Google Fonts requests and switched to local system font stacks so private/offline installs do not contact external font hosts during normal rendering.
 - Added production surface assertions to the release gate so root HTML, CSP, browser hardening headers, and external asset regressions are checked before installer builds.
 - Made the Vite browser debug collector opt-in with `MARO_DEBUG_COLLECTOR=1`, avoiding background log ingestion and `.manus-logs` churn during normal development.
+- Aligned the legacy `src/utils/api.js` utility with the real ledger endpoints so it no longer points at removed bulk-send, mentor-delete, or simulated billing flows.
 
 Do next:
 - Virtualize mentor and queue tables only after real lists exceed a few hundred rows. The current UI does not need virtualization yet.
@@ -216,6 +217,7 @@ Done:
 - Added manual profile handoff controls that copy revealed drafts without introducing automated external sending.
 - Added duplicate outreach guards and review actions so one mentor identity/profile cannot receive multiple active or sent campaign drafts through manual/API paths, and the operator can see which profile needs duplicate review.
 - Added audited duplicate-resolution controls that close duplicate source rows while preserving history and canonical outreach context.
+- Added release-gate checks that prevent the legacy API utility from reintroducing unsafe bulk-send, mentor-delete, or unsupported mentor-update paths.
 - Added release-gate checks that fail on missing security headers, weakened CSP self-only directives, Google Fonts reintroduction, or external asset URLs in the production app shell.
 
 Do next:

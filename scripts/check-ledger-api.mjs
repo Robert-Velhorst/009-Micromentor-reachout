@@ -134,6 +134,13 @@ try {
   assert(headerValue(rootPage.response, "referrer-policy").toLowerCase() === "no-referrer", "Missing Referrer-Policy no-referrer header");
   assertIncludes(headerValue(rootPage.response, "permissions-policy"), "camera=()", "Missing restrictive Permissions-Policy header");
 
+  const legacyApiUtility = fs.readFileSync(path.join(root, "src", "utils", "api.js"), "utf8");
+  assert(!legacyApiUtility.includes("/api/messages/${messageId}/send`"), "Legacy API utility still calls the removed bulk send endpoint");
+  assert(!legacyApiUtility.includes("method: 'DELETE'"), "Legacy API utility still exposes mentor deletion");
+  assert(!legacyApiUtility.includes("method: 'PUT'"), "Legacy API utility still uses unsupported mentor PUT updates");
+  assert(legacyApiUtility.includes("/api/messages/${messageId}/send-attempt`"), "Legacy API utility no longer targets manual send-attempt confirmation");
+  assert(legacyApiUtility.includes("Manual delivery evidence is required"), "Legacy API utility does not require manual delivery evidence");
+
   const projectList = await api("/api/projects");
   assert(projectList.projects.length >= 1, "Default project was not available");
   const projectResult = await api("/api/projects", {
