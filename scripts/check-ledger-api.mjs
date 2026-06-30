@@ -592,6 +592,18 @@ try {
   assert(details.nextActions.some((action) => action.type === "draft_message" || action.type === "generate_cost_record"), "Next actions did not include remaining operational work");
   assert(details.auditEvents.length >= 10, "Audit trail was not recorded");
 
+  const haiStatus = await api("/api/integrations/hai/status");
+  const haiCampaign = haiStatus.campaigns.find((campaign) => campaign.campaignId === campaignId);
+  assert(haiStatus.service === "maro-ledger", "HAI integration status did not identify the MARO ledger service");
+  assert(haiStatus.safety.externalSending === "manual_only", "HAI integration status did not preserve manual-only sending policy");
+  assert(haiStatus.safety.approvalRequiredBeforeSend === true, "HAI integration status did not expose approval safety policy");
+  assert(haiStatus.safety.completionRequiresReadiness === true, "HAI integration status did not expose completion readiness policy");
+  assert(haiCampaign, "HAI integration status did not include the campaign snapshot");
+  assert(haiCampaign.readiness.score === details.readiness.score, "HAI campaign snapshot readiness did not match campaign details");
+  assert(haiCampaign.queue.responsesAwaitingOutcome >= 1, "HAI campaign snapshot did not expose response outcome queue counts");
+  assert(haiCampaign.costs.finalCost === usageReport.totals.finalCost, "HAI campaign snapshot did not expose campaign final cost");
+  assert(haiStatus.totals.nextActions >= haiCampaign.nextActions.length, "HAI integration totals did not include campaign next actions");
+
   const historyExport = await api(`/api/campaigns/${campaignId}/history/export`);
   assert(historyExport.filename.endsWith("-campaign-history.csv"), "Campaign history export filename was not generated");
   assert(historyExport.csv.includes("latestMessageStatus"), "Campaign history export did not include message status header");

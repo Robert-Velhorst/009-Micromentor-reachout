@@ -353,6 +353,56 @@ type CampaignReadiness = {
   items: CampaignReadinessItem[];
 };
 
+type HaiCampaignSnapshot = {
+  campaignId: string;
+  projectId: string;
+  projectTitle: string | null;
+  title: string;
+  status: CampaignStatus;
+  readiness: CampaignReadiness;
+  nextActions: NextActionRecommendation[];
+  blockers: CampaignReadinessItem[];
+  attentionItems: CampaignReadinessItem[];
+  totals: CampaignResults["totals"];
+  rates: CampaignResults["rates"];
+  queue: {
+    draftReview: number;
+    approvedAwaitingManualSend: number;
+    followUpsDue: number;
+    responsesAwaitingOutcome: number;
+    duplicateReviews: number;
+    blockedDrafts: number;
+  };
+  costs: {
+    billingRecords: number;
+    invoiceRecords: number;
+    finalCost: number;
+    currency: "EUR";
+  };
+  updatedAt: string;
+};
+
+type HaiIntegrationStatus = {
+  service: "maro-ledger";
+  generatedAt: string;
+  safety: {
+    externalSending: "manual_only";
+    approvalRequiredBeforeSend: true;
+    completionRequiresReadiness: true;
+    notes: string;
+  };
+  campaigns: HaiCampaignSnapshot[];
+  totals: {
+    campaigns: number;
+    activeCampaigns: number;
+    nextActions: number;
+    blockers: number;
+    attentionItems: number;
+    followUpsDue: number;
+    finalCost: number;
+  };
+};
+
 type AuditEvent = {
   id: string;
   userId: string;
@@ -1579,6 +1629,76 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
   });
 }
 
+function buildHaiIntegrationStatus(state: LedgerState, includeArchived = false): HaiIntegrationStatus {
+  const campaigns = state.campaigns
+    .filter((campaign) => includeArchived || campaign.status !== "archived")
+    .map((campaign) => {
+      recalcCampaign(state, campaign.id);
+      const project = state.projects.find((item) => item.id === campaign.projectId);
+      const readiness = buildCampaignReadiness(state, campaign.id);
+      const nextActions = buildNextActionRecommendations(state, campaign.id);
+      const results = buildCampaignResults(state, campaign.id);
+      const billingRecords = state.billingRecords.filter((item) => item.campaignId === campaign.id);
+      const invoiceRecords = state.invoiceRecords.filter((item) => item.campaignId === campaign.id);
+      const countActions = (type: NextActionType) => nextActions.filter((action) => action.type === type).length;
+
+      return {
+        campaignId: campaign.id,
+        projectId: campaign.projectId,
+        projectTitle: project?.title || null,
+        title: campaign.title,
+        status: campaign.status,
+        readiness,
+        nextActions,
+        blockers: readiness.items.filter((item) => item.status === "blocked"),
+        attentionItems: readiness.items.filter((item) => item.status === "attention"),
+        totals: results.totals,
+        rates: results.rates,
+        queue: {
+          draftReview: countActions("review_draft") + countActions("fix_blocked_draft"),
+          approvedAwaitingManualSend: countActions("confirm_manual_send"),
+          followUpsDue: countActions("follow_up_due"),
+          responsesAwaitingOutcome: countActions("record_response_outcome"),
+          duplicateReviews: countActions("review_duplicate_profile"),
+          blockedDrafts: countActions("fix_blocked_draft"),
+        },
+        costs: {
+          billingRecords: billingRecords.length,
+          invoiceRecords: invoiceRecords.length,
+          finalCost: billingRecords.reduce((sum, item) => sum + item.finalCost, 0),
+          currency: "EUR" as const,
+        },
+        updatedAt: campaign.updatedAt,
+      };
+    });
+
+  const totals = campaigns.reduce(
+    (acc, campaign) => ({
+      campaigns: acc.campaigns + 1,
+      activeCampaigns: acc.activeCampaigns + (campaign.status === "active" || campaign.status === "paused" ? 1 : 0),
+      nextActions: acc.nextActions + campaign.nextActions.length,
+      blockers: acc.blockers + campaign.blockers.length,
+      attentionItems: acc.attentionItems + campaign.attentionItems.length,
+      followUpsDue: acc.followUpsDue + campaign.queue.followUpsDue,
+      finalCost: acc.finalCost + campaign.costs.finalCost,
+    }),
+    { campaigns: 0, activeCampaigns: 0, nextActions: 0, blockers: 0, attentionItems: 0, followUpsDue: 0, finalCost: 0 }
+  );
+
+  return {
+    service: "maro-ledger",
+    generatedAt: now(),
+    safety: {
+      externalSending: "manual_only",
+      approvalRequiredBeforeSend: true,
+      completionRequiresReadiness: true,
+      notes: "This endpoint is a read-only operating snapshot. It exposes MARO ledger state for orchestration and reporting, but it does not send messages, approve drafts, or mutate external platforms.",
+    },
+    campaigns,
+    totals,
+  };
+}
+
 function attachCampaignDetails(state: LedgerState, campaignId: string) {
   recalcCampaign(state, campaignId);
   const campaign = state.campaigns.find((item) => item.id === campaignId);
@@ -2285,6 +2405,11 @@ export function registerLedgerRoutes(app: Express) {
       return jsonError(res, 404, "Campaign not found");
     }
     return { actions: buildNextActionRecommendations(state, campaignId) };
+  }));
+
+  app.get("/api/integrations/hai/status", route((req, _res, state) => {
+    const includeArchived = req.query.includeArchived === "true";
+    return buildHaiIntegrationStatus(state, includeArchived);
   }));
 
   app.get("/api/projects", route((_req, _res, state) => ({ projects: state.projects })));

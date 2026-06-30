@@ -19,6 +19,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Show deterministic next-action recommendations for drafts, approvals, duplicate profile review, due follow-ups, response outcomes, and resource-cost records.
 - Review a campaign readiness checklist that scores source search, mentor import, fit review, drafts, approvals, manual delivery, outcomes, costs, and invoice snapshots.
 - Block marking a campaign completed until the readiness checklist has no blockers or attention items.
+- Expose a read-only HAI integration status snapshot with campaign readiness, blockers, next actions, queue counts, outcomes, and cost totals.
 - Record delivery evidence instead of faking external sends.
 - Import mentors from pasted CSV text or `.csv` files with configurable source-column mapping and duplicate preview.
 - Block duplicate active or sent outreach drafts for the same mentor identity or profile URL within a campaign.
@@ -47,6 +48,7 @@ The Express server now exposes operational API routes before serving the fronten
 - `POST /api/workspace/reset`
 - `GET /api/ledger/summary`
 - `GET /api/actions`
+- `GET /api/integrations/hai/status`
 - `GET|POST /api/projects`
 - `PATCH /api/projects/:id`
 - `GET|POST /api/campaigns`
@@ -99,6 +101,8 @@ Projects group related outreach campaigns. Campaign creation and updates validat
 Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation. Generated drafts and automatic follow-up suggestions use each campaign's stored tone and follow-up timing rule. Scheduled follow-ups can be converted into linked message drafts, which then use the same review, approval, and manual send confirmation workflow as first-touch outreach. Pending follow-ups are cancelled when a recorded response says the mentor is not interested or unavailable. Failed manual send attempts remain visible in the review queue and do not create follow-up work.
 
 Manual duplicate mentor records can remain in the ledger for source history, but MARO blocks active or sent duplicate outreach for the same mentor identity/profile in a campaign, suppresses duplicate draft recommendations, and surfaces a duplicate-profile review action. Resolving a duplicate links it to the canonical mentor identity, closes the duplicate row, cancels its pending follow-ups, and records an audit event without deleting historical source data.
+
+The HAI integration status endpoint is read-only. It exposes campaign readiness, blockers, attention items, next actions, queue counts, response/outcome totals, and local cost totals so another operator system can inspect MARO state without approving drafts, confirming sends, or mutating external platforms.
 
 ## Requirements
 
