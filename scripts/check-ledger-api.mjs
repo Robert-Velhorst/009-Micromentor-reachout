@@ -191,10 +191,26 @@ try {
 
   const updatedCampaign = await api(`/api/campaigns/${campaignId}`, {
     method: "PATCH",
-    body: JSON.stringify({ status: "paused" }),
+    body: JSON.stringify({
+      title: "Updated smoke mentor operating ledger",
+      goal: "Maintain an edited automation mentor campaign goal.",
+      targetMentorType: "Edited automation mentor profile",
+      source: "edited-smoke-test",
+      status: "paused",
+      criteriaJson: {
+        tone: "direct, practical, edited",
+        followUpAfterDays: 5,
+        requiredApproval: true,
+      },
+    }),
   });
   assert(updatedCampaign.campaign.status === "paused", "Campaign update did not persist");
-  assert(updatedCampaign.campaign.criteriaJson.followUpAfterDays === 3, "Campaign follow-up rule was lost on update");
+  assert(updatedCampaign.campaign.title === "Updated smoke mentor operating ledger", "Campaign update did not persist title");
+  assert(updatedCampaign.campaign.goal === "Maintain an edited automation mentor campaign goal.", "Campaign update did not persist goal");
+  assert(updatedCampaign.campaign.targetMentorType === "Edited automation mentor profile", "Campaign update did not persist target mentor type");
+  assert(updatedCampaign.campaign.source === "edited-smoke-test", "Campaign update did not persist source");
+  assert(updatedCampaign.campaign.criteriaJson.followUpAfterDays === 5, "Campaign update did not persist follow-up rule");
+  assert(updatedCampaign.campaign.criteriaJson.tone === "direct, practical, edited", "Campaign update did not persist tone");
 
   const mentorResult = await api(`/api/campaigns/${campaignId}/mentors`, {
     method: "POST",
@@ -279,7 +295,7 @@ try {
   });
   const messageId = draftResult.draft.id;
   assert(draftResult.draft.body.includes("I'll be direct and keep this practical."), "Draft did not apply the campaign tone rule");
-  assert(draftResult.draft.body.includes("Find a practical automation mentor"), "Draft did not preserve the campaign goal");
+  assert(draftResult.draft.body.includes("Maintain an edited automation mentor campaign goal"), "Draft did not preserve the campaign goal");
   assert(!draftResult.draft.body.includes('"..'), "Draft match reason contained duplicate punctuation");
   assert(draftResult.qualityReview.messageDraftId === messageId, "Draft creation did not return a quality review");
   const draftActions = await api(`/api/campaigns/${campaignId}/actions`);
@@ -392,8 +408,8 @@ try {
     (new Date(followUpsAfterSend.followUps[0].dueAt).getTime() - new Date(followUpsAfterSend.followUps[0].createdAt).getTime()) /
       86400000
   );
-  assert(scheduledFollowUpDelayDays === 3, "Automatic follow-up did not use the campaign follow-up rule");
-  assert(followUpsAfterSend.followUps[0].suggestedMessage.includes("Find a practical automation mentor"), "Automatic follow-up did not preserve the campaign goal");
+  assert(scheduledFollowUpDelayDays === 5, "Automatic follow-up did not use the campaign follow-up rule");
+  assert(followUpsAfterSend.followUps[0].suggestedMessage.includes("Maintain an edited automation mentor campaign goal"), "Automatic follow-up did not preserve the campaign goal");
   assert(followUpsAfterSend.followUps[0].suggestedMessage.includes("I'll be direct and keep this practical."), "Automatic follow-up did not preserve the campaign tone");
   await api(`/api/follow-ups/${followUpsAfterSend.followUps[0].id}/complete`, { method: "POST" });
 
@@ -499,7 +515,7 @@ try {
   assert(invoiceResult.usageReport.invoiceRecords.length === 1, "Generated usage report did not include the invoice snapshot");
 
   const details = await api(`/api/campaigns/${campaignId}`);
-  assert(details.campaign.criteriaJson.followUpAfterDays === 3, "Campaign details did not include follow-up rule");
+  assert(details.campaign.criteriaJson.followUpAfterDays === 5, "Campaign details did not include follow-up rule");
   assert(details.campaign.totalMentors === 4, "Campaign mentor count was not persisted");
   assert(details.campaign.messagesDrafted === 3, "Draft count was not persisted");
   assert(details.campaign.messagesSent === 2, "Sent count was not persisted");

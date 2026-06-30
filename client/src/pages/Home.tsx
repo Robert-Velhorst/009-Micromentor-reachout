@@ -59,6 +59,10 @@ type CampaignForm = {
   followUpAfterDays: string;
 };
 
+type CampaignSettingsForm = CampaignForm & {
+  status: Campaign["status"];
+};
+
 type ProjectForm = {
   title: string;
   description: string;
@@ -117,6 +121,11 @@ const defaultCampaignForm: CampaignForm = {
   source: "MicroMentor/manual",
   tone: "respectful, concise, practical",
   followUpAfterDays: "7",
+};
+
+const defaultCampaignSettingsForm: CampaignSettingsForm = {
+  ...defaultCampaignForm,
+  status: "active",
 };
 
 const defaultProjectForm: ProjectForm = {
@@ -303,6 +312,7 @@ export default function Home() {
   const [projectForm, setProjectForm] = useState<ProjectForm>(defaultProjectForm);
   const [projectEditForm, setProjectEditForm] = useState<ProjectForm>(defaultProjectForm);
   const [campaignForm, setCampaignForm] = useState<CampaignForm>(defaultCampaignForm);
+  const [campaignSettingsForm, setCampaignSettingsForm] = useState<CampaignSettingsForm>(defaultCampaignSettingsForm);
   const [mentorForm, setMentorForm] = useState<MentorForm>(defaultMentorForm);
   const [sendEvidence, setSendEvidence] = useState<Record<string, string>>({});
   const [sendFailureNotes, setSendFailureNotes] = useState<Record<string, string>>({});
@@ -382,10 +392,44 @@ export default function Home() {
       description: campaignProject?.description || "",
     });
   }, [campaignProject?.description, campaignProject?.id, campaignProject?.title]);
+  useEffect(() => {
+    setCampaignSettingsForm({
+      projectId: campaign?.projectId || projects[0]?.id || "",
+      title: campaign?.title || "",
+      goal: campaign?.goal || "",
+      targetMentorType: campaign?.targetMentorType || defaultCampaignForm.targetMentorType,
+      source: campaign?.source || defaultCampaignForm.source,
+      tone: campaign ? campaignTone(campaign) : defaultCampaignForm.tone,
+      followUpAfterDays: campaign ? String(campaignFollowUpDays(campaign)) : defaultCampaignForm.followUpAfterDays,
+      status: campaign?.status || "active",
+    });
+  }, [
+    campaign?.criteriaJson?.followUpAfterDays,
+    campaign?.criteriaJson?.tone,
+    campaign?.goal,
+    campaign?.id,
+    campaign?.projectId,
+    campaign?.source,
+    campaign?.status,
+    campaign?.targetMentorType,
+    campaign?.title,
+    projects,
+  ]);
   const projectContextChanged =
     Boolean(campaignProject) &&
     (projectEditForm.title.trim() !== (campaignProject?.title || "") ||
       projectEditForm.description.trim() !== (campaignProject?.description || ""));
+  const normalizedCampaignFollowUpDays = String(Number(campaignSettingsForm.followUpAfterDays) || 7);
+  const campaignSettingsChanged = campaign
+    ? campaignSettingsForm.projectId !== campaign.projectId ||
+      campaignSettingsForm.status !== campaign.status ||
+      campaignSettingsForm.title.trim() !== campaign.title ||
+      campaignSettingsForm.goal.trim() !== campaign.goal ||
+      campaignSettingsForm.targetMentorType.trim() !== campaign.targetMentorType ||
+      campaignSettingsForm.source.trim() !== campaign.source ||
+      campaignSettingsForm.tone.trim() !== campaignTone(campaign) ||
+      normalizedCampaignFollowUpDays !== String(campaignFollowUpDays(campaign))
+    : false;
   const assessmentsByMentor = useMemo(
     () => new Map((details?.assessments || []).map((assessment) => [assessment.mentorProfileId, assessment])),
     [details?.assessments]
@@ -468,6 +512,24 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Unable to create campaign");
     }
   };
+
+  const saveCampaignSettings = () =>
+    mutate(async () => {
+      if (!campaign) throw new Error("Select a campaign first");
+      await ledgerApi.updateCampaign(campaign.id, {
+        projectId: campaignSettingsForm.projectId,
+        title: campaignSettingsForm.title.trim(),
+        goal: campaignSettingsForm.goal.trim(),
+        targetMentorType: campaignSettingsForm.targetMentorType.trim(),
+        source: campaignSettingsForm.source.trim(),
+        status: campaignSettingsForm.status,
+        criteriaJson: {
+          tone: campaignSettingsForm.tone.trim(),
+          followUpAfterDays: Number(campaignSettingsForm.followUpAfterDays) || 7,
+          requiredApproval: true,
+        },
+      });
+    });
 
   const createProject = async () => {
     setError("");
@@ -902,30 +964,93 @@ export default function Home() {
                     </div>
                   ) : null}
                 </div>
-                {campaign && projects.length ? (
-                  <select
-                    value={campaign.projectId}
-                    onChange={(event) => void mutate(() => ledgerApi.updateCampaign(campaign.id, { projectId: event.target.value }))}
-                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                  >
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.title}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
                 {campaign ? (
-                  <select
-                    value={campaign.status}
-                    onChange={(event) => void mutate(() => ledgerApi.updateCampaign(campaign.id, { status: event.target.value as Campaign["status"] }))}
-                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                  >
-                    <option value="active">Active</option>
-                    <option value="paused">Paused</option>
-                    <option value="completed">Completed</option>
-                    <option value="archived">Archived</option>
-                  </select>
+                  <div className="border-t pt-4">
+                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Campaign settings</div>
+                    <select
+                      value={campaignSettingsForm.projectId}
+                      onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, projectId: event.target.value }))}
+                      className="mb-2 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      disabled={!projects.length}
+                    >
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.title}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      value={campaignSettingsForm.title}
+                      onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, title: event.target.value }))}
+                      placeholder="Active campaign title"
+                      className="mb-2 rounded-md"
+                    />
+                    <Textarea
+                      value={campaignSettingsForm.goal}
+                      onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, goal: event.target.value }))}
+                      placeholder="Active campaign goal"
+                      className="mb-2 min-h-20 rounded-md"
+                    />
+                    <Input
+                      value={campaignSettingsForm.targetMentorType}
+                      onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, targetMentorType: event.target.value }))}
+                      placeholder="Active target mentor type"
+                      className="mb-2 rounded-md"
+                    />
+                    <div className="mb-2 grid gap-2 md:grid-cols-2">
+                      <Input
+                        value={campaignSettingsForm.source}
+                        onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, source: event.target.value }))}
+                        placeholder="Active source"
+                        className="rounded-md"
+                      />
+                      <Input
+                        value={campaignSettingsForm.tone}
+                        onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, tone: event.target.value }))}
+                        placeholder="Active message tone"
+                        className="rounded-md"
+                      />
+                    </div>
+                    <div className="mb-2 grid gap-2 md:grid-cols-2">
+                      <Input
+                        type="number"
+                        min="1"
+                        max="90"
+                        value={campaignSettingsForm.followUpAfterDays}
+                        onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, followUpAfterDays: event.target.value }))}
+                        placeholder="Active follow-up after days"
+                        className="rounded-md"
+                      />
+                      <select
+                        value={campaignSettingsForm.status}
+                        onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, status: event.target.value as Campaign["status"] }))}
+                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      >
+                        <option value="active">Active</option>
+                        <option value="paused">Paused</option>
+                        <option value="completed">Completed</option>
+                        <option value="archived">Archived</option>
+                      </select>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full rounded-md"
+                      onClick={() => void saveCampaignSettings()}
+                      disabled={
+                        !campaign ||
+                        !campaignSettingsChanged ||
+                        !campaignSettingsForm.projectId ||
+                        !campaignSettingsForm.title.trim() ||
+                        !campaignSettingsForm.goal.trim() ||
+                        !campaignSettingsForm.targetMentorType.trim() ||
+                        !campaignSettingsForm.source.trim() ||
+                        !campaignSettingsForm.tone.trim()
+                      }
+                    >
+                      <ClipboardCheck className="h-4 w-4" />
+                      Save campaign
+                    </Button>
+                  </div>
                 ) : null}
                 <Progress value={progress} className="h-2 rounded-md bg-muted" />
                 <div className="grid grid-cols-3 gap-2 text-sm">
