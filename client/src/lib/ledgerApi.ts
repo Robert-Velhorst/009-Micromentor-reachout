@@ -547,6 +547,11 @@ export const ledgerApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  createFollowUpDraft: (followUpId: string, payload: Partial<Pick<MessageDraft, "subject" | "body">> = {}) =>
+    request<{ draft: MessageDraft; followUp: FollowUpPlan; qualityReview: MessageQualityReview }>(`/api/follow-ups/${followUpId}/draft`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   completeFollowUp: (followUpId: string) =>
     request<{ followUp: FollowUpPlan }>(`/api/follow-ups/${followUpId}/complete`, {
       method: "POST",

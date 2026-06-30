@@ -1621,6 +1621,7 @@ export default function Home() {
               <CardContent className="space-y-3 px-5">
                 {(details?.followUps || []).map((followUp) => {
                   const mentor = details?.mentors.find((item) => item.id === followUp.mentorProfileId);
+                  const linkedDraft = followUp.messageDraftId ? details?.messages.find((message) => message.id === followUp.messageDraftId) : null;
                   const due = new Date(followUp.dueAt).getTime() <= Date.now();
                   return (
                     <div key={followUp.id} className="rounded-md border p-4">
@@ -1643,6 +1644,17 @@ export default function Home() {
                       </SensitiveText>
                       {followUp.status === "scheduled" ? (
                         <div className="mt-3 flex flex-wrap gap-2">
+                          {linkedDraft && linkedDraft.status !== "rejected" ? (
+                            <Button variant="outline" className="rounded-md" onClick={() => setActiveTab("review")}>
+                              <ClipboardCheck className="h-4 w-4" />
+                              Review draft
+                            </Button>
+                          ) : (
+                            <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.createFollowUpDraft(followUp.id))}>
+                              <MailPlus className="h-4 w-4" />
+                              Draft follow-up
+                            </Button>
+                          )}
                           <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.completeFollowUp(followUp.id))}>
                             Complete
                           </Button>

@@ -1172,6 +1172,8 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
       for (const followUp of mentorFollowUps) {
         const due = followUp.status === "scheduled" && new Date(followUp.dueAt).getTime() <= currentTime;
         if (!due) continue;
+        const linkedDraft = followUp.messageDraftId ? messages.find((message) => message.id === followUp.messageDraftId) : null;
+        if (linkedDraft && (linkedDraft.status === "draft" || linkedDraft.status === "approved")) continue;
         pushAction({
           id: `action:follow-up-due:${followUp.id}`,
           campaignId: campaign.id,
@@ -1765,6 +1767,44 @@ function createMessageDraftRecord(state: LedgerState, campaign: OutreachCampaign
   recalcCampaign(state, campaign.id);
   audit(state, "created_message_draft", "messageDraft", draft.id, { draft, qualityReview });
   return { draft, qualityReview };
+}
+
+function createFollowUpDraftRecord(state: LedgerState, followUp: FollowUpPlan, body: Record<string, unknown>) {
+  if (followUp.status !== "scheduled") {
+    return { error: "Only scheduled follow-ups can be drafted", status: 409 };
+  }
+  const campaign = requireCampaign(state, followUp.campaignId);
+  if (!campaign) return { error: "Campaign not found", status: 404 };
+  const mentor = state.mentorProfiles.find((item) => item.id === followUp.mentorProfileId && item.campaignId === campaign.id);
+  if (!mentor) return { error: "Follow-up mentor not found", status: 404 };
+  const linkedDraft = followUp.messageDraftId ? state.messageDrafts.find((item) => item.id === followUp.messageDraftId) : null;
+  if (linkedDraft && linkedDraft.generatedBy === "maro-follow-up-engine" && linkedDraft.status !== "rejected") {
+    return { error: "Follow-up already has an active linked draft", status: 409 };
+  }
+
+  const createdAt = now();
+  const draft: MessageDraft = {
+    id: randomUUID(),
+    campaignId: campaign.id,
+    mentorProfileId: mentor.id,
+    subject: String(body?.subject || `Following up on ${campaign.title}`),
+    body: String(body?.body || followUp.suggestedMessage || buildFollowUpSuggestion(campaign, mentor)),
+    language: String(body?.language || "en"),
+    status: "draft",
+    generatedBy: "maro-follow-up-engine",
+    createdAt,
+    updatedAt: createdAt,
+  };
+  const beforeFollowUp = { ...followUp };
+  followUp.messageDraftId = draft.id;
+  followUp.updatedAt = createdAt;
+  mentor.stage = "follow_up";
+  mentor.updatedAt = createdAt;
+  state.messageDrafts.unshift(draft);
+  const qualityReview = upsertMessageQualityReview(state, draft);
+  recalcCampaign(state, campaign.id);
+  audit(state, "created_follow_up_draft", "messageDraft", draft.id, { draft, followUp, qualityReview }, { beforeState: beforeFollowUp, riskLevel: "medium" });
+  return { draft, followUp, qualityReview };
 }
 
 export function registerLedgerRoutes(app: Express) {
@@ -2412,6 +2452,17 @@ export function registerLedgerRoutes(app: Express) {
     recalcCampaign(state, followUp.campaignId);
     audit(state, "updated_follow_up", "followUp", followUp.id, followUp, { beforeState: before, riskLevel: "medium" });
     return { followUp };
+  }));
+
+  app.post("/api/follow-ups/:id/draft", route((req, res, state) => {
+    const followUp = state.followUpPlans.find((item) => item.id === routeId(req));
+    if (!followUp) return jsonError(res, 404, "Follow-up not found");
+    const result = createFollowUpDraftRecord(state, followUp, req.body || {});
+    if ("error" in result) {
+      const status = "status" in result && typeof result.status === "number" ? result.status : 400;
+      return jsonError(res, status, String(result.error));
+    }
+    return result;
   }));
 
   app.post("/api/follow-ups/:id/complete", route((req, res, state) => {

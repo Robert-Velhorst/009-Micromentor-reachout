@@ -385,6 +385,15 @@ try {
   });
   const dueActions = await api(`/api/campaigns/${campaignId}/actions`);
   assert(dueActions.actions.some((action) => action.type === "follow_up_due" && action.followUpId === manualFollowUp.followUp.id), "Next actions did not include due follow-up");
+  const followUpDraft = await api(`/api/follow-ups/${manualFollowUp.followUp.id}/draft`, { method: "POST" });
+  assert(followUpDraft.draft.status === "draft", "Follow-up draft was not created in review state");
+  assert(followUpDraft.draft.body.includes("Manual smoke follow-up."), "Follow-up draft did not use the scheduled follow-up suggestion");
+  assert(followUpDraft.followUp.messageDraftId === followUpDraft.draft.id, "Follow-up was not linked to the created draft");
+  assert(followUpDraft.qualityReview.status !== "blocked", "Follow-up draft should pass approval-gate quality checks");
+  const followUpDraftActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(followUpDraftActions.actions.some((action) => action.type === "review_draft" && action.messageDraftId === followUpDraft.draft.id), "Follow-up draft did not enter the review queue");
+  assert(!followUpDraftActions.actions.some((action) => action.type === "follow_up_due" && action.followUpId === manualFollowUp.followUp.id), "Linked follow-up draft should suppress duplicate due action");
+  await expectFailure(`/api/follow-ups/${manualFollowUp.followUp.id}/draft`, { method: "POST" }, 409);
   await api(`/api/follow-ups/${manualFollowUp.followUp.id}/cancel`, { method: "POST" });
 
   const responseResult = await api("/api/responses", {
@@ -468,7 +477,7 @@ try {
   const details = await api(`/api/campaigns/${campaignId}`);
   assert(details.campaign.criteriaJson.followUpAfterDays === 3, "Campaign details did not include follow-up rule");
   assert(details.campaign.totalMentors === 4, "Campaign mentor count was not persisted");
-  assert(details.campaign.messagesDrafted === 2, "Draft count was not persisted");
+  assert(details.campaign.messagesDrafted === 3, "Draft count was not persisted");
   assert(details.campaign.messagesSent === 2, "Sent count was not persisted");
   assert(details.campaign.responsesReceived === 2, "Response count was not persisted");
   assert(details.billingRecords.length === 1, "Billing record was not generated");
@@ -500,15 +509,15 @@ try {
   const backup = await api("/api/workspace/backup");
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
   assert(backup.summary.mentors === 4, "Workspace backup did not include mentor count");
-  assert(backup.summary.qualityReviews === 2, "Workspace backup did not include quality review count");
+  assert(backup.summary.qualityReviews === 3, "Workspace backup did not include quality review count");
   assert(backup.summary.invoiceRecords === 1, "Workspace backup did not include invoice count");
   const restorePreview = await api("/api/workspace/restore/preview", {
     method: "POST",
     body: JSON.stringify({ backupJson: JSON.stringify(backup) }),
   });
   assert(restorePreview.valid === true, "Workspace restore preview did not validate backup");
-  assert(restorePreview.summary.drafts === 2, "Workspace restore preview did not include draft count");
-  assert(restorePreview.summary.qualityReviews === 2, "Workspace restore preview did not include quality review count");
+  assert(restorePreview.summary.drafts === 3, "Workspace restore preview did not include draft count");
+  assert(restorePreview.summary.qualityReviews === 3, "Workspace restore preview did not include quality review count");
   assert(restorePreview.summary.invoiceRecords === 1, "Workspace restore preview did not include invoice count");
   const missingQualityReviewsBackup = structuredClone(backup);
   delete missingQualityReviewsBackup.ledger.messageQualityReviews;
@@ -541,12 +550,12 @@ try {
     method: "POST",
     body: JSON.stringify({ backupJson: JSON.stringify(backup), confirm: true }),
   });
-  assert(restored.summary.drafts === 2, "Workspace restore did not restore draft count");
-  assert(restored.summary.qualityReviews === 2, "Workspace restore did not restore quality review count");
+  assert(restored.summary.drafts === 3, "Workspace restore did not restore draft count");
+  assert(restored.summary.qualityReviews === 3, "Workspace restore did not restore quality review count");
   assert(restored.summary.invoiceRecords === 1, "Workspace restore did not restore invoice count");
   const restoredDetails = await api(`/api/campaigns/${campaignId}`);
-  assert(restoredDetails.campaign.messagesDrafted === 2, "Restored campaign draft count was not available");
-  assert(restoredDetails.qualityReviews.length === 2, "Restored quality review was not available");
+  assert(restoredDetails.campaign.messagesDrafted === 3, "Restored campaign draft count was not available");
+  assert(restoredDetails.qualityReviews.length === 3, "Restored quality review was not available");
   assert(restoredDetails.invoiceRecords.length === 1, "Restored invoice record was not available");
 
   const persistedLedger = fs.readFileSync(ledgerFile, "utf8");
