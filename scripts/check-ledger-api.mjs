@@ -243,9 +243,11 @@ try {
       headline: "Startup automation advisor",
       bio: "Advisor with automation, operations, and outreach workflow experience.",
       skills: "automation, operations, outreach",
+      sourceRecordId: sourceResult.source.id,
     }),
   });
   assert(mentorResult.assessment.score >= 35, "Mentor assessment was not created");
+  assert(mentorResult.mentor.sourceRecordId === sourceResult.source.id, "Manual mentor create did not preserve source record link");
   const mentorId = mentorResult.mentor.id;
 
   const updatedMentor = await api(`/api/mentors/${mentorId}`, {
@@ -272,12 +274,15 @@ try {
     body: JSON.stringify({ csvText, sourceRecordId: sourceResult.source.id }),
   });
   assert(importResult.importedCount === 1, "CSV import did not import exactly one mentor");
+  assert(importResult.imported[0].sourceRecordId === sourceResult.source.id, "CSV import did not preserve source record link");
   const sourceAfterCsvImport = await api(`/api/campaigns/${campaignId}/sources`);
   const linkedImportSource = sourceAfterCsvImport.sources.find((source) => source.id === sourceResult.source.id);
   assert(linkedImportSource.importedCount === 3, "Linked source record did not track CSV imported count");
   assert(linkedImportSource.status === "imported", "Linked source record did not remain imported after CSV import");
   const exportResult = await api(`/api/campaigns/${campaignId}/mentors/export`);
   assert(exportResult.csv.includes("Grace Hopper"), "CSV export did not include imported mentor");
+  assert(exportResult.csv.startsWith("name,company,headline,bio,skills,source,sourceSearch,"), "CSV export did not include source search header");
+  assert(exportResult.csv.includes("Smoke MicroMentor search"), "CSV export did not include linked source search name");
 
   const mappedCsvText = [
     "Full Name,Org,Role,Goal,Profile,Internal Notes,Priority,Stage",
@@ -568,9 +573,11 @@ try {
   const historyExport = await api(`/api/campaigns/${campaignId}/history/export`);
   assert(historyExport.filename.endsWith("-campaign-history.csv"), "Campaign history export filename was not generated");
   assert(historyExport.csv.includes("latestMessageStatus"), "Campaign history export did not include message status header");
+  assert(historyExport.csv.includes("sourceSearch"), "Campaign history export did not include source search header");
   assert(historyExport.csv.includes("sentAt"), "Campaign history export did not include sent timestamp header");
   assert(historyExport.csv.includes("outcomeStatus"), "Campaign history export did not include outcome status header");
   assert(historyExport.csv.includes("Ada Tester"), "Campaign history export did not include the contacted mentor");
+  assert(historyExport.csv.includes("Smoke MicroMentor search"), "Campaign history export did not include linked source search name");
   assert(historyExport.csv.includes("sent"), "Campaign history export did not include sent message state");
   assert(historyExport.csv.includes("booked"), "Campaign history export did not include outcome state");
   assert(historyExport.csv.includes("Strong test fit"), "Campaign history export did not include mentor notes");

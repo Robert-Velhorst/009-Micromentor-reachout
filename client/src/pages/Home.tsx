@@ -76,6 +76,7 @@ type MentorForm = {
   bio: string;
   skills: string;
   profileUrl: string;
+  sourceRecordId: string;
   notes: string;
 };
 
@@ -161,6 +162,7 @@ const defaultMentorForm: MentorForm = {
   bio: "",
   skills: "",
   profileUrl: "",
+  sourceRecordId: "",
   notes: "",
 };
 
@@ -409,6 +411,11 @@ export default function Home() {
       setCsvSourceRecordId("");
     }
   }, [csvSourceRecordId, details?.sourceRecords]);
+  useEffect(() => {
+    if (mentorForm.sourceRecordId && !details?.sourceRecords.some((source) => source.id === mentorForm.sourceRecordId)) {
+      setMentorForm((current) => ({ ...current, sourceRecordId: "" }));
+    }
+  }, [details?.sourceRecords, mentorForm.sourceRecordId]);
 
   const campaign = details?.campaign || null;
   const campaignProject = useMemo(
@@ -462,6 +469,10 @@ export default function Home() {
   const assessmentsByMentor = useMemo(
     () => new Map((details?.assessments || []).map((assessment) => [assessment.mentorProfileId, assessment])),
     [details?.assessments]
+  );
+  const sourceRecordsById = useMemo(
+    () => new Map((details?.sourceRecords || []).map((source) => [source.id, source])),
+    [details?.sourceRecords]
   );
   const messagesByMentor = useMemo(
     () => groupBy(details?.messages || [], (message) => message.mentorProfileId),
@@ -599,7 +610,10 @@ export default function Home() {
   const addMentor = () =>
     mutate(async () => {
       if (!activeCampaignId) throw new Error("Select a campaign first");
-      await ledgerApi.addMentor(activeCampaignId, mentorForm);
+      await ledgerApi.addMentor(activeCampaignId, {
+        ...mentorForm,
+        sourceRecordId: details?.sourceRecords.some((source) => source.id === mentorForm.sourceRecordId) ? mentorForm.sourceRecordId : undefined,
+      });
       setMentorForm(defaultMentorForm);
     });
 
@@ -1393,6 +1407,7 @@ export default function Home() {
                   {filteredMentors.map((mentor) => {
                     const assessment = assessmentsByMentor.get(mentor.id);
                     const mentorMessages = messagesByMentor.get(mentor.id) || [];
+                    const sourceRecord = mentor.sourceRecordId ? sourceRecordsById.get(mentor.sourceRecordId) : null;
                     return (
                       <div key={mentor.id} className="rounded-md border p-4">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1409,6 +1424,10 @@ export default function Home() {
                               ) : null}
                             </div>
                             <div className="mt-1 text-sm text-muted-foreground">{mentor.headline}</div>
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                              <span className="rounded-md border px-2 py-1">Source: {mentor.source || "manual"}</span>
+                              {sourceRecord ? <span className="rounded-md border px-2 py-1">Search: {sourceRecord.name}</span> : null}
+                            </div>
                             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{mentor.bio || "No profile context recorded yet."}</p>
                             <div className="mt-2 text-xs text-muted-foreground">
                               {(assessment?.reasonsJson || []).slice(0, 2).join(" ")}
@@ -1491,6 +1510,7 @@ export default function Home() {
 
             <MentorDetailPanel
               mentor={selectedMentor}
+              sourceRecord={selectedMentor?.sourceRecordId ? sourceRecordsById.get(selectedMentor.sourceRecordId) || null : null}
               assessment={selectedMentor ? assessmentsByMentor.get(selectedMentor.id) || null : null}
               messages={selectedMentor ? messagesByMentor.get(selectedMentor.id) || [] : []}
               approvalsByMessage={approvalsByMessage}
@@ -1527,6 +1547,22 @@ export default function Home() {
                 <Textarea value={mentorForm.bio} onChange={(event) => setMentorForm((current) => ({ ...current, bio: event.target.value }))} placeholder="Bio, relevant context, or why they may help" className="min-h-24 rounded-md" />
                 <Input value={mentorForm.skills} onChange={(event) => setMentorForm((current) => ({ ...current, skills: event.target.value }))} placeholder="Skills, comma separated" className="rounded-md" />
                 <Input value={mentorForm.profileUrl} onChange={(event) => setMentorForm((current) => ({ ...current, profileUrl: event.target.value }))} placeholder="Profile URL" className="rounded-md" />
+                <label className="grid gap-1 text-xs text-muted-foreground">
+                  <span>Link mentor to source search</span>
+                  <select
+                    aria-label="Manual mentor source search"
+                    value={mentorForm.sourceRecordId}
+                    onChange={(event) => setMentorForm((current) => ({ ...current, sourceRecordId: event.target.value }))}
+                    className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+                  >
+                    <option value="">No source link</option>
+                    {(details?.sourceRecords || []).map((source) => (
+                      <option key={source.id} value={source.id}>
+                        {source.name} ({source.importedCount}/{source.resultsFound})
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <Textarea value={mentorForm.notes} onChange={(event) => setMentorForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Internal notes" className="min-h-20 rounded-md" />
                 <Button className="w-full rounded-md" onClick={() => void addMentor()} disabled={!mentorForm.name.trim() || !activeCampaignId}>
                   <Plus className="h-4 w-4" />
@@ -2165,6 +2201,7 @@ export default function Home() {
 
 function MentorDetailPanel({
   mentor,
+  sourceRecord,
   assessment,
   messages,
   approvalsByMessage,
@@ -2182,6 +2219,7 @@ function MentorDetailPanel({
   onResolveDuplicate,
 }: {
   mentor: MentorProfile | null;
+  sourceRecord: MentorSource | null;
   assessment: CampaignDetails["assessments"][number] | null;
   messages: CampaignDetails["messages"];
   approvalsByMessage: Map<string, CampaignDetails["approvals"]>;
@@ -2232,6 +2270,7 @@ function MentorDetailPanel({
               <div className="mt-1 text-sm text-muted-foreground">{mentor.headline || "No headline recorded"}</div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <span className="rounded-md border px-2 py-1">Source: {mentor.source || "manual"}</span>
+                {sourceRecord ? <span className="rounded-md border px-2 py-1">Search: {sourceRecord.name}</span> : null}
                 {mentor.profileUrl ? (
                   <a className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-primary" href={mentor.profileUrl} target="_blank" rel="noreferrer">
                     Profile <ExternalLink className="h-3 w-3" />

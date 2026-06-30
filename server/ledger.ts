@@ -100,6 +100,7 @@ type MentorProfile = {
   campaignId: string;
   mentorIdentityId: string;
   source: string;
+  sourceRecordId: string | null;
   sourceProfileId: string | null;
   profileUrl: string | null;
   name: string;
@@ -647,10 +648,11 @@ function csvEscape(value: unknown) {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-function mentorsToCsv(mentors: MentorProfile[], assessments: MatchAssessment[]) {
-  const headers = ["name", "company", "headline", "bio", "skills", "source", "profileUrl", "stage", "notes", "score", "reasons"];
+function mentorsToCsv(mentors: MentorProfile[], assessments: MatchAssessment[], sources: MentorSource[] = []) {
+  const headers = ["name", "company", "headline", "bio", "skills", "source", "sourceSearch", "profileUrl", "stage", "notes", "score", "reasons"];
   const rows = mentors.map((mentor) => {
     const assessment = assessments.find((item) => item.mentorProfileId === mentor.id);
+    const sourceRecord = mentor.sourceRecordId ? sources.find((item) => item.id === mentor.sourceRecordId) : null;
     const company = typeof mentor.rawProfileJson.company === "string" ? mentor.rawProfileJson.company : "";
     return [
       mentor.name,
@@ -659,6 +661,7 @@ function mentorsToCsv(mentors: MentorProfile[], assessments: MatchAssessment[]) 
       mentor.bio,
       mentor.skills,
       mentor.source,
+      sourceRecord?.name || "",
       mentor.profileUrl || "",
       mentor.stage,
       mentor.notes,
@@ -680,6 +683,7 @@ function campaignHistoryToCsv(state: LedgerState, campaign: OutreachCampaign) {
     "company",
     "headline",
     "source",
+    "sourceSearch",
     "profileUrl",
     "mentorStage",
     "matchScore",
@@ -705,6 +709,7 @@ function campaignHistoryToCsv(state: LedgerState, campaign: OutreachCampaign) {
     const latestResponse = latestByCreatedAt(state.mentorResponses.filter((item) => item.mentorProfileId === mentor.id));
     const latestFollowUp = latestByCreatedAt(state.followUpPlans.filter((item) => item.mentorProfileId === mentor.id));
     const latestOutcome = latestByCreatedAt(state.outreachOutcomes.filter((item) => item.mentorProfileId === mentor.id));
+    const sourceRecord = mentor.sourceRecordId ? state.mentorSources.find((item) => item.id === mentor.sourceRecordId) : null;
     const company = typeof mentor.rawProfileJson.company === "string" ? mentor.rawProfileJson.company : "";
     return [
       campaign.title,
@@ -715,6 +720,7 @@ function campaignHistoryToCsv(state: LedgerState, campaign: OutreachCampaign) {
       company,
       mentor.headline,
       mentor.source,
+      sourceRecord?.name || "",
       mentor.profileUrl || "",
       mentor.stage,
       assessment?.score ?? "",
@@ -847,7 +853,10 @@ function normalizeState(state: Partial<LedgerState>): LedgerState {
       searchedAt: source.searchedAt || null,
     })),
     mentorIdentities: state.mentorIdentities || [],
-    mentorProfiles: state.mentorProfiles || [],
+    mentorProfiles: (state.mentorProfiles || []).map((mentor) => ({
+      ...mentor,
+      sourceRecordId: mentor.sourceRecordId || null,
+    })),
     matchAssessments: state.matchAssessments || [],
     messageDrafts: state.messageDrafts || [],
     messageQualityReviews: state.messageQualityReviews || [],
@@ -1757,6 +1766,10 @@ function createMentorRecord(state: LedgerState, campaign: OutreachCampaign, body
     (item) => item.normalizedName === normalizedName && item.normalizedCompany === normalizedCompany
   );
   const duplicateProfiles = duplicateMentorProfiles(state, campaign.id, { ...body, name, company });
+  const requestedSourceRecordId = typeof body?.sourceRecordId === "string" ? body.sourceRecordId : "";
+  const sourceRecord = requestedSourceRecordId
+    ? state.mentorSources.find((item) => item.id === requestedSourceRecordId && item.campaignId === campaign.id) || null
+    : null;
 
   if (!identity) {
     const createdAt = now();
@@ -1775,7 +1788,8 @@ function createMentorRecord(state: LedgerState, campaign: OutreachCampaign, body
     id: randomUUID(),
     campaignId: campaign.id,
     mentorIdentityId: identity.id,
-    source: String(body?.source || campaign.source || "manual"),
+    source: String(body?.source || sourceRecord?.sourceType || campaign.source || "manual"),
+    sourceRecordId: sourceRecord?.id || null,
     sourceProfileId: body?.sourceProfileId ? String(body.sourceProfileId) : null,
     profileUrl: body?.profileUrl ? String(body.profileUrl) : null,
     name,
@@ -1786,7 +1800,7 @@ function createMentorRecord(state: LedgerState, campaign: OutreachCampaign, body
     location: String(body?.location || ""),
     availability: String(body?.availability || "Unknown"),
     contactMethod: String(body?.contactMethod || "manual"),
-    rawProfileJson: { ...body, company },
+    rawProfileJson: { ...body, sourceRecordId: sourceRecord?.id || null, company },
     stage: parseMentorStage(body?.stage) || "matched",
     notes: String(body?.notes || ""),
     createdAt,
@@ -2183,6 +2197,10 @@ export function registerLedgerRoutes(app: Express) {
   app.post("/api/campaigns/:id/mentors", route((req, res, state) => {
     const campaign = requireCampaign(state, routeId(req));
     if (!campaign) return jsonError(res, 404, "Campaign not found");
+    const sourceRecordId = typeof req.body?.sourceRecordId === "string" ? req.body.sourceRecordId : "";
+    if (sourceRecordId && !state.mentorSources.some((item) => item.id === sourceRecordId && item.campaignId === campaign.id)) {
+      return jsonError(res, 400, "Source record does not belong to this campaign");
+    }
     const result = createMentorRecord(state, campaign, req.body || {});
     return "error" in result ? jsonError(res, 400, String(result.error)) : result;
   }));
@@ -2245,6 +2263,9 @@ export function registerLedgerRoutes(app: Express) {
     const imported: MentorProfile[] = [];
     const skipped: Array<{ row: number; reason: string; name: string }> = [];
     const plannedKeys = new Set<string>();
+    const sourceRecordId = typeof req.body?.sourceRecordId === "string" ? req.body.sourceRecordId : "";
+    const sourceRecord = sourceRecordId ? state.mentorSources.find((item) => item.id === sourceRecordId && item.campaignId === campaign.id) : null;
+    if (sourceRecordId && !sourceRecord) return jsonError(res, 400, "Source record does not belong to this campaign");
 
     rows.slice(1).forEach((row, index) => {
       const payload = {
@@ -2255,7 +2276,8 @@ export function registerLedgerRoutes(app: Express) {
         skills: field(row, "skills", ["skills", "skill"]),
         profileUrl: field(row, "profileUrl", ["profileurl", "profile url", "url", "source url", "profile"]),
         notes: field(row, "notes", ["notes", "note"]),
-        source: field(row, "source", ["source"]) || campaign.source,
+        sourceRecordId: sourceRecord?.id || null,
+        source: field(row, "source", ["source"]) || sourceRecord?.sourceType || campaign.source,
         priority: field(row, "priority", ["priority"]),
         stage: field(row, "stage", ["stage", "status", "outcome"]),
       };
@@ -2278,8 +2300,6 @@ export function registerLedgerRoutes(app: Express) {
     });
 
     if (!preview) {
-      const sourceRecordId = typeof req.body?.sourceRecordId === "string" ? req.body.sourceRecordId : "";
-      const sourceRecord = state.mentorSources.find((item) => item.id === sourceRecordId && item.campaignId === campaign.id);
       if (sourceRecord) {
         updateSourceRecord(state, sourceRecord.id, {
           status: "imported",
@@ -2309,7 +2329,7 @@ export function registerLedgerRoutes(app: Express) {
     audit(state, "exported_mentor_csv", "campaign", campaign.id, { mentorCount: mentors.length }, { riskLevel: "high" });
     return {
       filename: `${exportSlug(campaign.title)}-mentors.csv`,
-      csv: mentorsToCsv(mentors, assessments),
+      csv: mentorsToCsv(mentors, assessments, state.mentorSources.filter((item) => item.campaignId === campaignId)),
     };
   }));
 

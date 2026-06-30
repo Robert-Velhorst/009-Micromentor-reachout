@@ -54,6 +54,7 @@ export type MentorProfile = {
   bio: string;
   skills: string[];
   source: string;
+  sourceRecordId: string | null;
   profileUrl: string | null;
   stage: MentorStage;
   notes: string;
@@ -494,6 +495,7 @@ export const ledgerApi = {
     bio: string;
     skills: string;
     profileUrl: string;
+    sourceRecordId?: string;
     notes: string;
   }) =>
     request<{ mentor: MentorProfile; assessment: MatchAssessment; duplicateCount: number }>(
