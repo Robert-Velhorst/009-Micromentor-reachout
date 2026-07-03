@@ -34,6 +34,7 @@ import {
   type Campaign,
   type CampaignDetails,
   type CampaignReadiness,
+  type HaiIntegrationStatus,
   type HealthStatus,
   type LedgerSummary,
   type MessageDraft,
@@ -393,6 +394,7 @@ export default function Home() {
   const [revealedSensitive, setRevealedSensitive] = useState<Set<string>>(() => new Set());
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
+  const [haiStatus, setHaiStatus] = useState<HaiIntegrationStatus | null>(null);
   const [runtimeCopyStatus, setRuntimeCopyStatus] = useState("");
   const [handoffStatus, setHandoffStatus] = useState<Record<string, string>>({});
   const [workspaceBackupText, setWorkspaceBackupText] = useState("");
@@ -407,12 +409,13 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, campaignResult, projectResult, nextHealthStatus, nextRuntimeStatus] = await Promise.all([
+      const [nextSummary, campaignResult, projectResult, nextHealthStatus, nextRuntimeStatus, nextHaiStatus] = await Promise.all([
         ledgerApi.summary(),
         ledgerApi.campaigns(),
         ledgerApi.projects(),
         ledgerApi.health().catch(() => null),
         ledgerApi.runtimeStatus().catch(() => null),
+        ledgerApi.haiStatus().catch(() => null),
       ]);
       const nextCampaigns = campaignResult.campaigns;
       const selectedId = campaignId !== undefined ? campaignId || latestCampaign(nextCampaigns)?.id || "" : activeCampaignId || latestCampaign(nextCampaigns)?.id || "";
@@ -424,6 +427,7 @@ export default function Home() {
       setDetails(nextDetails);
       setHealthStatus(nextHealthStatus);
       setRuntimeStatus(nextRuntimeStatus);
+      setHaiStatus(nextHaiStatus);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
     } finally {
@@ -2400,6 +2404,11 @@ export default function Home() {
                   <MiniStat label="Loading" value={loading ? "Yes" : "No"} />
                 </CardContent>
               </Card>
+              <HaiIntegrationPanel
+                status={haiStatus}
+                campaignId={activeCampaignId}
+                onOpenAction={(action) => void openNextAction(action)}
+              />
               <WorkspacePanel
                 backupText={workspaceBackupText}
                 preview={workspacePreview}
@@ -2780,6 +2789,86 @@ function ActionList({
         </div>
       ))}
     </div>
+  );
+}
+
+function HaiIntegrationPanel({
+  status,
+  campaignId,
+  onOpenAction,
+}: {
+  status: HaiIntegrationStatus | null;
+  campaignId: string;
+  onOpenAction: (action: NextActionRecommendation) => void;
+}) {
+  const selectedCampaign = status?.campaigns.find((item) => item.campaignId === campaignId) || status?.campaigns[0] || null;
+
+  return (
+    <Card className="rounded-md py-5" data-testid="hai-integration-panel">
+      <CardHeader className="px-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-lg">HAI integration</CardTitle>
+            <div className="mt-1 text-xs text-muted-foreground">Read-only operating snapshot</div>
+          </div>
+          <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 text-emerald-700">
+            Manual only
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 px-5">
+        {!status ? (
+          <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">Integration snapshot unavailable.</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <MiniStat label="Campaigns" value={status.totals.campaigns} />
+              <MiniStat label="Actions" value={status.totals.nextActions} />
+              <MiniStat label="Blockers" value={status.totals.blockers} />
+              <MiniStat label="Final cost" value={formatCurrency(status.totals.finalCost)} />
+            </div>
+            <div className="rounded-md border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+              {status.safety.notes}
+            </div>
+            {selectedCampaign ? (
+              <div className="space-y-3 rounded-md border p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">{selectedCampaign.title}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {selectedCampaign.projectTitle || "No project"} - updated {formatDate(selectedCampaign.updatedAt)}
+                    </div>
+                  </div>
+                  <Badge variant="outline" className={`rounded-md ${readinessTone[selectedCampaign.readiness.status]}`}>
+                    {selectedCampaign.readiness.status.replace("_", " ")}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <MiniStat label="Readiness" value={`${selectedCampaign.readiness.score}%`} />
+                  <MiniStat label="Attention" value={selectedCampaign.attentionItems.length} />
+                  <MiniStat label="Draft review" value={selectedCampaign.queue.draftReview} />
+                  <MiniStat label="Manual sends" value={selectedCampaign.queue.approvedAwaitingManualSend} />
+                  <MiniStat label="Follow-ups" value={selectedCampaign.queue.followUpsDue} />
+                  <MiniStat label="Outcomes" value={selectedCampaign.queue.responsesAwaitingOutcome} />
+                </div>
+                {selectedCampaign.blockers.length ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-700">
+                    {selectedCampaign.blockers.map((item) => item.label).join(", ")}
+                  </div>
+                ) : null}
+                <ActionList
+                  actions={selectedCampaign.nextActions.slice(0, 3)}
+                  emptyText="No integration-facing action is currently pending."
+                  onOpenAction={onOpenAction}
+                />
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No campaign snapshot available.</div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

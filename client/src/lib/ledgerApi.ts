@@ -287,6 +287,56 @@ export type CampaignReadiness = {
   items: CampaignReadinessItem[];
 };
 
+export type HaiCampaignSnapshot = {
+  campaignId: string;
+  projectId: string;
+  projectTitle: string | null;
+  title: string;
+  status: CampaignStatus;
+  readiness: CampaignReadiness;
+  nextActions: NextActionRecommendation[];
+  blockers: CampaignReadinessItem[];
+  attentionItems: CampaignReadinessItem[];
+  totals: CampaignResults["totals"];
+  rates: CampaignResults["rates"];
+  queue: {
+    draftReview: number;
+    approvedAwaitingManualSend: number;
+    followUpsDue: number;
+    responsesAwaitingOutcome: number;
+    duplicateReviews: number;
+    blockedDrafts: number;
+  };
+  costs: {
+    billingRecords: number;
+    invoiceRecords: number;
+    finalCost: number;
+    currency: "EUR";
+  };
+  updatedAt: string;
+};
+
+export type HaiIntegrationStatus = {
+  service: "maro-ledger";
+  generatedAt: string;
+  safety: {
+    externalSending: "manual_only";
+    approvalRequiredBeforeSend: true;
+    completionRequiresReadiness: true;
+    notes: string;
+  };
+  campaigns: HaiCampaignSnapshot[];
+  totals: {
+    campaigns: number;
+    activeCampaigns: number;
+    nextActions: number;
+    blockers: number;
+    attentionItems: number;
+    followUpsDue: number;
+    finalCost: number;
+  };
+};
+
 export type AuditEvent = {
   id: string;
   entityType: string;
@@ -462,6 +512,7 @@ export const ledgerApi = {
   actions: (campaignId?: string) =>
     request<{ actions: NextActionRecommendation[] }>(campaignId ? `/api/actions?campaignId=${encodeURIComponent(campaignId)}` : "/api/actions"),
   summary: () => request<LedgerSummary>("/api/ledger/summary"),
+  haiStatus: () => request<HaiIntegrationStatus>("/api/integrations/hai/status"),
   projects: () => request<{ projects: OutreachProject[] }>("/api/projects"),
   createProject: (payload: { title: string; description?: string }) =>
     request<{ project: OutreachProject }>("/api/projects", {
