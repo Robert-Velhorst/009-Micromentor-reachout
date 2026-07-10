@@ -1,11 +1,11 @@
 # MARO Enhancement Backlog
 
-Date: 2026-05-27
-Scope: current `client/src/pages/Home.tsx` production app, legacy feature pages in `src/pages`, ngrok launcher, Windows installer, and prior security/resource analysis.
+Updated: 2026-07-10
+Scope: current `client/src/pages/Home.tsx` production app, Express operating ledger, ngrok launcher, Windows installer, and security/resource analysis.
 
 ## Current Product Shape
 
-MARO is currently a local-first single-page outreach console. It manages mentor rows, personalizes a reusable message template, builds a manual review queue, copies or exports drafts, and shows lightweight progress/resource/value estimates. Work persists partly through browser `localStorage`; generated queue state and send outcomes are session-only.
+MARO is now a local-first mentor outreach operating ledger backed by a persistent Express API. Projects, campaigns, source searches, mentor identities and fit assessments, message drafts and approval snapshots, manual send attempts, responses, follow-ups, outcomes, measured resource sessions, billing snapshots, invoice records, and audit events survive browser refreshes in the local ledger. Optional AES-256-GCM encryption protects the ledger at rest, while the command center keeps sensitive text behind session privacy controls.
 
 The best next enhancements should make the tool more useful for repeated real outreach without turning it into an automated spam sender or weakening the local-first security posture.
 
@@ -300,12 +300,12 @@ Avoid for now:
 - Automated sending to MicroMentor. It creates account, consent, rate-limit, and platform-policy risk. Keep final send manual until rules and safeguards are explicit.
 - Cloud sync without authentication, encryption, and data-retention decisions.
 
-## Suggested Implementation Slices
+## Delivered Implementation Slices
 
-1. Campaign persistence plus outcome tracking.
-2. CSV import/export with duplicate detection.
-3. Template quality checks.
-4. Ngrok status and workspace backup/restore.
-5. Privacy reveal mode, profile handoff, and installer signing/update work.
+1. Campaign persistence, source tracking, results, and outcome history.
+2. CSV import/export, source mapping, identity deduplication, and audited duplicate resolution.
+3. Template quality checks, approval snapshots, and manual-send evidence controls.
+4. Ngrok exposure status, secure tunnel defaults, and workspace backup/restore/reset.
+5. Privacy reveal mode, encrypted local storage, least-privilege profile handoff, and Windows install/uninstall support.
 
-The first two slices deliver the largest practical improvement with limited architectural risk.
+The core operating-ledger milestone is complete. Remaining distribution work is Authenticode signing and signed update checks once certificate and release infrastructure are available. Data virtualization and chunked import processing should remain evidence-triggered enhancements rather than adding background complexity before real datasets require them.
