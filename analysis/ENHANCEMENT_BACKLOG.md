@@ -289,6 +289,7 @@ Done:
 - Added audited duplicate-resolution controls that close duplicate source rows while preserving history and canonical outreach context.
 - Added release-gate checks that prevent the legacy API utility from reintroducing unsafe bulk-send, mentor-delete, or unsupported mentor-update paths.
 - Added release-gate checks that fail on missing security headers, weakened CSP self-only directives, Google Fonts reintroduction, or external asset URLs in the production app shell.
+- Added same-app mutation protection for the local ledger API: mutating requests require a custom marker, browser-reported cross-site requests are rejected, and smoke tests cover blocked and allowed paths.
 
 Do next:
 

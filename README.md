@@ -96,6 +96,8 @@ The Express server now exposes operational API routes before serving the fronten
 - `GET /api/invoices`
 - `GET /api/audit`
 
+All `POST`, `PATCH`, `PUT`, and `DELETE` requests under `/api` must include `X-MARO-Request: 1`. The app adds this marker automatically. Combined with the server's no-CORS policy and `Sec-Fetch-Site` check, it prevents cross-site pages and form posts from changing the local ledger. Trusted local integrations must add the header explicitly.
+
 The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to store it elsewhere. Runtime ledger data is ignored by git.
 
 Set `MARO_LEDGER_PASSPHRASE` to encrypt the local ledger file at rest with AES-256-GCM. Existing plaintext ledger files are migrated to an encrypted envelope on the next API read/write when this passphrase is present. Keep the passphrase somewhere safe; MARO cannot recover encrypted ledger data without it. Workspace backups remain portable JSON exports and should be handled as sensitive files.

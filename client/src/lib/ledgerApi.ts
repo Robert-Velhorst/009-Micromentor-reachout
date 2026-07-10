@@ -542,12 +542,16 @@ export type MentorImportResult = {
 export type MentorCsvColumnMap = Partial<Record<"name" | "company" | "headline" | "bio" | "skills" | "industries" | "location" | "profileUrl" | "notes" | "source" | "priority" | "stage", string>>;
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers);
+  headers.set("Content-Type", "application/json");
+  if (!["GET", "HEAD"].includes(method)) {
+    headers.set("X-MARO-Request", "1");
+  }
+
   const response = await fetch(url, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers,
   });
   const data = (await response.json()) as T & { error?: string };
   if (!response.ok) {

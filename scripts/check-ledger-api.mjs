@@ -32,12 +32,16 @@ async function waitForServer() {
 }
 
 async function api(pathname, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers);
+  headers.set("Content-Type", "application/json");
+  if (!["GET", "HEAD"].includes(method)) {
+    headers.set("X-MARO-Request", "1");
+  }
+
   const response = await fetch(`${baseUrl}${pathname}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers,
   });
   const body = await response.json();
   if (!response.ok) {
@@ -103,6 +107,40 @@ try {
   assert(health.persistence === "encrypted-json", "Health endpoint did not report encrypted ledger persistence");
   assert(health.storage?.encrypted === true, "Health endpoint did not report encrypted storage");
   assert(!("path" in health.storage), "Health storage status should not expose a local filesystem path");
+
+  const missingMarker = await fetch(`${baseUrl}/api/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Blocked project" }),
+  });
+  assert(missingMarker.status === 403, "Mutation without the MARO request marker was not blocked");
+  assert(!missingMarker.headers.has("Access-Control-Allow-Origin"), "Mutation rejection unexpectedly enabled CORS");
+  assert(
+    (await missingMarker.json()).error === "Mutation request header is required",
+    "Mutation without the MARO request marker returned the wrong error"
+  );
+
+  const wrongMarker = await fetch(`${baseUrl}/api/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-MARO-Request": "0" },
+    body: JSON.stringify({ name: "Blocked project" }),
+  });
+  assert(wrongMarker.status === 403, "Mutation with the wrong MARO request marker was not blocked");
+
+  const crossSiteMutation = await fetch(`${baseUrl}/api/projects`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Sec-Fetch-Site": "cross-site",
+      "X-MARO-Request": "1",
+    },
+    body: JSON.stringify({ name: "Blocked project" }),
+  });
+  assert(crossSiteMutation.status === 403, "Cross-site mutation with a request marker was not blocked");
+  assert(
+    (await crossSiteMutation.json()).error === "Cross-site mutation requests are not allowed",
+    "Cross-site mutation returned the wrong error"
+  );
 
   const runtime = await api("/api/runtime/status");
   assert(runtime.version === packageJson.version, "Runtime status did not report the package app version");

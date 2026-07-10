@@ -8,9 +8,16 @@
 import resourceOptimizer from './resourceOptimizer';
 
 async function requestJson(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  const headers = new Headers(options.headers);
+  headers.set('Content-Type', 'application/json');
+  if (!['GET', 'HEAD'].includes(method)) {
+    headers.set('X-MARO-Request', '1');
+  }
+
   const response = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,
+    headers,
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {

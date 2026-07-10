@@ -85,6 +85,26 @@ async function startServer() {
     next();
   });
 
+  const mutationMethods = new Set(["POST", "PATCH", "PUT", "DELETE"]);
+  app.use("/api", (req, res, next) => {
+    if (!mutationMethods.has(req.method.toUpperCase())) {
+      next();
+      return;
+    }
+
+    if (req.get("Sec-Fetch-Site") === "cross-site") {
+      res.status(403).json({ error: "Cross-site mutation requests are not allowed" });
+      return;
+    }
+
+    if (req.get("X-MARO-Request") !== "1") {
+      res.status(403).json({ error: "Mutation request header is required" });
+      return;
+    }
+
+    next();
+  });
+
   registerLedgerRoutes(app);
 
   app.get("/api/runtime/status", async (_req, res) => {

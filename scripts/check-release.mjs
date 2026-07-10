@@ -41,6 +41,8 @@ function assertSourceIncludes(source, expected, message) {
 console.log("\n[release-check] Secure ngrok policy");
 const tunnelLauncherSource = fs.readFileSync(path.join(process.cwd(), "scripts", "ngrok.mjs"), "utf8");
 const installerSource = fs.readFileSync(path.join(process.cwd(), "scripts", "build-windows-installer.mjs"), "utf8");
+const serverSource = fs.readFileSync(path.join(process.cwd(), "server", "index.ts"), "utf8");
+const ledgerClientSource = fs.readFileSync(path.join(process.cwd(), "client", "src", "lib", "ledgerApi.ts"), "utf8");
 assertSourceIncludes(
   tunnelLauncherSource,
   "if (!basicAuth && !allowPublicTunnel)",
@@ -60,6 +62,21 @@ assertSourceIncludes(
   installerSource,
   "Public tunnel not started.",
   "Windows launcher no longer reports that an unprotected tunnel was blocked"
+);
+assertSourceIncludes(
+  serverSource,
+  'req.get("X-MARO-Request") !== "1"',
+  "API mutations no longer require the same-app request marker"
+);
+assertSourceIncludes(
+  serverSource,
+  'req.get("Sec-Fetch-Site") === "cross-site"',
+  "API mutations no longer reject cross-site browser requests"
+);
+assertSourceIncludes(
+  ledgerClientSource,
+  'headers.set("X-MARO-Request", "1")',
+  "Production API client no longer supplies the same-app mutation marker"
 );
 
 await runNpm("TypeScript contract check", ["run", "check"]);

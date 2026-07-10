@@ -21,6 +21,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 
 - Public bind risk: the server previously inherited a broad host stance. Fixed by defaulting production/server runs to `127.0.0.1`; ngrok now targets `http://127.0.0.1:<port>` explicitly.
 - Missing browser hardening headers: added `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`, and a restrictive CSP.
+- Cross-site local API mutation risk: every mutating `/api` request now requires the non-simple `X-MARO-Request: 1` marker, cross-site browser fetch metadata is rejected, and no CORS access is granted. Normal same-origin reads remain marker-free.
 - Production error disclosure: `ErrorBoundary` no longer shows stack traces outside development builds.
 - Dev log ingestion DoS and resource-churn risk: the Vite debug collector is now disabled unless `MARO_DEBUG_COLLECTOR=1` is set, and still caps request payloads at 256 KB before writing logs when explicitly enabled.
 - Ngrok access control: development and installed launchers refuse to create unauthenticated public tunnels by default. `NGROK_BASIC_AUTH` enables the normal protected flow; `MARO_ALLOW_PUBLIC_TUNNEL=1` is required for an intentional public override.
@@ -49,15 +50,16 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 ## Resource Analysis
 
 - Initial production JS observed earlier in the work: about 303.66 KB minified, 95.20 KB gzip.
-- Current production JS after the approved-handoff slice: 318.69 KB minified, 89.24 KB gzip.
+- Current production JS with same-app mutation protection: 318.81 KB minified, 89.30 KB gzip.
 - Current production CSS: 109.78 KB minified, 17.46 KB gzip.
-- Final served public payload directory: 430.18 KB, including the 11.29 KB generated manual-handoff extension ZIP.
+- Final served public payload directory: 430.91 KiB, including the 11.91 KiB generated manual-handoff extension ZIP.
 - Final installer: 33.1 MB, dominated by the embedded Node runtime.
 - Runtime optimizations applied: removed unused app providers, deferred mentor search input, debounced localStorage writes, cleaned stale production public assets, made development debug logging opt-in, and bundled only the current server/runtime payload.
 - Structured mentor scoring remains event-driven: existing profiles are recalculated only when campaign scoring inputs change, with no polling or background scoring process.
 - Discovery plans are read-time derivations over the stored campaign and source ledger; applying them is idempotent and adds no dependency, timer, scraper, or background worker.
 - The manual-fill extension runs only while its popup is open and does not install content scripts, retain a handoff package, poll, queue messages, or run a background worker.
 - Read-only ledger routes no longer rewrite encrypted storage. A file-metadata-aware in-memory cache avoids repeated scrypt/decryption after the first read and returns cloned state to each request; explicit export routes still persist their required audit events.
+- Same-app mutation protection is a constant-time header check with no token storage, timers, polling, extra network round trips for the same-origin app, or work on read-only requests.
 
 Current encrypted-ledger QA sample on this Windows machine:
 
@@ -72,8 +74,11 @@ Current encrypted-ledger QA sample on this Windows machine:
 - `npm run check`: passed.
 - `npm run check:release`: passed.
 - `npm audit`: passed with zero known vulnerabilities after lockfile and build-tool remediation.
+- API mutation security smoke: requests with a missing or incorrect `X-MARO-Request` marker returned HTTP 403, browser-reported cross-site mutations returned HTTP 403 even with the marker, no CORS access header was exposed, and normal marked mutations completed successfully.
+- Production browser QA: a project mutation persisted through the rendered app, appeared in project controls, and produced no console errors or horizontal page overflow in desktop and mobile layout checks.
 - `node scripts/ngrok.mjs`: refuses to open a tunnel when neither `NGROK_BASIC_AUTH` nor the explicit public override is configured.
 - Safe installer run with `MARO_INSTALL_DIR`, `MARO_SKIP_SHORTCUTS=1`, `MARO_SKIP_REGISTRY=1`, and `MARO_SKIP_LAUNCH=1`: passed.
+- Final installer SHA-256: `B385656182C6CE44D2B4C3176C7CC29FF687CA4A51436B4853938C51089DDA10`.
 - Installer version `1.1.0` contains the generated manual-handoff extension, launcher, and uninstaller, and contains neither legacy automated-messaging archive.
 - Release smoke server: returned HTTP 200 for `/`, enforced restrictive CSP directives, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`, and verified the root app shell had no external asset URLs, Google Fonts references, or development debug-collector injection.
 
