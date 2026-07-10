@@ -62,6 +62,10 @@ type CampaignForm = {
   source: string;
   tone: string;
   followUpAfterDays: string;
+  skills: string;
+  industries: string;
+  locations: string;
+  minimumFitScore: string;
 };
 
 type CampaignSettingsForm = CampaignForm & {
@@ -79,6 +83,8 @@ type MentorForm = {
   headline: string;
   bio: string;
   skills: string;
+  industries: string;
+  location: string;
   profileUrl: string;
   sourceRecordId: string;
   notes: string;
@@ -103,6 +109,8 @@ const csvColumnFields: Array<{ key: CsvColumnKey; label: string; required?: bool
   { key: "headline", label: "Headline / role" },
   { key: "bio", label: "Bio / goal" },
   { key: "skills", label: "Skills" },
+  { key: "industries", label: "Industries" },
+  { key: "location", label: "Location" },
   { key: "profileUrl", label: "URL / profile" },
   { key: "notes", label: "Notes" },
   { key: "source", label: "Source" },
@@ -116,6 +124,8 @@ const csvColumnAliases: Record<CsvColumnKey, string[]> = {
   headline: ["headline", "role", "title"],
   bio: ["bio", "goal", "context", "description"],
   skills: ["skills", "skill"],
+  industries: ["industries", "industry", "sectors", "sector"],
+  location: ["location", "city", "region", "country"],
   profileUrl: ["profileurl", "profile url", "url", "source url", "profile"],
   notes: ["notes", "note"],
   source: ["source"],
@@ -136,6 +146,10 @@ const defaultCampaignForm: CampaignForm = {
   source: "MicroMentor/manual",
   tone: "respectful, concise, practical",
   followUpAfterDays: "7",
+  skills: "",
+  industries: "",
+  locations: "",
+  minimumFitScore: "70",
 };
 
 const defaultSourceForm: SourceForm = {
@@ -164,13 +178,15 @@ const defaultMentorForm: MentorForm = {
   headline: "",
   bio: "",
   skills: "",
+  industries: "",
+  location: "",
   profileUrl: "",
   sourceRecordId: "",
   notes: "",
 };
 
-const sampleCsv = `name,company,headline,bio,skills,profileUrl,notes
-Ada Lovelace Labs,Analytical Engine Co,Automation advisor,"Helps founders design practical automation workflows","automation, operations",https://example.com/ada,Strong operations angle`;
+const sampleCsv = `name,company,headline,bio,skills,industries,location,profileUrl,notes
+Ada Lovelace Labs,Analytical Engine Co,Automation advisor,"Helps founders design practical automation workflows","automation, operations",Technology,London,https://example.com/ada,Strong operations angle`;
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("nl-NL", {
@@ -322,6 +338,19 @@ function campaignFollowUpDays(campaign: Campaign | null) {
 
 function campaignTone(campaign: Campaign | null) {
   return campaign?.criteriaJson?.tone || "respectful, concise, practical";
+}
+
+function campaignCriteriaList(campaign: Campaign | null, key: "skills" | "industries" | "locations") {
+  return (campaign?.criteriaJson?.[key] || []).join(", ");
+}
+
+function splitCriteriaList(value: string) {
+  return Array.from(new Set(value.split(/[,;\n]/).map((item) => item.trim()).filter(Boolean)));
+}
+
+function campaignFitThreshold(campaign: Campaign | null) {
+  const value = Number(campaign?.criteriaJson?.minimumFitScore);
+  return Number.isFinite(value) && value >= 35 && value <= 95 ? Math.round(value) : 70;
 }
 
 function sourceToForm(source: MentorSource): SourceForm {
@@ -499,10 +528,18 @@ export default function Home() {
       source: campaign?.source || defaultCampaignForm.source,
       tone: campaign ? campaignTone(campaign) : defaultCampaignForm.tone,
       followUpAfterDays: campaign ? String(campaignFollowUpDays(campaign)) : defaultCampaignForm.followUpAfterDays,
+      skills: campaign ? campaignCriteriaList(campaign, "skills") : defaultCampaignForm.skills,
+      industries: campaign ? campaignCriteriaList(campaign, "industries") : defaultCampaignForm.industries,
+      locations: campaign ? campaignCriteriaList(campaign, "locations") : defaultCampaignForm.locations,
+      minimumFitScore: campaign ? String(campaignFitThreshold(campaign)) : defaultCampaignForm.minimumFitScore,
       status: campaign?.status || "active",
     });
   }, [
     campaign?.criteriaJson?.followUpAfterDays,
+    campaign?.criteriaJson?.industries,
+    campaign?.criteriaJson?.locations,
+    campaign?.criteriaJson?.minimumFitScore,
+    campaign?.criteriaJson?.skills,
     campaign?.criteriaJson?.tone,
     campaign?.goal,
     campaign?.id,
@@ -526,7 +563,11 @@ export default function Home() {
       campaignSettingsForm.targetMentorType.trim() !== campaign.targetMentorType ||
       campaignSettingsForm.source.trim() !== campaign.source ||
       campaignSettingsForm.tone.trim() !== campaignTone(campaign) ||
-      normalizedCampaignFollowUpDays !== String(campaignFollowUpDays(campaign))
+      normalizedCampaignFollowUpDays !== String(campaignFollowUpDays(campaign)) ||
+      campaignSettingsForm.skills.trim() !== campaignCriteriaList(campaign, "skills") ||
+      campaignSettingsForm.industries.trim() !== campaignCriteriaList(campaign, "industries") ||
+      campaignSettingsForm.locations.trim() !== campaignCriteriaList(campaign, "locations") ||
+      String(Number(campaignSettingsForm.minimumFitScore) || 70) !== String(campaignFitThreshold(campaign))
     : false;
   const completionBlockedByReadiness =
     campaignSettingsForm.status === "completed" && details?.readiness?.status !== "ready";
@@ -607,6 +648,7 @@ export default function Home() {
   const sentMessages = (details?.messages || []).filter((message) => message.status === "sent");
   const nextActions = details?.nextActions || summary?.nextActions || [];
   const progress = campaign?.messagesDrafted ? (campaign.messagesSent / campaign.messagesDrafted) * 100 : 0;
+  const strongFitThreshold = campaignFitThreshold(campaign);
 
   const mutate = async (action: () => Promise<unknown>) => {
     setError("");
@@ -631,6 +673,10 @@ export default function Home() {
           tone: campaignForm.tone,
           followUpAfterDays: Number(campaignForm.followUpAfterDays) || 7,
           requiredApproval: true,
+          skills: splitCriteriaList(campaignForm.skills),
+          industries: splitCriteriaList(campaignForm.industries),
+          locations: splitCriteriaList(campaignForm.locations),
+          minimumFitScore: Number(campaignForm.minimumFitScore) || 70,
         },
       });
       setCampaignForm(defaultCampaignForm);
@@ -655,6 +701,10 @@ export default function Home() {
           tone: campaignSettingsForm.tone.trim(),
           followUpAfterDays: Number(campaignSettingsForm.followUpAfterDays) || 7,
           requiredApproval: true,
+          skills: splitCriteriaList(campaignSettingsForm.skills),
+          industries: splitCriteriaList(campaignSettingsForm.industries),
+          locations: splitCriteriaList(campaignSettingsForm.locations),
+          minimumFitScore: Number(campaignSettingsForm.minimumFitScore) || 70,
         },
       });
     });
@@ -1127,6 +1177,7 @@ export default function Home() {
                       <MiniStat label="Project" value={campaignProject?.title || "Unassigned"} />
                       <MiniStat label="Follow-up rule" value={`${campaignFollowUpDays(campaign)} days`} />
                       <MiniStat label="Tone" value={campaignTone(campaign)} />
+                      <MiniStat label="Strong fit" value={`${campaignFitThreshold(campaign)}%+`} />
                     </div>
                   ) : null}
                 </div>
@@ -1163,6 +1214,42 @@ export default function Home() {
                       placeholder="Active target mentor type"
                       className="mb-2 rounded-md"
                     />
+                    <div className="mb-2 rounded-md border bg-muted/20 p-3">
+                      <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Fit criteria</div>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <Input
+                          value={campaignSettingsForm.skills}
+                          onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, skills: event.target.value }))}
+                          placeholder="Skills, comma separated"
+                          aria-label="Campaign fit skills"
+                          className="rounded-md"
+                        />
+                        <Input
+                          value={campaignSettingsForm.industries}
+                          onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, industries: event.target.value }))}
+                          placeholder="Industries, comma separated"
+                          aria-label="Campaign fit industries"
+                          className="rounded-md"
+                        />
+                        <Input
+                          value={campaignSettingsForm.locations}
+                          onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, locations: event.target.value }))}
+                          placeholder="Locations, comma separated"
+                          aria-label="Campaign preferred locations"
+                          className="rounded-md"
+                        />
+                        <Input
+                          type="number"
+                          min="35"
+                          max="95"
+                          value={campaignSettingsForm.minimumFitScore}
+                          onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, minimumFitScore: event.target.value }))}
+                          placeholder="Minimum fit score"
+                          aria-label="Campaign minimum fit score"
+                          className="rounded-md"
+                        />
+                      </div>
+                    </div>
                     <div className="mb-2 grid gap-2 md:grid-cols-2">
                       <Input
                         value={campaignSettingsForm.source}
@@ -1386,7 +1473,9 @@ export default function Home() {
                 <CardContent className="space-y-3 px-5">
                   {(details?.sourceRecords || []).map((source) => {
                     const linkedMentors = (details?.mentors || []).filter((mentor) => mentor.sourceRecordId === source.id);
-                    const strongLinkedMentors = linkedMentors.filter((mentor) => (assessmentsByMentor.get(mentor.id)?.score || 0) >= 70);
+                    const strongLinkedMentors = linkedMentors.filter(
+                      (mentor) => (assessmentsByMentor.get(mentor.id)?.score || 0) >= strongFitThreshold
+                    );
                     const remainingResults = Math.max(0, source.resultsFound - source.importedCount);
                     const sourceEdit = sourceEdits[source.id] || sourceToForm(source);
                     const sourceChanged = sourceEditChanged(source, sourceEdit);
@@ -1597,6 +1686,15 @@ export default function Home() {
                   <Input value={campaignForm.title} onChange={(event) => setCampaignForm((current) => ({ ...current, title: event.target.value }))} placeholder="Campaign title" className="rounded-md" />
                   <Textarea value={campaignForm.goal} onChange={(event) => setCampaignForm((current) => ({ ...current, goal: event.target.value }))} placeholder="Outreach goal" className="min-h-24 rounded-md" />
                   <Input value={campaignForm.targetMentorType} onChange={(event) => setCampaignForm((current) => ({ ...current, targetMentorType: event.target.value }))} placeholder="Target mentor type" className="rounded-md" />
+                  <div className="rounded-md border bg-muted/20 p-3">
+                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Fit criteria</div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <Input value={campaignForm.skills} onChange={(event) => setCampaignForm((current) => ({ ...current, skills: event.target.value }))} placeholder="Skills, comma separated" aria-label="New campaign fit skills" className="rounded-md" />
+                      <Input value={campaignForm.industries} onChange={(event) => setCampaignForm((current) => ({ ...current, industries: event.target.value }))} placeholder="Industries, comma separated" aria-label="New campaign fit industries" className="rounded-md" />
+                      <Input value={campaignForm.locations} onChange={(event) => setCampaignForm((current) => ({ ...current, locations: event.target.value }))} placeholder="Locations, comma separated" aria-label="New campaign preferred locations" className="rounded-md" />
+                      <Input type="number" min="35" max="95" value={campaignForm.minimumFitScore} onChange={(event) => setCampaignForm((current) => ({ ...current, minimumFitScore: event.target.value }))} placeholder="Minimum fit score" aria-label="New campaign minimum fit score" className="rounded-md" />
+                    </div>
+                  </div>
                   <Input value={campaignForm.source} onChange={(event) => setCampaignForm((current) => ({ ...current, source: event.target.value }))} placeholder="Source" className="rounded-md" />
                   <Input value={campaignForm.tone} onChange={(event) => setCampaignForm((current) => ({ ...current, tone: event.target.value }))} placeholder="Message tone" className="rounded-md" />
                   <Input
@@ -1621,7 +1719,10 @@ export default function Home() {
             <Card className="rounded-md py-5">
               <CardHeader className="px-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <CardTitle className="text-lg">Mentor profiles and fit scores</CardTitle>
+                  <div>
+                    <CardTitle className="text-lg">Mentor profiles and fit scores</CardTitle>
+                    <div className="mt-1 text-xs text-muted-foreground">Strong match threshold: {strongFitThreshold}%</div>
+                  </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <select
                       aria-label="Mentor source search filter"
@@ -1680,6 +1781,8 @@ export default function Home() {
                             <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                               <span className="rounded-md border px-2 py-1">Source: {mentor.source || "manual"}</span>
                               {sourceRecord ? <span className="rounded-md border px-2 py-1">Search: {sourceRecord.name}</span> : null}
+                              {mentor.location ? <span className="rounded-md border px-2 py-1">Location: {mentor.location}</span> : null}
+                              {mentor.industries.length ? <span className="rounded-md border px-2 py-1">Industries: {mentor.industries.join(", ")}</span> : null}
                             </div>
                             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{mentor.bio || "No profile context recorded yet."}</p>
                             <div className="mt-2 text-xs text-muted-foreground">
@@ -1800,6 +1903,8 @@ export default function Home() {
                 <Input value={mentorForm.headline} onChange={(event) => setMentorForm((current) => ({ ...current, headline: event.target.value }))} placeholder="Headline or role" className="rounded-md" />
                 <Textarea value={mentorForm.bio} onChange={(event) => setMentorForm((current) => ({ ...current, bio: event.target.value }))} placeholder="Bio, relevant context, or why they may help" className="min-h-24 rounded-md" />
                 <Input value={mentorForm.skills} onChange={(event) => setMentorForm((current) => ({ ...current, skills: event.target.value }))} placeholder="Skills, comma separated" className="rounded-md" />
+                <Input value={mentorForm.industries} onChange={(event) => setMentorForm((current) => ({ ...current, industries: event.target.value }))} placeholder="Industries, comma separated" className="rounded-md" />
+                <Input value={mentorForm.location} onChange={(event) => setMentorForm((current) => ({ ...current, location: event.target.value }))} placeholder="Location" className="rounded-md" />
                 <Input value={mentorForm.profileUrl} onChange={(event) => setMentorForm((current) => ({ ...current, profileUrl: event.target.value }))} placeholder="Profile URL" className="rounded-md" />
                 <label className="grid gap-1 text-xs text-muted-foreground">
                   <span>Link mentor to source search</span>
@@ -2531,6 +2636,7 @@ function MentorDetailPanel({
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <span className="rounded-md border px-2 py-1">Source: {mentor.source || "manual"}</span>
                 {sourceRecord ? <span className="rounded-md border px-2 py-1">Search: {sourceRecord.name}</span> : null}
+                {mentor.location ? <span className="rounded-md border px-2 py-1">Location: {mentor.location}</span> : null}
                 {mentor.profileUrl ? (
                   <a className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-primary" href={mentor.profileUrl} target="_blank" rel="noreferrer">
                     Profile <ExternalLink className="h-3 w-3" />
@@ -2543,6 +2649,15 @@ function MentorDetailPanel({
                   {mentor.skills.map((skill) => (
                     <Badge key={skill} variant="outline" className="rounded-md">
                       {skill}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              {mentor.industries.length ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {mentor.industries.map((industry) => (
+                    <Badge key={industry} variant="outline" className="rounded-md">
+                      {industry}
                     </Badge>
                   ))}
                 </div>

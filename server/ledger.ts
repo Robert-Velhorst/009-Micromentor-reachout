@@ -70,6 +70,10 @@ type CampaignCriteria = {
   tone: string;
   followUpAfterDays: number;
   requiredApproval: boolean;
+  skills: string[];
+  industries: string[];
+  locations: string[];
+  minimumFitScore: number;
 };
 
 type MentorSource = {
@@ -635,12 +639,41 @@ function parseNonNegativeInteger(value: unknown, fallback = 0, max = 100000) {
   return Math.min(max, Math.max(0, Math.round(parsed)));
 }
 
+function stringList(value: unknown) {
+  const values = Array.isArray(value) ? value.map(String) : String(value || "").split(/[,;\n]/);
+  const seen = new Set<string>();
+  return values
+    .map((item) => item.trim().slice(0, 80))
+    .filter((item) => {
+      const key = normalize(item);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 25);
+}
+
+function safeProfileUrl(value: unknown) {
+  const profileUrl = String(value || "").trim();
+  if (!profileUrl) return null;
+  try {
+    const parsed = new URL(profileUrl);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? profileUrl : null;
+  } catch {
+    return null;
+  }
+}
+
 function campaignCriteria(input: unknown): CampaignCriteria {
   const source = input && typeof input === "object" ? input as Record<string, unknown> : {};
   return {
     tone: String(source.tone || "respectful, concise, practical").trim() || "respectful, concise, practical",
     followUpAfterDays: parsePositiveInteger(source.followUpAfterDays, 7),
     requiredApproval: source.requiredApproval === false ? false : true,
+    skills: stringList(source.skills),
+    industries: stringList(source.industries),
+    locations: stringList(source.locations),
+    minimumFitScore: parsePositiveInteger(source.minimumFitScore, 70, 35, 95),
   };
 }
 
@@ -655,6 +688,22 @@ function campaignFollowUpAfterDays(campaign: OutreachCampaign) {
 
 function campaignTone(campaign: OutreachCampaign) {
   return campaignCriteria(campaign.criteriaJson).tone;
+}
+
+function campaignFitThreshold(campaign: OutreachCampaign) {
+  return campaignCriteria(campaign.criteriaJson).minimumFitScore;
+}
+
+function campaignScoringSignature(campaign: OutreachCampaign) {
+  const criteria = campaignCriteria(campaign.criteriaJson);
+  return JSON.stringify({
+    goal: campaign.goal,
+    targetMentorType: campaign.targetMentorType,
+    skills: criteria.skills,
+    industries: criteria.industries,
+    locations: criteria.locations,
+    minimumFitScore: criteria.minimumFitScore,
+  });
 }
 
 function toneOpening(tone: string) {
@@ -733,12 +782,13 @@ function parseCsv(text: string) {
 }
 
 function csvEscape(value: unknown) {
-  const text = Array.isArray(value) ? value.join("; ") : String(value ?? "");
+  const rawText = Array.isArray(value) ? value.join("; ") : String(value ?? "");
+  const text = /^[=+\-@]/.test(rawText.trimStart()) ? `'${rawText}` : rawText;
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 function mentorsToCsv(mentors: MentorProfile[], assessments: MatchAssessment[], sources: MentorSource[] = []) {
-  const headers = ["name", "company", "headline", "bio", "skills", "source", "sourceSearch", "profileUrl", "stage", "notes", "score", "reasons"];
+  const headers = ["name", "company", "headline", "bio", "skills", "industries", "location", "source", "sourceSearch", "profileUrl", "stage", "notes", "score", "reasons"];
   const rows = mentors.map((mentor) => {
     const assessment = assessments.find((item) => item.mentorProfileId === mentor.id);
     const sourceRecord = mentor.sourceRecordId ? sources.find((item) => item.id === mentor.sourceRecordId) : null;
@@ -749,6 +799,8 @@ function mentorsToCsv(mentors: MentorProfile[], assessments: MatchAssessment[], 
       mentor.headline,
       mentor.bio,
       mentor.skills,
+      mentor.industries,
+      mentor.location,
       mentor.source,
       sourceRecord?.name || "",
       mentor.profileUrl || "",
@@ -771,6 +823,8 @@ function campaignHistoryToCsv(state: LedgerState, campaign: OutreachCampaign) {
     "mentorName",
     "company",
     "headline",
+    "industries",
+    "location",
     "source",
     "sourceSearch",
     "profileUrl",
@@ -808,6 +862,8 @@ function campaignHistoryToCsv(state: LedgerState, campaign: OutreachCampaign) {
       mentor.name,
       company,
       mentor.headline,
+      mentor.industries,
+      mentor.location,
       mentor.source,
       sourceRecord?.name || "",
       mentor.profileUrl || "",
@@ -945,6 +1001,10 @@ function normalizeState(state: Partial<LedgerState>): LedgerState {
     mentorProfiles: (state.mentorProfiles || []).map((mentor) => ({
       ...mentor,
       sourceRecordId: mentor.sourceRecordId || null,
+      skills: stringList(mentor.skills),
+      industries: stringList(mentor.industries),
+      location: String(mentor.location || ""),
+      profileUrl: safeProfileUrl(mentor.profileUrl),
     })),
     matchAssessments: state.matchAssessments || [],
     messageDrafts: state.messageDrafts || [],
@@ -1580,7 +1640,7 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
       }
 
       if (!mentorMessages.length && !duplicateActiveDraft) {
-        const weakFit = assessment && assessment.score < 60;
+        const weakFit = assessment && assessment.score < campaignFitThreshold(campaign);
         pushAction({
           id: `action:${weakFit ? "review-fit" : "draft-message"}:${mentor.id}`,
           campaignId: campaign.id,
@@ -1906,21 +1966,93 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
   };
 }
 
-function scoreMentor(campaign: OutreachCampaign, mentor: Pick<MentorProfile, "headline" | "bio" | "skills" | "industries">) {
-  const criteria = `${campaign.goal} ${campaign.targetMentorType}`.toLowerCase();
-  const profileText = `${mentor.headline} ${mentor.bio} ${mentor.skills.join(" ")} ${mentor.industries.join(" ")}`.toLowerCase();
-  const keywords = Array.from(new Set(criteria.split(/[^a-z0-9]+/).filter((word) => word.length > 4)));
-  const matches = keywords.filter((word) => profileText.includes(word));
-  const score = Math.min(98, Math.max(35, 45 + matches.length * 9));
+function scoreMentor(
+  campaign: OutreachCampaign,
+  mentor: Pick<MentorProfile, "headline" | "bio" | "skills" | "industries" | "location">
+) {
+  const criteria = campaignCriteria(campaign.criteriaJson);
+  const campaignText = `${campaign.goal} ${campaign.targetMentorType}`.toLowerCase();
+  const profileText = `${mentor.headline} ${mentor.bio} ${mentor.skills.join(" ")} ${mentor.industries.join(" ")} ${mentor.location}`.toLowerCase();
+  const keywords = Array.from(new Set(campaignText.split(/[^a-z0-9]+/).filter((word) => word.length > 4))).slice(0, 12);
+  const keywordMatches = keywords.filter((word) => profileText.includes(word));
+  const structuredCriteria = criteria.skills.length + criteria.industries.length + criteria.locations.length;
+
+  if (!structuredCriteria) {
+    const score = Math.min(98, Math.max(35, 45 + keywordMatches.length * 9));
+    return {
+      score,
+      confidence: Math.min(0.95, 0.45 + keywordMatches.length * 0.08),
+      reasonsJson: keywordMatches.length
+        ? keywordMatches.slice(0, 5).map((word) => `Profile matches campaign keyword "${word}".`)
+        : ["Profile was imported for manual review; add structured fit criteria for a stronger assessment."],
+      risksJson: score < criteria.minimumFitScore
+        ? [`Fit score is below the campaign threshold of ${criteria.minimumFitScore}%; review relevance before drafting outreach.`]
+        : [],
+    };
+  }
+
+  const matchTerms = (terms: string[], text: string) => terms.filter((term) => text.includes(normalize(term)));
+  const skillText = normalize(`${mentor.skills.join(" ")} ${mentor.headline} ${mentor.bio}`);
+  const industryText = normalize(`${mentor.industries.join(" ")} ${mentor.headline} ${mentor.bio}`);
+  const locationText = normalize(mentor.location);
+  const skillMatches = matchTerms(criteria.skills, skillText);
+  const industryMatches = matchTerms(criteria.industries, industryText);
+  const locationMatches = matchTerms(criteria.locations, locationText);
+  const weightedSignals: Array<{ available: number; matched: number; weight: number }> = [
+    { available: Math.min(6, keywords.length), matched: Math.min(6, keywordMatches.length), weight: 35 },
+    { available: criteria.skills.length, matched: skillMatches.length, weight: 30 },
+    { available: criteria.industries.length, matched: industryMatches.length, weight: 20 },
+    { available: criteria.locations.length, matched: locationMatches.length, weight: 15 },
+  ].filter((signal) => signal.available > 0);
+  const totalWeight = weightedSignals.reduce((sum, signal) => sum + signal.weight, 0);
+  const matchedWeight = weightedSignals.reduce(
+    (sum, signal) => sum + signal.weight * Math.min(1, signal.matched / signal.available),
+    0
+  );
+  const score = Math.min(98, Math.max(25, 25 + Math.round(73 * (matchedWeight / Math.max(1, totalWeight)))));
+  const reasonsJson = [
+    ...skillMatches.slice(0, 3).map((term) => `Skill evidence matches campaign criterion "${term}".`),
+    ...industryMatches.slice(0, 2).map((term) => `Industry evidence matches campaign criterion "${term}".`),
+    ...locationMatches.slice(0, 1).map((term) => `Location matches campaign preference "${term}".`),
+    ...keywordMatches.slice(0, 3).map((word) => `Profile matches campaign keyword "${word}".`),
+  ];
+  const risksJson: string[] = [];
+  if (criteria.skills.length && !skillMatches.length) risksJson.push("No campaign skill criteria were found in the profile evidence.");
+  if (criteria.industries.length && !industryMatches.length) risksJson.push("No campaign industry criteria were found in the profile evidence.");
+  if (criteria.locations.length && !locationMatches.length) risksJson.push("The profile location does not match a campaign location preference.");
+  if (score < criteria.minimumFitScore) {
+    risksJson.push(`Fit score is below the campaign threshold of ${criteria.minimumFitScore}%; review relevance before drafting outreach.`);
+  }
+  const profileEvidence = [mentor.headline, mentor.bio, mentor.skills.length, mentor.industries.length, mentor.location].filter(Boolean).length;
 
   return {
     score,
-    confidence: Math.min(0.95, 0.45 + matches.length * 0.08),
-    reasonsJson: matches.length
-      ? matches.slice(0, 5).map((word) => `Profile matches campaign keyword "${word}".`)
-      : ["Profile was imported for manual review; not enough structured evidence for a strong automated match."],
-    risksJson: score < 60 ? ["Low keyword overlap; review relevance before drafting outreach."] : [],
+    confidence: Math.min(0.95, 0.5 + Math.min(0.25, structuredCriteria * 0.03) + profileEvidence * 0.04),
+    reasonsJson: reasonsJson.length
+      ? reasonsJson.slice(0, 7)
+      : ["Structured campaign criteria are present, but this profile does not contain matching evidence yet."],
+    risksJson,
   };
+}
+
+function rescoreCampaignMentors(state: LedgerState, campaign: OutreachCampaign) {
+  const mentors = state.mentorProfiles.filter((mentor) => mentor.campaignId === campaign.id);
+  for (const mentor of mentors) {
+    const assessmentInput = scoreMentor(campaign, mentor);
+    const assessment = state.matchAssessments.find((item) => item.mentorProfileId === mentor.id);
+    if (assessment) {
+      Object.assign(assessment, assessmentInput);
+    } else {
+      state.matchAssessments.unshift({
+        id: randomUUID(),
+        mentorProfileId: mentor.id,
+        campaignId: campaign.id,
+        ...assessmentInput,
+        createdAt: now(),
+      });
+    }
+  }
+  return mentors.length;
 }
 
 function countMatches(text: string, patterns: RegExp[]) {
@@ -2261,12 +2393,12 @@ function createMentorRecord(state: LedgerState, campaign: OutreachCampaign, body
     source: String(body?.source || sourceRecord?.sourceType || campaign.source || "manual"),
     sourceRecordId: sourceRecord?.id || null,
     sourceProfileId: body?.sourceProfileId ? String(body.sourceProfileId) : null,
-    profileUrl: body?.profileUrl ? String(body.profileUrl) : null,
+    profileUrl: safeProfileUrl(body?.profileUrl),
     name,
     headline: String(body?.headline || body?.role || "Mentor"),
     bio: String(body?.bio || body?.goal || ""),
-    skills: Array.isArray(body?.skills) ? body.skills.map(String) : String(body?.skills || "").split(",").map((item) => item.trim()).filter(Boolean),
-    industries: Array.isArray(body?.industries) ? body.industries.map(String) : [],
+    skills: stringList(body?.skills),
+    industries: stringList(body?.industries),
     location: String(body?.location || ""),
     availability: String(body?.availability || "Unknown"),
     contactMethod: String(body?.contactMethod || "manual"),
@@ -2529,7 +2661,11 @@ export function registerLedgerRoutes(app: Express) {
     const totals = state.campaigns.reduce(
       (acc, campaign) => ({
         mentors: acc.mentors + campaign.totalMentors,
-        strongMatches: acc.strongMatches + state.matchAssessments.filter((item) => item.campaignId === campaign.id && item.score >= 70).length,
+        strongMatches:
+          acc.strongMatches +
+          state.matchAssessments.filter(
+            (item) => item.campaignId === campaign.id && item.score >= campaignFitThreshold(campaign)
+          ).length,
         drafts: acc.drafts + campaign.messagesDrafted,
         approvals: acc.approvals + campaign.messagesApproved,
         sent: acc.sent + campaign.messagesSent,
@@ -2636,6 +2772,7 @@ export function registerLedgerRoutes(app: Express) {
     const campaign = requireCampaign(state, routeId(req));
     if (!campaign) return jsonError(res, 404, "Campaign not found");
     const before = { ...campaign };
+    const beforeScoringInput = campaignScoringSignature(campaign);
     if (typeof req.body?.title === "string" && req.body.title.trim()) campaign.title = req.body.title.trim();
     if (typeof req.body?.goal === "string" && req.body.goal.trim()) campaign.goal = req.body.goal.trim();
     if (typeof req.body?.targetMentorType === "string" && req.body.targetMentorType.trim()) {
@@ -2663,10 +2800,12 @@ export function registerLedgerRoutes(app: Express) {
     if (req.body?.criteriaJson && typeof req.body.criteriaJson === "object") {
       campaign.criteriaJson = campaignCriteria(req.body.criteriaJson);
     }
+    const afterScoringInput = campaignScoringSignature(campaign);
+    const rescoredMentors = beforeScoringInput === afterScoringInput ? 0 : rescoreCampaignMentors(state, campaign);
     campaign.updatedAt = now();
     recalcCampaign(state, campaign.id);
-    audit(state, "updated_campaign", "campaign", campaign.id, campaign, { beforeState: before, riskLevel: "medium" });
-    return { campaign };
+    audit(state, "updated_campaign", "campaign", campaign.id, { campaign, rescoredMentors }, { beforeState: before, riskLevel: "medium" });
+    return { campaign, rescoredMentors };
   }));
 
   app.get("/api/campaigns/:id", route((req, res, state) => {
@@ -2760,6 +2899,8 @@ export function registerLedgerRoutes(app: Express) {
         headline: field(row, "headline", ["headline", "role", "title"]),
         bio: field(row, "bio", ["bio", "goal", "context", "description"]),
         skills: field(row, "skills", ["skills", "skill"]),
+        industries: field(row, "industries", ["industries", "industry", "sectors", "sector"]),
+        location: field(row, "location", ["location", "city", "region", "country"]),
         profileUrl: field(row, "profileUrl", ["profileurl", "profile url", "url", "source url", "profile"]),
         notes: field(row, "notes", ["notes", "note"]),
         sourceRecordId: sourceRecord?.id || null,
@@ -2877,22 +3018,14 @@ export function registerLedgerRoutes(app: Express) {
     if (typeof req.body?.name === "string" && req.body.name.trim()) mentor.name = req.body.name.trim();
     if (typeof req.body?.headline === "string") mentor.headline = req.body.headline;
     if (typeof req.body?.bio === "string") mentor.bio = req.body.bio;
-    if (typeof req.body?.profileUrl === "string") mentor.profileUrl = req.body.profileUrl || null;
+    if (typeof req.body?.profileUrl === "string") mentor.profileUrl = safeProfileUrl(req.body.profileUrl);
     if (typeof req.body?.source === "string") mentor.source = req.body.source;
     if (typeof req.body?.location === "string") mentor.location = req.body.location;
     if (typeof req.body?.availability === "string") mentor.availability = req.body.availability;
     if (typeof req.body?.contactMethod === "string") mentor.contactMethod = req.body.contactMethod;
     if (typeof req.body?.notes === "string") mentor.notes = req.body.notes;
-    if (Array.isArray(req.body?.skills)) {
-      mentor.skills = req.body.skills.map(String);
-    } else if (typeof req.body?.skills === "string") {
-      mentor.skills = req.body.skills.split(",").map((item: string) => item.trim()).filter(Boolean);
-    }
-    if (Array.isArray(req.body?.industries)) {
-      mentor.industries = req.body.industries.map(String);
-    } else if (typeof req.body?.industries === "string") {
-      mentor.industries = req.body.industries.split(",").map((item: string) => item.trim()).filter(Boolean);
-    }
+    if (Array.isArray(req.body?.skills) || typeof req.body?.skills === "string") mentor.skills = stringList(req.body.skills);
+    if (Array.isArray(req.body?.industries) || typeof req.body?.industries === "string") mentor.industries = stringList(req.body.industries);
     if (["new", "matched", "drafted", "approved", "contacted", "responded", "follow_up", "closed"].includes(String(req.body?.stage))) {
       mentor.stage = String(req.body.stage) as MentorStage;
     }
@@ -2900,10 +3033,7 @@ export function registerLedgerRoutes(app: Express) {
     const assessmentInput = scoreMentor(campaign, mentor);
     const assessment = state.matchAssessments.find((item) => item.mentorProfileId === mentor.id);
     if (assessment) {
-      assessment.score = assessmentInput.score;
-      assessment.confidence = assessmentInput.confidence;
-      assessment.reasonsJson = assessmentInput.reasonsJson;
-      assessment.risksJson = assessmentInput.risksJson;
+      Object.assign(assessment, assessmentInput);
     } else {
       state.matchAssessments.unshift({
         id: randomUUID(),

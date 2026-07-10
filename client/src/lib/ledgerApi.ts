@@ -22,6 +22,10 @@ export type Campaign = {
     tone?: string;
     followUpAfterDays?: number;
     requiredApproval?: boolean;
+    skills?: string[];
+    industries?: string[];
+    locations?: string[];
+    minimumFitScore?: number;
   };
   totalMentors: number;
   messagesDrafted: number;
@@ -53,6 +57,8 @@ export type MentorProfile = {
   headline: string;
   bio: string;
   skills: string[];
+  industries: string[];
+  location: string;
   source: string;
   sourceRecordId: string | null;
   profileUrl: string | null;
@@ -492,7 +498,7 @@ export type MentorImportResult = {
   imported: MentorProfile[];
 };
 
-export type MentorCsvColumnMap = Partial<Record<"name" | "company" | "headline" | "bio" | "skills" | "profileUrl" | "notes" | "source" | "priority" | "stage", string>>;
+export type MentorCsvColumnMap = Partial<Record<"name" | "company" | "headline" | "bio" | "skills" | "industries" | "location" | "profileUrl" | "notes" | "source" | "priority" | "stage", string>>;
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(url, {
@@ -558,7 +564,7 @@ export const ledgerApi = {
       body: JSON.stringify(payload),
     }),
   updateCampaign: (campaignId: string, payload: Partial<Pick<Campaign, "projectId" | "title" | "goal" | "targetMentorType" | "source" | "status" | "criteriaJson">>) =>
-    request<{ campaign: Campaign }>(`/api/campaigns/${campaignId}`, {
+    request<{ campaign: Campaign; rescoredMentors: number }>(`/api/campaigns/${campaignId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
@@ -586,6 +592,8 @@ export const ledgerApi = {
     headline: string;
     bio: string;
     skills: string;
+    industries: string;
+    location: string;
     profileUrl: string;
     sourceRecordId?: string;
     notes: string;
@@ -602,6 +610,8 @@ export const ledgerApi = {
     headline: string;
     bio: string;
     skills: string;
+    industries: string;
+    location: string;
     profileUrl: string;
     notes: string;
     stage: MentorStage;

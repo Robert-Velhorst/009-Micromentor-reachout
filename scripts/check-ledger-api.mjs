@@ -182,6 +182,10 @@ try {
         tone: "direct, practical, respectful",
         followUpAfterDays: 3,
         requiredApproval: true,
+        skills: ["automation", "operations"],
+        industries: ["technology"],
+        locations: ["Amsterdam"],
+        minimumFitScore: 72,
       },
     }),
   });
@@ -189,6 +193,8 @@ try {
   assert(campaignResult.campaign.projectId === projectResult.project.id, "Campaign did not persist selected project");
   assert(campaignResult.campaign.criteriaJson.followUpAfterDays === 3, "Campaign follow-up rule did not persist on create");
   assert(campaignResult.campaign.criteriaJson.tone === "direct, practical, respectful", "Campaign tone did not persist on create");
+  assert(campaignResult.campaign.criteriaJson.skills.join(",") === "automation,operations", "Campaign skill criteria did not persist on create");
+  assert(campaignResult.campaign.criteriaJson.minimumFitScore === 72, "Campaign fit threshold did not persist on create");
   await expectFailure(
     `/api/campaigns/${campaignId}`,
     {
@@ -210,6 +216,10 @@ try {
         tone: "direct, practical, edited",
         followUpAfterDays: 5,
         requiredApproval: true,
+        skills: ["automation", "operations"],
+        industries: ["technology"],
+        locations: ["Amsterdam"],
+        minimumFitScore: 72,
       },
     }),
   });
@@ -220,6 +230,8 @@ try {
   assert(updatedCampaign.campaign.source === "edited-smoke-test", "Campaign update did not persist source");
   assert(updatedCampaign.campaign.criteriaJson.followUpAfterDays === 5, "Campaign update did not persist follow-up rule");
   assert(updatedCampaign.campaign.criteriaJson.tone === "direct, practical, edited", "Campaign update did not persist tone");
+  assert(updatedCampaign.campaign.criteriaJson.industries[0] === "technology", "Campaign update did not persist industry criteria");
+  assert(updatedCampaign.campaign.criteriaJson.locations[0] === "Amsterdam", "Campaign update did not persist location criteria");
 
   const sourceResult = await api(`/api/campaigns/${campaignId}/sources`, {
     method: "POST",
@@ -262,24 +274,77 @@ try {
       headline: "Startup automation advisor",
       bio: "Advisor with automation, operations, and outreach workflow experience.",
       skills: "automation, operations, outreach",
+      industries: "technology, software",
+      location: "Amsterdam",
       sourceRecordId: sourceResult.source.id,
     }),
   });
-  assert(mentorResult.assessment.score >= 35, "Mentor assessment was not created");
+  assert(mentorResult.assessment.score >= 72, "Structured mentor assessment did not meet the campaign fit threshold");
+  assert(mentorResult.assessment.reasonsJson.some((reason) => reason.includes("Skill evidence")), "Structured mentor assessment did not explain skill evidence");
+  assert(mentorResult.assessment.reasonsJson.some((reason) => reason.includes("Industry evidence")), "Structured mentor assessment did not explain industry evidence");
+  assert(mentorResult.assessment.reasonsJson.some((reason) => reason.includes("Location matches")), "Structured mentor assessment did not explain location evidence");
   assert(mentorResult.mentor.sourceRecordId === sourceResult.source.id, "Manual mentor create did not preserve source record link");
+  assert(mentorResult.mentor.industries.includes("technology"), "Manual mentor create did not preserve industries");
+  assert(mentorResult.mentor.location === "Amsterdam", "Manual mentor create did not preserve location");
   const mentorId = mentorResult.mentor.id;
+
+  const mismatchedCampaign = await api(`/api/campaigns/${campaignId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      targetMentorType: "Quantum agriculture advisor",
+      criteriaJson: {
+        tone: "direct, practical, edited",
+        followUpAfterDays: 5,
+        requiredApproval: true,
+        skills: ["quantum computing"],
+        industries: ["agriculture"],
+        locations: ["Tokyo"],
+        minimumFitScore: 80,
+      },
+    }),
+  });
+  assert(mismatchedCampaign.rescoredMentors === 1, "Campaign criteria update did not rescore existing mentors");
+  const mismatchedMentor = await api(`/api/mentors/${mentorId}`);
+  assert(mismatchedMentor.assessment.score < 80, "Campaign-wide rescore did not lower a mismatched mentor score");
+  assert(mismatchedMentor.assessment.risksJson.some((risk) => risk.includes("threshold of 80%")), "Campaign-wide rescore did not explain threshold risk");
+  const mismatchedActions = await api(`/api/campaigns/${campaignId}/actions`);
+  assert(
+    mismatchedActions.actions.some((action) => action.type === "review_fit" && action.mentorProfileId === mentorId),
+    "Below-threshold mentor did not receive a fit-review action"
+  );
+
+  const restoredCampaign = await api(`/api/campaigns/${campaignId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      targetMentorType: "Edited automation mentor profile",
+      criteriaJson: {
+        tone: "direct, practical, edited",
+        followUpAfterDays: 5,
+        requiredApproval: true,
+        skills: ["automation", "operations"],
+        industries: ["technology"],
+        locations: ["Amsterdam"],
+        minimumFitScore: 72,
+      },
+    }),
+  });
+  assert(restoredCampaign.rescoredMentors === 1, "Restoring campaign criteria did not rescore existing mentors");
+  const restoredMentor = await api(`/api/mentors/${mentorId}`);
+  assert(restoredMentor.assessment.score > mismatchedMentor.assessment.score, "Restored campaign criteria did not refresh mentor fit score");
+  const fitSummary = await api("/api/ledger/summary");
+  assert(fitSummary.totals.strongMatches === 1, "Ledger summary did not use the campaign strong-fit threshold");
 
   const updatedMentor = await api(`/api/mentors/${mentorId}`, {
     method: "PATCH",
-    body: JSON.stringify({ notes: "Strong test fit", stage: "matched" }),
+    body: JSON.stringify({ notes: "=1+1", stage: "matched" }),
   });
-  assert(updatedMentor.mentor.notes === "Strong test fit", "Mentor update did not persist");
+  assert(updatedMentor.mentor.notes === "=1+1", "Mentor update did not persist");
 
   const csvText = [
-    "name,company,headline,bio,skills,profileUrl,notes",
-    '"Grace Hopper","Compiler Co","Systems mentor","Automation, operations, and developer tooling mentor","automation, tooling","https://example.com/grace","quoted csv row"',
-    '"Grace Hopper","Compiler Co","Duplicate mentor","Duplicate should be skipped","automation","https://example.com/grace","duplicate"',
-    ',Missing Name Co,No name row,Should skip,operations,,',
+    "name,company,headline,bio,skills,industries,location,profileUrl,notes",
+    '"Grace Hopper","Compiler Co","Systems mentor","Automation, operations, and developer tooling mentor","automation, tooling","technology, software","Amsterdam","https://example.com/grace","quoted csv row"',
+    '"Grace Hopper","Compiler Co","Duplicate mentor","Duplicate should be skipped","automation","technology","Amsterdam","https://example.com/grace","duplicate"',
+    ',Missing Name Co,No name row,Should skip,operations,technology,Amsterdam,,',
   ].join("\n");
   const importPreview = await api(`/api/campaigns/${campaignId}/mentors/import`, {
     method: "POST",
@@ -294,18 +359,20 @@ try {
   });
   assert(importResult.importedCount === 1, "CSV import did not import exactly one mentor");
   assert(importResult.imported[0].sourceRecordId === sourceResult.source.id, "CSV import did not preserve source record link");
+  assert(importResult.imported[0].industries.includes("technology"), "CSV import did not preserve industries");
+  assert(importResult.imported[0].location === "Amsterdam", "CSV import did not preserve location");
   const sourceAfterCsvImport = await api(`/api/campaigns/${campaignId}/sources`);
   const linkedImportSource = sourceAfterCsvImport.sources.find((source) => source.id === sourceResult.source.id);
   assert(linkedImportSource.importedCount === 3, "Linked source record did not track CSV imported count");
   assert(linkedImportSource.status === "imported", "Linked source record did not remain imported after CSV import");
   const exportResult = await api(`/api/campaigns/${campaignId}/mentors/export`);
   assert(exportResult.csv.includes("Grace Hopper"), "CSV export did not include imported mentor");
-  assert(exportResult.csv.startsWith("name,company,headline,bio,skills,source,sourceSearch,"), "CSV export did not include source search header");
+  assert(exportResult.csv.startsWith("name,company,headline,bio,skills,industries,location,source,sourceSearch,"), "CSV export did not include structured profile and source search headers");
   assert(exportResult.csv.includes("Smoke MicroMentor search"), "CSV export did not include linked source search name");
 
   const mappedCsvText = [
-    "Full Name,Org,Role,Goal,Profile,Internal Notes,Priority,Stage",
-    '"Katherine Johnson","Trajectory Co","Navigation advisor","Operations mentor for precise execution","https://example.com/katherine","mapping row","high","new"',
+    "Full Name,Org,Role,Goal,Sectors,Region,Profile,Internal Notes,Priority,Stage",
+    '"Katherine Johnson","Trajectory Co","Navigation advisor","Operations mentor for precise execution","Aerospace","Virginia","https://example.com/katherine","mapping row","high","new"',
   ].join("\n");
   const mappedImport = await api(`/api/campaigns/${campaignId}/mentors/import`, {
     method: "POST",
@@ -316,6 +383,8 @@ try {
         company: "Org",
         headline: "Role",
         bio: "Goal",
+        industries: "Sectors",
+        location: "Region",
         profileUrl: "Profile",
         notes: "Internal Notes",
         priority: "Priority",
@@ -325,6 +394,8 @@ try {
   });
   assert(mappedImport.importedCount === 1, "Mapped CSV import did not import exactly one mentor");
   assert(mappedImport.imported[0].profileUrl === "https://example.com/katherine", "Mapped profile URL did not persist");
+  assert(mappedImport.imported[0].industries[0] === "Aerospace", "Mapped industries did not persist");
+  assert(mappedImport.imported[0].location === "Virginia", "Mapped location did not persist");
   assert(mappedImport.imported[0].stage === "new", "Mapped mentor stage did not persist");
   const declineMentorId = mappedImport.imported[0].id;
 
@@ -336,9 +407,11 @@ try {
       headline: "Duplicate profile row",
       bio: "A manually entered duplicate profile for duplicate outreach guard coverage.",
       skills: "automation",
+      profileUrl: "javascript:alert(1)",
     }),
   });
   assert(duplicateMentor.duplicateCount >= 1, "Manual duplicate mentor was not detected");
+  assert(duplicateMentor.mentor.profileUrl === null, "Unsafe mentor profile URL scheme was not removed");
 
   const draftResult = await api(`/api/campaigns/${campaignId}/messages`, {
     method: "POST",
@@ -631,7 +704,7 @@ try {
   assert(historyExport.csv.includes("Smoke MicroMentor search"), "Campaign history export did not include linked source search name");
   assert(historyExport.csv.includes("sent"), "Campaign history export did not include sent message state");
   assert(historyExport.csv.includes("booked"), "Campaign history export did not include outcome state");
-  assert(historyExport.csv.includes("Strong test fit"), "Campaign history export did not include mentor notes");
+  assert(historyExport.csv.includes("'=1+1"), "Campaign history export did not neutralize spreadsheet formula content");
 
   const backup = await api("/api/workspace/backup");
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");

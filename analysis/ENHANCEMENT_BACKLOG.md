@@ -73,6 +73,25 @@ Why now: it improves quality without adding risk or heavy dependencies.
 Status: Implemented in the operating-ledger branch with persisted per-draft quality reviews, unresolved-token approval blocking, length/reading-time/personalization/call-to-action checks, review-queue UI warnings, and smoke-test coverage.
 Generated first-touch drafts and follow-up suggestions now apply the campaign's stored tone and preserve the campaign goal in the generated text.
 
+### P1 - Structured Fit Criteria And Automatic Rescoring
+
+Problem: campaign fit originally relied on broad goal-keyword overlap and a fixed threshold. Editing the campaign goal or target profile left existing mentor assessments stale.
+
+Build:
+- Store campaign skill, industry, location, and minimum-fit criteria.
+- Explain matching and missing evidence by criterion.
+- Use each campaign's threshold for strong-match totals and draft recommendations.
+- Rescore existing mentors when scoring inputs change, but not for unrelated tone, status, or follow-up edits.
+- Preserve industries and location through manual intake, mapped CSV import, mentor export, and campaign-history export.
+
+Acceptance:
+- A matching mentor receives criterion-specific reasons.
+- A below-threshold mentor receives a threshold risk and fit-review action.
+- Editing scoring criteria updates existing assessments without re-importing profiles.
+- Structured profile data round-trips through CSV.
+
+Status: Implemented in the operating-ledger branch with normalized persisted criteria, transparent weighted scoring, campaign-wide rescoring, threshold-aware summaries/actions, command-center controls, CSV round-trip support, and API smoke coverage for both matched and deliberately mismatched criteria.
+
 ### P1 - Ngrok Status And Exposure Controls
 
 Problem: the default runtime can expose the app through ngrok, but the UI does not show whether the app is local-only, tunneled, or protected by basic auth.
@@ -190,6 +209,7 @@ The same smoke path verifies campaign tone/goal propagation into generated outre
 ## Resource Usage Enhancements
 
 Done:
+- Campaign-wide fit recalculation runs only when goal, target mentor type, structured fit criteria, or threshold changes; tone, status, and follow-up-only edits avoid unnecessary scorer work.
 - Persisted local invoice/usage-report records generated from stored billing records. Invoice reports are audit logged, included in workspace backup/restore/reset summaries, and explicitly documented as local records rather than external charges.
 - Removed Google Fonts requests and switched to local system font stacks so private/offline installs do not contact external font hosts during normal rendering.
 - Added production surface assertions to the release gate so root HTML, CSP, browser hardening headers, and external asset regressions are checked before installer builds.
@@ -210,6 +230,7 @@ Avoid for now:
 ## Security Enhancements
 
 Done:
+- Restricted stored profile handoff URLs to HTTP(S), neutralized spreadsheet formula prefixes in CSV exports, and bounded structured scoring lists.
 - Added ngrok exposure status and unauthenticated tunnel warning.
 - Added JSON backup validation and schema versioning before restore.
 - Added optional passphrase-based encrypted local ledger storage for sensitive mentor, message, and campaign data.
