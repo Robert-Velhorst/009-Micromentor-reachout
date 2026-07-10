@@ -5,6 +5,7 @@ import {
   Check,
   ClipboardCheck,
   Copy,
+  Download,
   Euro,
   ExternalLink,
   Eye,
@@ -38,6 +39,7 @@ import {
   type HaiIntegrationStatus,
   type HealthStatus,
   type LedgerSummary,
+  type ManualHandoffPackage,
   type MessageDraft,
   type MentorSource,
   type MentorCsvColumnMap,
@@ -465,6 +467,7 @@ export default function Home() {
   const [haiStatus, setHaiStatus] = useState<HaiIntegrationStatus | null>(null);
   const [runtimeCopyStatus, setRuntimeCopyStatus] = useState("");
   const [handoffStatus, setHandoffStatus] = useState<Record<string, string>>({});
+  const [handoffFallback, setHandoffFallback] = useState<Record<string, string>>({});
   const [selectedTimeline, setSelectedTimeline] = useState<MentorRelationshipTimeline | null>(null);
   const [workspaceBackupText, setWorkspaceBackupText] = useState("");
   const [workspacePreview, setWorkspacePreview] = useState<WorkspaceSummary | null>(null);
@@ -498,6 +501,7 @@ export default function Home() {
       setHealthStatus(nextHealthStatus);
       setRuntimeStatus(nextRuntimeStatus);
       setHaiStatus(nextHaiStatus);
+      setDraftEdits({});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
     } finally {
@@ -1031,19 +1035,56 @@ export default function Home() {
     }
   };
   const copyDraftForHandoff = async (message: MessageDraft) => {
-    const subject = draftEdits[message.id]?.subject ?? message.subject;
-    const body = draftEdits[message.id]?.body ?? message.body;
-    const handoffText = `Subject: ${subject}\n\n${body}`;
+    let handoff: ManualHandoffPackage;
+    try {
+      ({ handoff } = await ledgerApi.prepareManualHandoff(message.id));
+    } catch (err) {
+      setHandoffStatus((current) => ({
+        ...current,
+        [message.id]: err instanceof Error ? err.message : "Unable to prepare the approved handoff.",
+      }));
+      return;
+    }
+    const handoffText = `Subject: ${handoff.subject}\n\n${handoff.body}`;
     try {
       await copyTextToClipboard(handoffText);
+      setHandoffFallback((current) => ({ ...current, [message.id]: "" }));
       setHandoffStatus((current) => ({
         ...current,
-        [message.id]: "Draft copied for manual paste. Final send remains manual.",
+        [message.id]: "Approved message copied for manual paste. Final send remains manual.",
       }));
     } catch {
+      setHandoffFallback((current) => ({ ...current, [message.id]: handoffText }));
       setHandoffStatus((current) => ({
         ...current,
-        [message.id]: "Clipboard blocked. Select and copy the revealed draft manually.",
+        [message.id]: "Clipboard blocked. Select the approved message below and copy it manually.",
+      }));
+    }
+  };
+  const copyExtensionHandoff = async (message: MessageDraft) => {
+    let handoff: ManualHandoffPackage;
+    try {
+      ({ handoff } = await ledgerApi.prepareManualHandoff(message.id));
+    } catch (err) {
+      setHandoffStatus((current) => ({
+        ...current,
+        [message.id]: err instanceof Error ? err.message : "Unable to prepare the extension handoff.",
+      }));
+      return;
+    }
+    const packageText = JSON.stringify(handoff);
+    try {
+      await copyTextToClipboard(packageText);
+      setHandoffFallback((current) => ({ ...current, [message.id]: "" }));
+      setHandoffStatus((current) => ({
+        ...current,
+        [message.id]: "Approved handoff package copied. Paste it into the MARO extension on the mentor profile.",
+      }));
+    } catch {
+      setHandoffFallback((current) => ({ ...current, [message.id]: packageText }));
+      setHandoffStatus((current) => ({
+        ...current,
+        [message.id]: "Clipboard blocked. Select the approved extension package below and copy it manually.",
       }));
     }
   };
@@ -2113,11 +2154,13 @@ export default function Home() {
               onDraftEdit={setDraftEdits}
               qualityByMessage={qualityByMessage}
               handoffStatus={handoffStatus}
+              handoffFallback={handoffFallback}
               privacyMode={privacyMode}
               isSensitiveVisible={isSensitiveVisible}
               onRevealSensitive={revealSensitive}
               onHideSensitive={hideSensitive}
               onCopyDraft={copyDraftForHandoff}
+              onCopyExtensionHandoff={copyExtensionHandoff}
               onOpenProfile={openProfileForHandoff}
               action={(message) => {
                 const quality = qualityByMessage.get(message.id);
@@ -2132,7 +2175,19 @@ export default function Home() {
                     >
                       Save edit
                     </Button>
-                    <Button className="rounded-md" onClick={() => void mutate(() => ledgerApi.approveDraft(message.id, "Approved in command center"))} disabled={quality?.status === "blocked"}>
+                    <Button
+                      className="rounded-md"
+                      onClick={() =>
+                        void mutate(async () => {
+                          const edit = draftEdits[message.id];
+                          if (edit && (edit.subject !== message.subject || edit.body !== message.body)) {
+                            await ledgerApi.updateDraft(message.id, edit);
+                          }
+                          await ledgerApi.approveDraft(message.id, "Approved in command center");
+                        })
+                      }
+                      disabled={quality?.status === "blocked"}
+                    >
                       <Check className="h-4 w-4" />
                       Approve
                     </Button>
@@ -2151,14 +2206,32 @@ export default function Home() {
               onDraftEdit={setDraftEdits}
               qualityByMessage={qualityByMessage}
               handoffStatus={handoffStatus}
+              handoffFallback={handoffFallback}
               privacyMode={privacyMode}
               isSensitiveVisible={isSensitiveVisible}
               onRevealSensitive={revealSensitive}
               onHideSensitive={hideSensitive}
               onCopyDraft={copyDraftForHandoff}
+              onCopyExtensionHandoff={copyExtensionHandoff}
               onOpenProfile={openProfileForHandoff}
-              action={(message) => (
+              action={(message) => {
+                const edit = draftEdits[message.id];
+                const hasUnsavedEdit = Boolean(edit && (edit.subject !== message.subject || edit.body !== message.body));
+                return (
                 <div className="space-y-2">
+                  {hasUnsavedEdit ? (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                      This approved message has unsaved changes. Save it to return the message to review, then approve the new content.
+                    </div>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    className="w-full rounded-md"
+                    onClick={() => void mutate(() => ledgerApi.updateDraft(message.id, edit || { subject: message.subject, body: message.body }))}
+                    disabled={!hasUnsavedEdit}
+                  >
+                    Save edit and return to review
+                  </Button>
                   <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                     <Input
                       type={privacyMode && !isSensitiveVisible(`send-evidence:${message.id}`) ? "password" : "text"}
@@ -2182,7 +2255,7 @@ export default function Home() {
                   <Button
                     className="w-full rounded-md"
                     onClick={() => void mutate(() => ledgerApi.confirmSend(message.id, sendEvidence[message.id] || ""))}
-                    disabled={!sendEvidence[message.id]?.trim()}
+                    disabled={!sendEvidence[message.id]?.trim() || hasUnsavedEdit}
                   >
                     <Send className="h-4 w-4" />
                     Confirm manually sent
@@ -2204,7 +2277,8 @@ export default function Home() {
                     </Button>
                   </div>
                 </div>
-              )}
+              );
+              }}
             />
           </TabsContent>
 
@@ -3513,11 +3587,13 @@ function ReviewColumn({
   onDraftEdit,
   qualityByMessage,
   handoffStatus,
+  handoffFallback,
   privacyMode,
   isSensitiveVisible,
   onRevealSensitive,
   onHideSensitive,
   onCopyDraft,
+  onCopyExtensionHandoff,
   onOpenProfile,
   action,
 }: {
@@ -3528,11 +3604,13 @@ function ReviewColumn({
   onDraftEdit: React.Dispatch<React.SetStateAction<Record<string, Pick<MessageDraft, "subject" | "body">>>>;
   qualityByMessage: Map<string, CampaignDetails["qualityReviews"][number]>;
   handoffStatus: Record<string, string>;
+  handoffFallback: Record<string, string>;
   privacyMode: boolean;
   isSensitiveVisible: (key: string) => boolean;
   onRevealSensitive: (key: string) => void;
   onHideSensitive: (key: string) => void;
   onCopyDraft: (message: CampaignDetails["messages"][number]) => void;
+  onCopyExtensionHandoff: (message: CampaignDetails["messages"][number]) => void;
   onOpenProfile: (messageId: string, profileUrl: string | null | undefined) => void;
   action: (message: CampaignDetails["messages"][number]) => React.ReactNode;
 }) {
@@ -3549,6 +3627,9 @@ function ReviewColumn({
           const latestSendAttempt = sendAttempts[0] || null;
           const draftBodyKey = `draft-body:${message.id}`;
           const draftBodyVisible = isSensitiveVisible(draftBodyKey);
+          const edit = draftEdits[message.id];
+          const hasUnsavedEdit = Boolean(edit && (edit.subject !== message.subject || edit.body !== message.body));
+          const handoffReady = message.status === "approved" && !hasUnsavedEdit;
           return (
             <div key={message.id} className="rounded-md border p-4">
               <div className="mb-3 flex items-start justify-between gap-3">
@@ -3617,9 +3698,7 @@ function ReviewColumn({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-medium">Manual profile handoff</div>
-                    <div className="text-xs leading-5 text-muted-foreground">
-                      Open the source profile and copy the reviewed draft. MARO does not send the message.
-                    </div>
+                    <div className="text-xs leading-5 text-muted-foreground">Open the source profile and hand off only approved content. MARO does not send the message.</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -3637,17 +3716,48 @@ function ReviewColumn({
                       variant="outline"
                       className="rounded-md"
                       onClick={() => onCopyDraft(message)}
-                      disabled={!draftBodyVisible}
+                      disabled={!draftBodyVisible || !handoffReady}
                     >
                       <Copy className="h-4 w-4" />
-                      Copy draft
+                      Copy approved message
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-md"
+                      onClick={() => onCopyExtensionHandoff(message)}
+                      disabled={!draftBodyVisible || !handoffReady}
+                    >
+                      <ClipboardCheck className="h-4 w-4" />
+                      Copy for extension
+                    </Button>
+                    <Button asChild type="button" variant="outline" className="rounded-md">
+                      <a href="/maro-manual-handoff-extension.zip" download>
+                        <Download className="h-4 w-4" />
+                        Extension
+                      </a>
                     </Button>
                   </div>
                 </div>
                 {privacyMode && !draftBodyVisible ? (
                   <div className="mt-2 text-xs text-muted-foreground">Reveal the draft body before copying it for manual handoff.</div>
                 ) : null}
+                {message.status !== "approved" ? (
+                  <div className="mt-2 text-xs text-muted-foreground">Approve this exact message before copying it to an external profile.</div>
+                ) : null}
+                {hasUnsavedEdit ? (
+                  <div className="mt-2 text-xs text-amber-700">Save and re-approve the changed content before external handoff.</div>
+                ) : null}
                 {handoffStatus[message.id] ? <div className="mt-2 text-xs text-muted-foreground">{handoffStatus[message.id]}</div> : null}
+                {handoffFallback[message.id] ? (
+                  <Textarea
+                    aria-label={`Manual handoff fallback for ${mentor?.name || "mentor"}`}
+                    value={handoffFallback[message.id]}
+                    readOnly
+                    onFocus={(event) => event.currentTarget.select()}
+                    className="mt-2 max-h-32 min-h-20 rounded-md font-mono text-xs"
+                  />
+                ) : null}
               </div>
               <div className="mt-4">{action(message)}</div>
             </div>

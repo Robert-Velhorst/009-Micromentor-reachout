@@ -83,4 +83,5 @@ await withBuildRoot(async (buildRoot) => {
     ],
     buildRoot
   );
+  await run(process.execPath, ["scripts/build-extension.mjs"], buildRoot);
 });

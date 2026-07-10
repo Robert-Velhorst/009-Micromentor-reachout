@@ -142,6 +142,21 @@ export type MessageApproval = {
   createdAt: string;
 };
 
+export type ManualHandoffPackage = {
+  kind: "maro-manual-handoff";
+  version: 1;
+  messageDraftId: string;
+  campaignId: string;
+  mentorProfileId: string;
+  mentorName: string;
+  profileUrl: string | null;
+  subject: string;
+  body: string;
+  approvedAt: string;
+  generatedAt: string;
+  expiresAt: string;
+};
+
 export type MessageSendAttempt = {
   id: string;
   messageDraftId: string;
@@ -688,6 +703,10 @@ export const ledgerApi = {
     request<{ draft: MessageDraft }>(`/api/messages/${messageId}/reject`, {
       method: "POST",
       body: JSON.stringify({ decisionReason }),
+    }),
+  prepareManualHandoff: (messageId: string) =>
+    request<{ handoff: ManualHandoffPackage }>(`/api/messages/${messageId}/handoff`, {
+      method: "POST",
     }),
   confirmSend: (messageId: string, deliveryEvidence: string) =>
     request<{ draft: MessageDraft }>(`/api/messages/${messageId}/send-attempt`, {

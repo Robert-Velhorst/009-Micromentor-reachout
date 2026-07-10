@@ -16,12 +16,14 @@ The best next enhancements should make the tool more useful for repeated real ou
 Problem: MARO can mark messages as sent, but completed queue state is not durable and outcomes are too coarse for real follow-up work.
 
 Build:
+
 - Persist campaign runs, message status, sent timestamp, and selected template variables.
 - Add outcome states: queued, copied, sent, replied, booked, declined, follow-up due, archived.
 - Add per-mentor notes and next follow-up date.
 - Add a results view that shows response rate, booking rate, and overdue follow-ups.
 
 Acceptance:
+
 - Refreshing the browser keeps the active campaign and statuses.
 - A user can filter by follow-up due and update outcome state without rebuilding the queue.
 - Export includes status, sent date, outcome, and notes.
@@ -38,6 +40,7 @@ Project context is now visible and enforceable in the command center: operators 
 Problem: bulk import currently splits pasted rows on commas, which breaks quoted CSV values and gives no validation or duplicate warning.
 
 Build:
+
 - Add file import for `.csv`.
 - Support column mapping for name, company, role, goal, URL/profile, notes, priority, and stage.
 - Detect duplicates by normalized name plus company/profile URL.
@@ -45,6 +48,7 @@ Build:
 - Export mentors and campaign history as CSV.
 
 Acceptance:
+
 - Quoted commas and blank optional fields import correctly.
 - Duplicate rows are not silently added.
 - The user can export data and re-import it without losing core fields.
@@ -58,12 +62,14 @@ Status: Implemented in the operating-ledger branch. CSV parsing supports quoted 
 Problem: the template editor accepts any text. Broken variables, missing personalization, overly long drafts, and weak calls to action are only visible after manual review.
 
 Build:
+
 - Validate unsupported `{tokens}` and missing recommended tokens.
 - Show subject/body length, reading time, and per-message personalization coverage.
 - Flag repetitive messages, empty variables, and call-to-action gaps.
 - Add template variants for first touch, follow-up, thank-you, and reactivation.
 
 Acceptance:
+
 - Invalid variables are highlighted before queue build.
 - The preview shows which fields were substituted for the selected mentor.
 - Queue build can continue with warnings, but not with structurally broken variables.
@@ -78,6 +84,7 @@ Generated first-touch drafts and follow-up suggestions now apply the campaign's 
 Problem: campaign fit originally relied on broad goal-keyword overlap and a fixed threshold. Editing the campaign goal or target profile left existing mentor assessments stale.
 
 Build:
+
 - Store campaign skill, industry, location, and minimum-fit criteria.
 - Explain matching and missing evidence by criterion.
 - Use each campaign's threshold for strong-match totals and draft recommendations.
@@ -85,6 +92,7 @@ Build:
 - Preserve industries and location through manual intake, mapped CSV import, mentor export, and campaign-history export.
 
 Acceptance:
+
 - A matching mentor receives criterion-specific reasons.
 - A below-threshold mentor receives a threshold risk and fit-review action.
 - Editing scoring criteria updates existing assessments without re-importing profiles.
@@ -97,6 +105,7 @@ Status: Implemented in the operating-ledger branch with normalized persisted cri
 Problem: source records could be entered manually, but the operator still had to invent every query and decide where to search. Planned sources were also counted as completed searches before any result was recorded.
 
 Build:
+
 - Derive focused MicroMentor, LinkedIn, and open-web queries from campaign target, skill, industry, and location criteria.
 - Keep external source URLs generic so opening a source does not transmit the campaign query.
 - Let the operator copy a query, open a source, and add all recommendations to the ledger explicitly.
@@ -104,6 +113,7 @@ Build:
 - Treat planned sources as incomplete until they are marked searched or imported.
 
 Acceptance:
+
 - A campaign receives a deterministic three-source discovery plan without an external request.
 - Applying the plan twice creates no duplicate source records.
 - Query text never appears in a source launch URL.
@@ -116,12 +126,14 @@ Status: Implemented in the operating-ledger branch with derived discovery plans,
 Problem: the default runtime can expose the app through ngrok, but the UI does not show whether the app is local-only, tunneled, or protected by basic auth.
 
 Build:
+
 - Add a small runtime status endpoint for local host, port, environment, and tunnel metadata when available.
 - Show local URL, tunnel URL, and auth status in the app header or settings panel.
 - Warn when ngrok is public and `NGROK_BASIC_AUTH` is not set.
 - Add one-click copy for local/tunnel URLs.
 
 Acceptance:
+
 - The user can tell whether the app is private local mode or publicly reachable.
 - The app visibly warns before sensitive local data is exposed without tunnel auth.
 - No external tunnel API is contacted from the browser directly.
@@ -135,12 +147,14 @@ Status: Implemented in the operating-ledger branch with `GET /api/runtime/status
 Problem: localStorage persistence is convenient but opaque. Browser cleanup, profile changes, or installer migration can lose work.
 
 Build:
+
 - Add backup export as JSON with schema version.
 - Add restore import with migration and validation.
 - Add reset options for queue only, mentor data only, or full workspace.
 - Keep the current local-first model; do not require cloud sync.
 
 Acceptance:
+
 - A backup from one install restores on another install.
 - Invalid backup files are rejected with a clear error.
 - Reset actions require confirmation and target only the chosen data scope.
@@ -154,11 +168,13 @@ Status: Implemented in the operating-ledger branch with schema-versioned JSON ex
 Problem: mentor/contact data and drafts are readable in the local ledger when encryption is not configured. This is acceptable for local prototypes, but weaker for real outreach data.
 
 Build:
+
 - Add privacy mode that hides message bodies and notes until revealed.
 - Add optional passphrase-based encryption for stored workspace data.
 - Add clear messaging that forgotten passphrases cannot be recovered.
 
 Acceptance:
+
 - Stored mentors, messages, notes, and campaign history are encrypted when `MARO_LEDGER_PASSPHRASE` is configured.
 - The command center can hide sensitive visible text until the operator reveals a specific item.
 - Existing unencrypted data can be migrated deliberately.
@@ -172,31 +188,35 @@ Status: Implemented for the local-first operating ledger. Server-side ledger enc
 Problem: MARO prepares messages but does not connect recipient records to the source MicroMentor profile or final manual send step.
 
 Build:
+
 - Add mentor profile URL field.
 - Add "open profile" action beside each queued draft.
 - Support a browser-extension handoff that fills or copies a draft while leaving the final send action manual.
 - Store the profile URL in exports and campaign history.
 
 Acceptance:
+
 - Each queued message can open its corresponding profile.
 - The handoff never auto-sends.
 - Failed handoff falls back to copy-to-clipboard.
 
 Why later: strong workflow improvement, but it needs careful compliance and browser-extension QA.
 
-Status: First local handoff slice implemented in the operating-ledger branch. Review queues now show manual profile handoff controls for each draft, can open the stored source profile URL, and can copy the reviewed subject/body to the clipboard only after the draft body is visible in privacy mode. Final send remains outside MARO and still requires manual confirmation evidence before the ledger marks a message sent. Browser-extension form filling remains future work.
+Status: Implemented in the operating-ledger branch. Review queues can open the stored profile and copy only the latest approved subject/body snapshot after privacy reveal. Editing approved content immediately returns the message to draft review, and both handoff creation and send confirmation reject stale approvals. A generated Manifest V3 extension accepts one ten-minute handoff package and fills it only into the matching active MicroMentor profile. It has no background worker, persistent storage, persistent host access, queue processor, network client, or send action; failed field detection falls back to clipboard copy. Final send remains outside MARO and still requires manual confirmation evidence before the ledger marks a message sent.
 
 ### P2 - Installer Signing, Updates, And Uninstall Path
 
 Problem: the current Windows installer works, but it is unsigned and has no update or uninstall flow.
 
 Build:
+
 - Authenticode-sign the installer and installed launcher when a certificate is available.
 - Add version metadata to the installer and installed app.
 - Add Start Menu uninstall shortcut or proper Add/Remove Programs registration.
 - Add optional update check that downloads only signed releases.
 
 Acceptance:
+
 - Windows shows a known publisher after signing.
 - Installed version is visible in the app and README/install metadata.
 - User can remove MARO without manually deleting `%LOCALAPPDATA%\MARO`.
@@ -210,12 +230,14 @@ Status: Partially implemented in the operating-ledger branch. The installer writ
 Problem: current validation relies mostly on typecheck/build/manual installer tests. The app has enough workflow logic to justify focused automated tests.
 
 Build:
+
 - Add unit tests for personalization, CSV parsing, duplicate detection, and persistence migrations.
 - Add component tests for queue build, status changes, import preview, and export.
 - Add a smoke test for server headers and local route serving.
 - Add a documented release checklist for installer validation.
 
 Acceptance:
+
 - Core outreach logic can be changed without manual regression testing every path.
 - CI or local release command blocks on typecheck, unit tests, build, and server smoke test.
 
@@ -228,6 +250,8 @@ The same smoke path verifies campaign tone/goal propagation into generated outre
 ## Resource Usage Enhancements
 
 Done:
+
+- Read-only API requests no longer rewrite and re-encrypt the ledger. A file-metadata-aware in-memory cache avoids repeated scrypt/decryption work while retaining external-file invalidation, and route tests verify summary reads leave encrypted bytes unchanged.
 - Discovery plans are derived on demand from existing campaign criteria and create no background polling, network requests, or duplicate source records.
 - Campaign-wide fit recalculation runs only when goal, target mentor type, structured fit criteria, or threshold changes; tone, status, and follow-up-only edits avoid unnecessary scorer work.
 - Persisted local invoice/usage-report records generated from stored billing records. Invoice reports are audit logged, included in workspace backup/restore/reset summaries, and explicitly documented as local records rather than external charges.
@@ -237,12 +261,14 @@ Done:
 - Aligned the legacy `src/utils/api.js` utility with the real ledger endpoints so it no longer points at removed bulk-send, mentor-delete, or simulated billing flows.
 
 Do next:
+
 - Virtualize mentor and queue tables only after real lists exceed a few hundred rows. The current UI does not need virtualization yet.
 - Move CSV parsing and backup restore validation into chunked browser work if files become large.
 - Keep generated messages derived with `useMemo`; persist only durable campaign snapshots, not every keystroke.
 - Remove or quarantine unused legacy `src/` app code once no longer needed as reference. It increases dependency pressure and code-review noise.
 
 Avoid for now:
+
 - Background polling resource monitors. The old `src/pages/Dashboard.jsx` model simulates usage and adds runtime churn without improving the current end-user workflow.
 - Heavy charting for outreach metrics until campaign history exists.
 - Shipping large binary artifacts in git. Keep installers as release artifacts.
@@ -250,21 +276,26 @@ Avoid for now:
 ## Security Enhancements
 
 Done:
+
 - Restricted stored profile handoff URLs to HTTP(S), neutralized spreadsheet formula prefixes in CSV exports, and bounded structured scoring lists.
 - Added ngrok exposure status and unauthenticated tunnel warning.
 - Added JSON backup validation and schema versioning before restore.
 - Added optional passphrase-based encrypted local ledger storage for sensitive mentor, message, and campaign data.
 - Added UI privacy mode to hide sensitive command-center text until revealed.
 - Added manual profile handoff controls that copy revealed drafts without introducing automated external sending.
+- Removed two publicly bundled legacy archives that contained automated sending and queue-processing code, replacing them with a generated least-privilege manual-fill extension.
+- Bound handoff and send confirmation to the latest approved content snapshot; editing approved content now invalidates approval and is audit logged.
 - Added duplicate outreach guards and review actions so one mentor identity/profile cannot receive multiple active or sent campaign drafts through manual/API paths, and the operator can see which profile needs duplicate review.
 - Added audited duplicate-resolution controls that close duplicate source rows while preserving history and canonical outreach context.
 - Added release-gate checks that prevent the legacy API utility from reintroducing unsafe bulk-send, mentor-delete, or unsupported mentor-update paths.
 - Added release-gate checks that fail on missing security headers, weakened CSP self-only directives, Google Fonts reintroduction, or external asset URLs in the production app shell.
 
 Do next:
+
 - Keep CSP self-only for production assets unless a future integration has an explicit privacy review and documented need.
 
 Avoid for now:
+
 - Automated sending to MicroMentor. It creates account, consent, rate-limit, and platform-policy risk. Keep final send manual until rules and safeguards are explicit.
 - Cloud sync without authentication, encryption, and data-retention decisions.
 

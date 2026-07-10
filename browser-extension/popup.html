@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MARO Manual Handoff</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark">M</div>
+        <div>
+          <h1>MARO handoff</h1>
+          <p>Manual fill only. Sending stays in your hands.</p>
+        </div>
+      </header>
+
+      <label for="handoff">Approved handoff package</label>
+      <textarea
+        id="handoff"
+        rows="8"
+        spellcheck="false"
+        placeholder="Paste the package copied from MARO"
+      ></textarea>
+
+      <div id="recipient" class="recipient" hidden></div>
+      <div id="status" class="status" role="status" aria-live="polite">
+        Waiting for an approved package.
+      </div>
+
+      <div class="actions">
+        <button id="clear" class="secondary" type="button">Clear</button>
+        <button id="fill" type="button" disabled>Fill approved draft</button>
+      </div>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

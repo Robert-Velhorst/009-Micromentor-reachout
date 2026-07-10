@@ -135,6 +135,27 @@ try {
   assert(headerValue(rootPage.response, "referrer-policy").toLowerCase() === "no-referrer", "Missing Referrer-Policy no-referrer header");
   assertIncludes(headerValue(rootPage.response, "permissions-policy"), "camera=()", "Missing restrictive Permissions-Policy header");
 
+  const extensionResponse = await fetch(`${baseUrl}/maro-manual-handoff-extension.zip`);
+  const extensionArchive = Buffer.from(await extensionResponse.arrayBuffer());
+  assert(extensionResponse.status === 200, "Manual handoff extension archive was not served");
+  assertIncludes(headerValue(extensionResponse, "content-type"), "application/zip", "Manual handoff extension did not use a ZIP content type");
+  assert(extensionArchive.readUInt32LE(0) === 0x04034b50, "Manual handoff extension archive is not a valid ZIP file");
+  assert(extensionArchive.includes(Buffer.from("manifest.json")), "Manual handoff extension archive is missing its manifest");
+
+  const extensionManifest = JSON.parse(fs.readFileSync(path.join(root, "browser-extension", "manifest.json"), "utf8"));
+  const extensionPopup = fs.readFileSync(path.join(root, "browser-extension", "popup.js"), "utf8");
+  assert(extensionManifest.version === packageJson.version, "Manual handoff extension version does not match the MARO release version");
+  assert(!fs.existsSync(path.join(root, "client", "public", "maro-extension.zip")), "Unsafe legacy MARO extension archive is still publicly bundled");
+  assert(!fs.existsSync(path.join(root, "client", "public", "mentor-messenger-magic-enhanced.zip")), "Legacy automated-messaging source archive is still publicly bundled");
+  assert(!extensionManifest.background, "Manual handoff extension unexpectedly has a background worker");
+  assert(!extensionManifest.content_scripts, "Manual handoff extension unexpectedly has persistent content scripts");
+  assert(!extensionManifest.host_permissions, "Manual handoff extension unexpectedly requests persistent host access");
+  assert(extensionManifest.permissions.includes("activeTab") && extensionManifest.permissions.includes("scripting"), "Manual handoff extension is missing user-triggered fill permissions");
+  assert(!extensionManifest.permissions.includes("tabs") && !extensionManifest.permissions.includes("storage"), "Manual handoff extension requests unnecessary persistent permissions");
+  assert(!extensionPopup.includes("chrome.storage"), "Manual handoff extension persists sensitive handoff content");
+  assert(!extensionPopup.includes("chrome.tabs.sendMessage"), "Manual handoff extension contains a message-send bridge");
+  assert(!extensionPopup.includes("fetch("), "Manual handoff extension makes an external network request");
+
   const legacyApiUtility = fs.readFileSync(path.join(root, "src", "utils", "api.js"), "utf8");
   assert(!legacyApiUtility.includes("/api/messages/${messageId}/send`"), "Legacy API utility still calls the removed bulk send endpoint");
   assert(!legacyApiUtility.includes("method: 'DELETE'"), "Legacy API utility still exposes mentor deletion");
@@ -190,6 +211,11 @@ try {
     }),
   });
   const campaignId = campaignResult.campaign.id;
+  const encryptedLedgerBeforeReads = fs.readFileSync(ledgerFile);
+  await api("/api/ledger/summary");
+  await api("/api/ledger/summary");
+  const encryptedLedgerAfterReads = fs.readFileSync(ledgerFile);
+  assert(encryptedLedgerBeforeReads.equals(encryptedLedgerAfterReads), "Read-only summary requests rewrote the encrypted ledger");
   assert(campaignResult.campaign.projectId === projectResult.project.id, "Campaign did not persist selected project");
   assert(campaignResult.campaign.criteriaJson.followUpAfterDays === 3, "Campaign follow-up rule did not persist on create");
   assert(campaignResult.campaign.criteriaJson.tone === "direct, practical, respectful", "Campaign tone did not persist on create");
@@ -313,6 +339,7 @@ try {
       skills: "automation, operations, outreach",
       industries: "technology, software",
       location: "Amsterdam",
+      profileUrl: "https://classic.micromentor.org/mentors/ada-tester",
       sourceRecordId: sourceResult.source.id,
     }),
   });
@@ -539,6 +566,36 @@ try {
   });
   const approvedActions = await api(`/api/campaigns/${campaignId}/actions`);
   assert(approvedActions.actions.some((action) => action.type === "confirm_manual_send" && action.messageDraftId === messageId), "Next actions did not include manual send confirmation");
+  const firstHandoff = await api(`/api/messages/${messageId}/handoff`, { method: "POST" });
+  assert(firstHandoff.handoff.kind === "maro-manual-handoff", "Approved handoff package has the wrong kind");
+  assert(firstHandoff.handoff.version === 1, "Approved handoff package has the wrong version");
+  assert(firstHandoff.handoff.messageDraftId === messageId, "Approved handoff package references the wrong message");
+  assert(firstHandoff.handoff.profileUrl === "https://classic.micromentor.org/mentors/ada-tester", "Approved handoff package lost the mentor profile URL");
+  assert(new Date(firstHandoff.handoff.expiresAt).getTime() > Date.now(), "Approved handoff package was not short-lived");
+
+  const invalidatedApproval = await api(`/api/messages/${messageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      subject: firstHandoff.handoff.subject,
+      body: `${firstHandoff.handoff.body}\n\nThis approved-content change must require a new review.`,
+    }),
+  });
+  assert(invalidatedApproval.draft.status === "draft", "Editing approved content did not invalidate approval");
+  await expectFailure(`/api/messages/${messageId}/handoff`, { method: "POST" }, 409);
+  await expectFailure(
+    `/api/messages/${messageId}/send-attempt`,
+    {
+      method: "POST",
+      body: JSON.stringify({ deliveryEvidence: "must not accept stale approval" }),
+    },
+    409
+  );
+  await api(`/api/messages/${messageId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ decisionReason: "Re-approved after content edit" }),
+  });
+  const refreshedHandoff = await api(`/api/messages/${messageId}/handoff`, { method: "POST" });
+  assert(refreshedHandoff.handoff.body.includes("approved-content change"), "Re-approved handoff did not use the current approved snapshot");
   await expectFailure(
     `/api/messages/${messageId}/send-attempt`,
     {

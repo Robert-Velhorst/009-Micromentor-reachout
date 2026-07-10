@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "MARO Manual Handoff",
+  "version": "1.1.0",
+  "description": "Fills one approved MARO draft into the active MicroMentor profile without sending it.",
+  "permissions": ["activeTab", "clipboardWrite", "scripting"],
+  "action": {
+    "default_title": "MARO Manual Handoff",
+    "default_popup": "popup.html"
+  }
+}

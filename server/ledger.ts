@@ -216,6 +216,21 @@ type MessageSendAttempt = {
   createdAt: string;
 };
 
+type ManualHandoffPackage = {
+  kind: "maro-manual-handoff";
+  version: 1;
+  messageDraftId: string;
+  campaignId: string;
+  mentorProfileId: string;
+  mentorName: string;
+  profileUrl: string | null;
+  subject: string;
+  body: string;
+  approvedAt: string;
+  generatedAt: string;
+  expiresAt: string;
+};
+
 type MentorResponse = {
   id: string;
   campaignId: string;
@@ -526,6 +541,13 @@ const LEDGER_ARRAY_KEYS = [
   "auditEvents",
 ] as const;
 let observedApiBytes = 0;
+let ledgerCache: {
+  filePath: string;
+  modifiedAtMs: number;
+  size: number;
+  passphrase: string;
+  state: LedgerState;
+} | null = null;
 
 function now() {
   return new Date().toISOString();
@@ -1130,21 +1152,49 @@ function readState(): LedgerState {
   if (!fs.existsSync(filePath)) {
     const state = createSeedState();
     writeState(state);
-    return state;
+    return structuredClone(state);
+  }
+
+  const stat = fs.statSync(filePath);
+  const passphrase = ledgerPassphrase();
+  if (
+    ledgerCache &&
+    ledgerCache.filePath === filePath &&
+    ledgerCache.modifiedAtMs === stat.mtimeMs &&
+    ledgerCache.size === stat.size &&
+    ledgerCache.passphrase === passphrase
+  ) {
+    return structuredClone(ledgerCache.state);
   }
 
   const stored = parseStoredLedger(fs.readFileSync(filePath, "utf8"));
   const state = normalizeState(stored.state);
-  if (ledgerPassphrase() && !stored.encrypted) {
+  if (passphrase && !stored.encrypted) {
     writeState(state);
+  } else {
+    ledgerCache = {
+      filePath,
+      modifiedAtMs: stat.mtimeMs,
+      size: stat.size,
+      passphrase,
+      state: structuredClone(state),
+    };
   }
-  return state;
+  return structuredClone(state);
 }
 
 function writeState(state: LedgerState) {
   const filePath = dataPath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, encryptLedgerJson(JSON.stringify(state, null, 2)), "utf8");
+  const stat = fs.statSync(filePath);
+  ledgerCache = {
+    filePath,
+    modifiedAtMs: stat.mtimeMs,
+    size: stat.size,
+    passphrase: ledgerPassphrase(),
+    state: structuredClone(state),
+  };
 }
 
 function replaceState(target: LedgerState, next: LedgerState) {
@@ -2298,7 +2348,10 @@ function jsonError(res: Response, status: number, message: string) {
   res.status(status).json({ error: message });
 }
 
-function route(handler: (req: Request, res: Response, state: LedgerState) => unknown) {
+function route(
+  handler: (req: Request, res: Response, state: LedgerState) => unknown,
+  options: { persist?: boolean } = {}
+) {
   return (req: Request, res: Response) => {
     try {
       if (req.body && Object.keys(req.body as Record<string, unknown>).length > 0) {
@@ -2307,7 +2360,8 @@ function route(handler: (req: Request, res: Response, state: LedgerState) => unk
       const state = readState();
       const result = handler(req, res, state);
       if (!res.headersSent) {
-        writeState(state);
+        const persist = options.persist ?? !["GET", "HEAD"].includes(req.method.toUpperCase());
+        if (persist) writeState(state);
         observedApiBytes += Buffer.byteLength(JSON.stringify(result), "utf8");
         res.json(result);
       }
@@ -2395,6 +2449,23 @@ function requireProject(state: LedgerState, projectId: string) {
 
 function requireMessage(state: LedgerState, messageId: string) {
   return state.messageDrafts.find((item) => item.id === messageId);
+}
+
+function latestApprovedSnapshot(state: LedgerState, messageId: string) {
+  return latestByCreatedAt(
+    state.messageApprovals.filter(
+      (item) => item.messageDraftId === messageId && item.decision === "approved"
+    )
+  );
+}
+
+function approvedSnapshotMatchesDraft(state: LedgerState, draft: MessageDraft) {
+  const approval = latestApprovedSnapshot(state, draft.id);
+  return Boolean(
+    approval &&
+      approval.approvedSubjectSnapshot === draft.subject &&
+      approval.approvedBodySnapshot === draft.body
+  );
 }
 
 function routeId(req: Request) {
@@ -2724,7 +2795,7 @@ export function registerLedgerRoutes(app: Express) {
       summary: workspaceSummary(state),
       ledger: state,
     };
-  }));
+  }, { persist: true }));
 
   app.post("/api/workspace/restore/preview", route((req, res) => {
     const validation = validateWorkspaceBackup(req.body || {});
@@ -3100,7 +3171,7 @@ export function registerLedgerRoutes(app: Express) {
       filename: `${exportSlug(campaign.title)}-mentors.csv`,
       csv: mentorsToCsv(mentors, assessments, state.mentorSources.filter((item) => item.campaignId === campaignId)),
     };
-  }));
+  }, { persist: true }));
 
   app.get("/api/campaigns/:id/history/export", route((req, res, state) => {
     const campaignId = routeId(req);
@@ -3112,7 +3183,7 @@ export function registerLedgerRoutes(app: Express) {
       filename: `${exportSlug(campaign.title)}-campaign-history.csv`,
       csv: campaignHistoryToCsv(state, campaign),
     };
-  }));
+  }, { persist: true }));
 
   app.get("/api/mentors", route((req, _res, state) => {
     const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : null;
@@ -3243,11 +3314,31 @@ export function registerLedgerRoutes(app: Express) {
     if (!draft) return jsonError(res, 404, "Message draft not found");
     if (draft.status === "sent") return jsonError(res, 409, "Sent messages cannot be edited");
     const before = { ...draft };
-    draft.subject = String(req.body?.subject ?? draft.subject);
-    draft.body = String(req.body?.body ?? draft.body);
+    const nextSubject = String(req.body?.subject ?? draft.subject);
+    const nextBody = String(req.body?.body ?? draft.body);
+    const contentChanged = nextSubject !== draft.subject || nextBody !== draft.body;
+    draft.subject = nextSubject;
+    draft.body = nextBody;
+    if (contentChanged && (draft.status === "approved" || draft.status === "rejected")) {
+      draft.status = "draft";
+      const mentor = state.mentorProfiles.find((item) => item.id === draft.mentorProfileId);
+      if (mentor && mentor.stage !== "contacted" && mentor.stage !== "responded" && mentor.stage !== "closed") {
+        mentor.stage = "drafted";
+        mentor.updatedAt = now();
+      }
+    }
     draft.updatedAt = now();
     const qualityReview = upsertMessageQualityReview(state, draft);
-    audit(state, "edited_message_draft", "messageDraft", draft.id, { draft, qualityReview }, { beforeState: before, riskLevel: "medium" });
+    const approvalInvalidated = before.status === "approved" && draft.status === "draft";
+    audit(
+      state,
+      approvalInvalidated ? "edited_message_draft_invalidated_approval" : "edited_message_draft",
+      "messageDraft",
+      draft.id,
+      { draft, qualityReview, approvalInvalidated },
+      { beforeState: before, riskLevel: approvalInvalidated ? "high" : "medium" }
+    );
+    recalcCampaign(state, draft.campaignId);
     return { draft, qualityReview };
   }));
 
@@ -3306,11 +3397,51 @@ export function registerLedgerRoutes(app: Express) {
     return { draft, approval };
   }));
 
+  app.post("/api/messages/:id/handoff", route((req, res, state) => {
+    const draft = requireMessage(state, routeId(req));
+    if (!draft) return jsonError(res, 404, "Message draft not found");
+    if (draft.status !== "approved") {
+      return jsonError(res, 409, "Message must be approved before preparing an external handoff");
+    }
+    const approval = latestApprovedSnapshot(state, draft.id);
+    if (!approval || !approvedSnapshotMatchesDraft(state, draft)) {
+      return jsonError(res, 409, "Approved content changed; review and approve the current draft again");
+    }
+    const mentor = state.mentorProfiles.find((item) => item.id === draft.mentorProfileId);
+    if (!mentor) return jsonError(res, 404, "Mentor profile not found");
+    const generatedAt = now();
+    const handoff: ManualHandoffPackage = {
+      kind: "maro-manual-handoff",
+      version: 1,
+      messageDraftId: draft.id,
+      campaignId: draft.campaignId,
+      mentorProfileId: draft.mentorProfileId,
+      mentorName: mentor.name,
+      profileUrl: mentor.profileUrl,
+      subject: approval.approvedSubjectSnapshot,
+      body: approval.approvedBodySnapshot,
+      approvedAt: approval.decidedAt,
+      generatedAt,
+      expiresAt: new Date(new Date(generatedAt).getTime() + 10 * 60 * 1000).toISOString(),
+    };
+    audit(state, "prepared_manual_handoff", "messageDraft", draft.id, {
+      kind: handoff.kind,
+      version: handoff.version,
+      mentorProfileId: handoff.mentorProfileId,
+      approvedAt: handoff.approvedAt,
+      expiresAt: handoff.expiresAt,
+    }, { riskLevel: "medium", approvalId: approval.id });
+    return { handoff };
+  }));
+
   app.post("/api/messages/:id/send-attempt", route((req, res, state) => {
     const draft = requireMessage(state, routeId(req));
     if (!draft) return jsonError(res, 404, "Message draft not found");
     if (draft.status !== "approved") {
       return jsonError(res, 409, "Message must be approved before manual send confirmation");
+    }
+    if (!approvedSnapshotMatchesDraft(state, draft)) {
+      return jsonError(res, 409, "Approved content changed; review and approve the current draft again");
     }
     const campaign = requireCampaign(state, draft.campaignId);
     if (!campaign) return jsonError(res, 404, "Campaign not found");

@@ -26,7 +26,9 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Ngrok access control: development and installed launchers refuse to create unauthenticated public tunnels by default. `NGROK_BASIC_AUTH` enables the normal protected flow; `MARO_ALLOW_PUBLIC_TUNNEL=1` is required for an intentional public override.
 - Local ledger confidentiality: setting `MARO_LEDGER_PASSPHRASE` stores the ledger as an AES-256-GCM encrypted envelope instead of plaintext JSON.
 - Shoulder-surfing reduction: session privacy mode hides mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
-- Manual handoff safety: review queues can open the stored mentor profile URL and copy the revealed reviewed draft, but the app still does not automate external sending.
+- Manual handoff safety: review queues can open the stored mentor profile URL, but external copy/fill uses only a short-lived package built from the latest approved snapshot. Editing an approved draft invalidates approval before any handoff or send confirmation can proceed.
+- Legacy extension exposure: removed two public ZIP archives that contained automated send/queue code, broad permissions, a placeholder remote API, and a no-op rate limiter. The replacement extension has no send capability, background worker, storage, persistent host access, or network client.
+- Extension least privilege: the generated Manifest V3 package requests only user-triggered `activeTab`, `scripting`, and clipboard-write access, validates the active profile against the approved package, and falls back to copying rather than sending when form fill is unavailable.
 - Profile handoff URL hardening: mentor profile links are retained only for `http` and `https`; unsafe or malformed schemes are removed during create, update, and backup normalization.
 - Spreadsheet export hardening: CSV fields beginning with spreadsheet formula prefixes are neutralized before export so imported mentor content cannot become an active formula when opened in Excel.
 - Scoring input bounds: skill, industry, and location lists are deduplicated and capped at 25 entries of 80 characters each before persistence or scoring.
@@ -47,26 +49,22 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 ## Resource Analysis
 
 - Initial production JS observed earlier in the work: about 303.66 KB minified, 95.20 KB gzip.
-- Current production JS after the discovery-plan and clipboard-resilience slice: 315.75 KB minified, 88.56 KB gzip. The discovery controls, derived plan integration, and shared copy fallback added about 3.6 KB minified and 0.9 KB gzip over the structured-fit build without adding a dependency.
-- Current production CSS after removing external webfont references: 109.73 KB minified, 17.46 KB gzip.
-- Final served public payload directory: about 338 KB, down from tens of MB because unused legacy public images/zips are no longer copied into production builds.
+- Current production JS after the approved-handoff slice: 318.69 KB minified, 89.24 KB gzip.
+- Current production CSS: 109.78 KB minified, 17.46 KB gzip.
+- Final served public payload directory: 430.18 KB, including the 11.29 KB generated manual-handoff extension ZIP.
 - Final installer: 33.1 MB, dominated by the embedded Node runtime.
 - Runtime optimizations applied: removed unused app providers, deferred mentor search input, debounced localStorage writes, cleaned stale production public assets, made development debug logging opt-in, and bundled only the current server/runtime payload.
 - Structured mentor scoring remains event-driven: existing profiles are recalculated only when campaign scoring inputs change, with no polling or background scoring process.
 - Discovery plans are read-time derivations over the stored campaign and source ledger; applying them is idempotent and adds no dependency, timer, scraper, or background worker.
+- The manual-fill extension runs only while its popup is open and does not install content scripts, retain a handoff package, poll, queue messages, or run a background worker.
+- Read-only ledger routes no longer rewrite encrypted storage. A file-metadata-aware in-memory cache avoids repeated scrypt/decryption after the first read and returns cloned state to each request; explicit export routes still persist their required audit events.
 
-Current local QA sample on this Windows machine, recorded with one campaign and one structured mentor profile:
+Current encrypted-ledger QA sample on this Windows machine:
 
-- Node working set: 73.43 MB; private memory: 63.89 MB; 12 threads.
-- Local ledger size: 10,140 bytes.
-- Twenty-five persisted `GET /api/ledger/summary` reads averaged 15.53 ms each.
+- Node working set: 66.21 MB; private memory: 31.01 MB; 12 threads.
+- Twenty-five `GET /api/ledger/summary` fetches averaged 3.68 ms after warm-up, down from 78.99 ms before the read-path cache and persistence guard on the same machine.
+- Smoke coverage verifies repeated read-only summary requests do not change the encrypted ledger bytes.
 - These values are a development-machine snapshot rather than a cross-device performance guarantee; they are useful as a regression baseline for later paging or storage work.
-
-Discovery-plan QA sample with three recorded source routes:
-
-- Node working set: 73.48 MB; private memory: 64.91 MB; 12 threads.
-- Local ledger size: 6,652 bytes.
-- Twenty-five derived `GET /api/campaigns/:id/discovery-plan` reads averaged 4.37 ms each, including the current local ledger read/write wrapper.
 
 ## Validation
 
@@ -76,6 +74,7 @@ Discovery-plan QA sample with three recorded source routes:
 - `npm audit`: passed with zero known vulnerabilities after lockfile and build-tool remediation.
 - `node scripts/ngrok.mjs`: refuses to open a tunnel when neither `NGROK_BASIC_AUTH` nor the explicit public override is configured.
 - Safe installer run with `MARO_INSTALL_DIR`, `MARO_SKIP_SHORTCUTS=1`, `MARO_SKIP_REGISTRY=1`, and `MARO_SKIP_LAUNCH=1`: passed.
+- Installer version `1.1.0` contains the generated manual-handoff extension, launcher, and uninstaller, and contains neither legacy automated-messaging archive.
 - Release smoke server: returned HTTP 200 for `/`, enforced restrictive CSP directives, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`, and verified the root app shell had no external asset URLs, Google Fonts references, or development debug-collector injection.
 
 ## Remaining Risks
@@ -89,6 +88,5 @@ Discovery-plan QA sample with three recorded source routes:
 
 Detailed prioritization and acceptance criteria are in `analysis/ENHANCEMENT_BACKLOG.md`.
 
-- Browser-extension form-fill handoff that keeps the final send action manual and reviewable.
 - Authenticode-sign the installer and add signed-release update checks when certificate/release infrastructure exists.
 - Add pagination or table virtualization only after real campaign lists exceed a few hundred mentors.

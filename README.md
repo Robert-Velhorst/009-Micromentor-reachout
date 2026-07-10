@@ -18,7 +18,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
 - Inspect each mentor's relationship timeline across drafts, approvals, sends, replies, follow-ups, outcomes, and audit events.
 - Expose the same privacy-aware relationship timeline through the local ledger API for trusted local integrations.
-- Require approval before a message can be manually confirmed as sent.
+- Require approval before a message can be handed off or manually confirmed as sent, and invalidate approval whenever approved content changes.
 - Convert scheduled follow-ups into linked review drafts before any manual follow-up delivery.
 - Record failed manual send attempts without marking messages sent or scheduling follow-ups.
 - Review draft quality before approval, including unresolved template tokens, personalization coverage, length, reading time, and call-to-action checks.
@@ -38,7 +38,8 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Show whether the app is local-only or reachable through ngrok, including a warning when the tunnel is public without basic auth.
 - Export, validate, restore, and reset the local workspace with schema-versioned JSON backups.
 - Use session privacy mode to hide mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
-- Open the stored source profile and copy a reviewed draft from the message queue for manual MicroMentor handoff; MARO never auto-sends.
+- Open the stored source profile and copy an approved snapshot from the message queue for manual MicroMentor handoff; MARO never auto-sends.
+- Download a least-privilege browser extension that fills one short-lived approved package into the matching active MicroMentor profile without storing content or pressing send.
 - Keep work local by default in a JSON ledger under `data/`, with optional encryption at rest.
 - Render with local system font stacks so normal app use does not depend on external webfont requests.
 
@@ -80,6 +81,7 @@ The Express server now exposes operational API routes before serving the fronten
 - `PATCH /api/messages/:id`
 - `POST /api/messages/:id/approve`
 - `POST /api/messages/:id/reject`
+- `POST /api/messages/:id/handoff`
 - `POST /api/messages/:id/send-attempt`
 - `GET|POST /api/responses`
 - `GET|POST /api/follow-ups`
@@ -111,6 +113,8 @@ Campaign fit criteria are stored as normalized skill, industry, and location lis
 Campaign discovery plans are derived locally from the target mentor type and structured fit criteria. Applying a plan creates only planned source-ledger records and is idempotent; it does not scrape, sign in, search, or contact anyone. Source launch URLs remain generic and do not contain the prepared query, so copying or submitting that query stays an explicit operator action.
 
 Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation. Generated drafts and automatic follow-up suggestions use each campaign's stored tone and follow-up timing rule. Scheduled follow-ups can be converted into linked message drafts, which then use the same review, approval, and manual send confirmation workflow as first-touch outreach. Pending follow-ups are cancelled when a recorded response says the mentor is not interested or unavailable. Failed manual send attempts remain visible in the review queue and do not create follow-up work.
+
+Manual handoff packages contain the latest approved subject/body snapshot, expire after ten minutes, and are rejected after any content edit until the message is approved again. The bundled Manifest V3 extension requests only `activeTab`, `scripting`, and clipboard-write access. It has no background worker, persistent host access, storage, queue processor, network client, or send action. Extract the downloaded extension ZIP and load its folder through the browser's extension developer mode.
 
 Manual duplicate mentor records can remain in the ledger for source history, but MARO blocks active or sent duplicate outreach for the same mentor identity/profile in a campaign, suppresses duplicate draft recommendations, and surfaces a duplicate-profile review action. Resolving a duplicate links it to the canonical mentor identity, closes the duplicate row, cancels its pending follow-ups, and records an audit event without deleting historical source data.
 
