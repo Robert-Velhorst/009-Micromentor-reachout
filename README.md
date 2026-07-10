@@ -12,6 +12,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Open source-specific next actions that preselect the right source for manual or CSV mentor intake when search results remain unimported.
 - Store campaign-level message tone and follow-up timing rules, then apply them to generated drafts and follow-up suggestions.
 - Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
+- Inspect each mentor's relationship timeline across drafts, approvals, sends, replies, follow-ups, outcomes, and audit events.
 - Require approval before a message can be manually confirmed as sent.
 - Convert scheduled follow-ups into linked review drafts before any manual follow-up delivery.
 - Record failed manual send attempts without marking messages sent or scheduling follow-ups.

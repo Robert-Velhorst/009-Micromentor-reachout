@@ -95,6 +95,17 @@ type SourceForm = {
 type CsvColumnKey = keyof Required<MentorCsvColumnMap>;
 type LedgerTab = "ledger" | "mentors" | "review" | "responses" | "billing" | "audit";
 type ResultFilter = "all" | "awaiting_outcome" | "follow_up_due" | "booked" | "declined" | "no_response" | "open";
+type RelationshipTimelineEntry = {
+  id: string;
+  occurredAt: string;
+  label: string;
+  title: string;
+  detail: string;
+  tone: "neutral" | "success" | "warning" | "danger";
+  sensitiveKey?: string;
+  sensitiveText?: string;
+  sensitivePlaceholder?: string;
+};
 
 const csvColumnFields: Array<{ key: CsvColumnKey; label: string; required?: boolean }> = [
   { key: "name", label: "Name", required: true },
@@ -203,6 +214,13 @@ const actionPriorityTone: Record<NextActionRecommendation["priority"], string> =
   low: "border-slate-200 bg-slate-50 text-slate-700",
 };
 
+const timelineTone: Record<RelationshipTimelineEntry["tone"], string> = {
+  neutral: "border-slate-200 bg-slate-50 text-slate-700",
+  success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  warning: "border-amber-200 bg-amber-50 text-amber-700",
+  danger: "border-red-200 bg-red-50 text-red-700",
+};
+
 const actionTabMap: Record<NextActionRecommendation["type"], LedgerTab> = {
   add_mentors: "mentors",
   draft_message: "mentors",
@@ -252,6 +270,114 @@ function groupBy<T>(items: T[], getKey: (item: T) => string) {
 
 function latestByCreatedAt<T extends { createdAt: string }>(items: T[]) {
   return [...items].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0] || null;
+}
+
+function buildRelationshipTimeline({
+  messages,
+  approvalsByMessage,
+  sendAttempts,
+  responses,
+  followUps,
+  outcomes,
+  auditEvents,
+}: {
+  messages: CampaignDetails["messages"];
+  approvalsByMessage: Map<string, CampaignDetails["approvals"]>;
+  sendAttempts: CampaignDetails["sendAttempts"];
+  responses: CampaignDetails["responses"];
+  followUps: CampaignDetails["followUps"];
+  outcomes: CampaignDetails["outcomes"];
+  auditEvents: CampaignDetails["auditEvents"];
+}) {
+  const entries: RelationshipTimelineEntry[] = [];
+
+  for (const message of messages) {
+    entries.push({
+      id: `message:${message.id}`,
+      occurredAt: message.updatedAt,
+      label: "Draft",
+      title: message.subject || "Message draft",
+      detail: `Status: ${message.status}`,
+      tone: message.status === "rejected" ? "danger" : message.status === "sent" ? "success" : message.status === "approved" ? "warning" : "neutral",
+    });
+
+    for (const approval of approvalsByMessage.get(message.id) || []) {
+      entries.push({
+        id: `approval:${approval.id}`,
+        occurredAt: approval.decidedAt || approval.createdAt,
+        label: "Approval",
+        title: approval.decision === "approved" ? "Message approved" : "Message rejected",
+        detail: approval.decisionReason || "No decision reason recorded.",
+        tone: approval.decision === "approved" ? "success" : "danger",
+      });
+    }
+  }
+
+  for (const attempt of sendAttempts) {
+    entries.push({
+      id: `send:${attempt.id}`,
+      occurredAt: attempt.finishedAt || attempt.startedAt || attempt.createdAt,
+      label: "Send",
+      title: attempt.status === "confirmed_sent" ? "Manual send confirmed" : "Manual send failed",
+      detail: attempt.errorMessage || attempt.deliveryEvidence || "No delivery detail recorded.",
+      tone: attempt.status === "confirmed_sent" ? "success" : "danger",
+      sensitiveKey: attempt.deliveryEvidence ? `timeline-send:${attempt.id}` : undefined,
+      sensitiveText: attempt.deliveryEvidence ? `Delivery evidence: ${attempt.deliveryEvidence}` : undefined,
+      sensitivePlaceholder: "Delivery evidence hidden",
+    });
+  }
+
+  for (const response of responses) {
+    entries.push({
+      id: `response:${response.id}`,
+      occurredAt: response.createdAt,
+      label: "Response",
+      title: `Response recorded: ${response.classification.replace("_", " ")}`,
+      detail: response.nextAction || "Classify the response and decide the next step.",
+      tone: response.classification === "interested" || response.classification === "more_info" ? "success" : response.classification === "not_interested" || response.classification === "unavailable" ? "warning" : "neutral",
+      sensitiveKey: `timeline-response:${response.id}`,
+      sensitiveText: response.body || "No response text recorded.",
+      sensitivePlaceholder: "Response text hidden",
+    });
+  }
+
+  for (const followUp of followUps) {
+    entries.push({
+      id: `follow-up:${followUp.id}`,
+      occurredAt: followUp.updatedAt || followUp.createdAt,
+      label: "Follow-up",
+      title: `Follow-up ${followUp.status}`,
+      detail: `Due ${formatDate(followUp.dueAt)}`,
+      tone: followUp.status === "cancelled" ? "warning" : followUp.status === "completed" ? "success" : "neutral",
+      sensitiveKey: `timeline-follow-up:${followUp.id}`,
+      sensitiveText: followUp.suggestedMessage,
+      sensitivePlaceholder: "Follow-up message hidden",
+    });
+  }
+
+  for (const outcome of outcomes) {
+    entries.push({
+      id: `outcome:${outcome.id}`,
+      occurredAt: outcome.updatedAt || outcome.createdAt,
+      label: "Outcome",
+      title: `Outcome: ${outcome.status.replace("_", " ")}`,
+      detail: outcome.summary || "No outcome summary recorded.",
+      tone: outcome.status === "booked" || outcome.status === "helpful" ? "success" : outcome.status === "declined" || outcome.status === "no_response" || outcome.status === "not_relevant" ? "warning" : "neutral",
+    });
+  }
+
+  for (const event of auditEvents.slice(0, 6)) {
+    entries.push({
+      id: `audit:${event.id}`,
+      occurredAt: event.createdAt,
+      label: "Audit",
+      title: event.action.replaceAll("_", " "),
+      detail: `${event.entityType} event recorded with ${event.riskLevel} risk.`,
+      tone: event.riskLevel === "high" ? "danger" : event.riskLevel === "medium" ? "warning" : "neutral",
+    });
+  }
+
+  return entries.sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime());
 }
 
 function parseCsvHeaderCells(text: string) {
@@ -2465,6 +2591,7 @@ function MentorDetailPanel({
   onResolveDuplicate: (mentor: MentorProfile) => void;
 }) {
   const duplicateAction = mentor ? nextActions.find((action) => action.type === "review_duplicate_profile") : null;
+  const timeline = buildRelationshipTimeline({ messages, approvalsByMessage, sendAttempts, responses, followUps, outcomes, auditEvents });
 
   return (
     <Card className="rounded-md py-5">
@@ -2533,6 +2660,14 @@ function MentorDetailPanel({
                 </Button>
               ) : null}
             </div>
+
+            <RelationshipTimeline
+              entries={timeline}
+              privacyMode={privacyMode}
+              isSensitiveVisible={isSensitiveVisible}
+              onRevealSensitive={onRevealSensitive}
+              onHideSensitive={onHideSensitive}
+            />
 
             <div className="rounded-md border p-3">
               <div className="mb-2 text-sm font-medium">Fit reasoning</div>
@@ -2944,6 +3079,68 @@ function WorkspaceSummaryGrid({ summary }: { summary: WorkspaceSummary }) {
       <MiniStat label="Drafts" value={summary.drafts} />
       <MiniStat label="Invoices" value={summary.invoiceRecords} />
       <MiniStat label="Audit" value={summary.auditEvents} />
+    </div>
+  );
+}
+
+function RelationshipTimeline({
+  entries,
+  privacyMode,
+  isSensitiveVisible,
+  onRevealSensitive,
+  onHideSensitive,
+}: {
+  entries: RelationshipTimelineEntry[];
+  privacyMode: boolean;
+  isSensitiveVisible: (key: string) => boolean;
+  onRevealSensitive: (key: string) => void;
+  onHideSensitive: (key: string) => void;
+}) {
+  return (
+    <div className="rounded-md border p-3" data-testid="mentor-relationship-timeline">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-sm font-medium">Relationship timeline</div>
+          <div className="mt-1 text-xs text-muted-foreground">Chronological contact history across drafts, sends, replies, follow-ups, outcomes, and audit events</div>
+        </div>
+        <Badge variant="outline" className="rounded-md">
+          {entries.length}
+        </Badge>
+      </div>
+      {entries.length ? (
+        <div className="space-y-2">
+          {entries.slice(0, 12).map((entry) => (
+            <div key={entry.id} className="rounded-md border bg-background p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{entry.title}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{formatDate(entry.occurredAt)}</div>
+                </div>
+                <Badge variant="outline" className={`rounded-md ${timelineTone[entry.tone]}`}>
+                  {entry.label}
+                </Badge>
+              </div>
+              <div className="mt-2 text-xs leading-5 text-muted-foreground">{entry.detail}</div>
+              {entry.sensitiveKey && entry.sensitiveText ? (
+                <SensitiveText
+                  className="mt-2"
+                  privacyMode={privacyMode}
+                  visible={isSensitiveVisible(entry.sensitiveKey)}
+                  onReveal={() => onRevealSensitive(entry.sensitiveKey as string)}
+                  onHide={() => onHideSensitive(entry.sensitiveKey as string)}
+                  placeholder={entry.sensitivePlaceholder || "Timeline detail hidden"}
+                >
+                  {entry.sensitiveText}
+                </SensitiveText>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+          No relationship events recorded yet.
+        </div>
+      )}
     </div>
   );
 }
