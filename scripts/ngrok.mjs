@@ -9,6 +9,7 @@ const port = Number(process.env.PORT || 3000);
 const host = "127.0.0.1";
 const ngrokCommand = "ngrok";
 const basicAuth = process.env.NGROK_BASIC_AUTH;
+const allowPublicTunnel = process.env.MARO_ALLOW_PUBLIC_TUNNEL === "1";
 
 function run(command, args, options = {}) {
   return spawn(command, args, {
@@ -79,6 +80,12 @@ async function ensureNgrokAvailable() {
   });
 }
 
+if (!basicAuth && !allowPublicTunnel) {
+  console.error("Refusing to open an unauthenticated public ngrok tunnel.");
+  console.error("Set NGROK_BASIC_AUTH=user:password, or set MARO_ALLOW_PUBLIC_TUNNEL=1 only when public access is intentional.");
+  process.exit(1);
+}
+
 const available = await ensureNgrokAvailable();
 if (!available) {
   console.error("ngrok is not installed or is not available on PATH.");
@@ -100,7 +107,7 @@ const ngrokArgs = ["http", `http://${host}:${port}`];
 if (basicAuth) {
   ngrokArgs.push("--basic-auth", basicAuth);
 } else {
-  console.warn("Warning: NGROK_BASIC_AUTH is not set. The tunnel URL will be public if ngrok starts successfully.");
+  console.warn("Warning: MARO_ALLOW_PUBLIC_TUNNEL=1 explicitly allows this tunnel to be public without basic auth.");
 }
 
 const ngrok = run(ngrokCommand, ngrokArgs, {

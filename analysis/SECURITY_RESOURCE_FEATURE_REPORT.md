@@ -23,7 +23,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Missing browser hardening headers: added `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`, and a restrictive CSP.
 - Production error disclosure: `ErrorBoundary` no longer shows stack traces outside development builds.
 - Dev log ingestion DoS and resource-churn risk: the Vite debug collector is now disabled unless `MARO_DEBUG_COLLECTOR=1` is set, and still caps request payloads at 256 KB before writing logs when explicitly enabled.
-- Ngrok access control: launcher supports optional `NGROK_BASIC_AUTH` so a tunnel can require basic auth.
+- Ngrok access control: development and installed launchers refuse to create unauthenticated public tunnels by default. `NGROK_BASIC_AUTH` enables the normal protected flow; `MARO_ALLOW_PUBLIC_TUNNEL=1` is required for an intentional public override.
 - Local ledger confidentiality: setting `MARO_LEDGER_PASSPHRASE` stores the ledger as an AES-256-GCM encrypted envelope instead of plaintext JSON.
 - Shoulder-surfing reduction: session privacy mode hides mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
 - Manual handoff safety: review queues can open the stored mentor profile URL and copy the revealed reviewed draft, but the app still does not automate external sending.
@@ -55,13 +55,13 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - `npm run check`: passed.
 - `npm run check:release`: passed.
 - `npm audit`: passed with zero known vulnerabilities after lockfile and build-tool remediation.
-- `node scripts/ngrok.mjs`: correctly fails fast here because ngrok is not installed on PATH.
+- `node scripts/ngrok.mjs`: refuses to open a tunnel when neither `NGROK_BASIC_AUTH` nor the explicit public override is configured.
 - Safe installer run with `MARO_INSTALL_DIR`, `MARO_SKIP_SHORTCUTS=1`, `MARO_SKIP_REGISTRY=1`, and `MARO_SKIP_LAUNCH=1`: passed.
 - Release smoke server: returned HTTP 200 for `/`, enforced restrictive CSP directives, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`, and verified the root app shell had no external asset URLs, Google Fonts references, or development debug-collector injection.
 
 ## Remaining Risks
 
-- ngrok still creates a public URL when available; use `NGROK_BASIC_AUTH` for shared or sensitive drafts.
+- An operator can still explicitly allow a public tunnel with `MARO_ALLOW_PUBLIC_TUNNEL=1`; this remains unsuitable for sensitive drafts without an additional access-control layer.
 - The installer is not Authenticode-signed and update checks are not implemented. Windows may show an unknown-publisher warning until a code-signing certificate and release channel are used.
 - Mentor/contact data is encrypted at rest only when `MARO_LEDGER_PASSPHRASE` is configured. Workspace backups are portable JSON exports and should still be treated as sensitive files.
 - The app now uses local system font stacks; no external webfont request is needed for normal rendering.

@@ -395,6 +395,7 @@ export type RuntimeStatus = {
   };
   auth: {
     basicAuthConfigured: boolean;
+    publicTunnelExplicitlyAllowed: boolean;
   };
   warnings: Array<"ngrok_public_without_basic_auth" | string>;
 };

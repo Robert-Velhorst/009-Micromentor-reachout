@@ -105,11 +105,17 @@ timeout /t 2 /nobreak >nul
 start "" "%APP_URL%"
 where ngrok >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
-  echo Opening an ngrok tunnel for MARO.
   if defined NGROK_BASIC_AUTH (
+    echo Opening a basic-auth protected ngrok tunnel for MARO.
     start "MARO ngrok tunnel" cmd /k ngrok http http://127.0.0.1:%PORT% --basic-auth "%NGROK_BASIC_AUTH%"
   ) else (
-    start "MARO ngrok tunnel" cmd /k ngrok http http://127.0.0.1:%PORT%
+    if "%MARO_ALLOW_PUBLIC_TUNNEL%"=="1" (
+      echo WARNING: Opening an explicitly allowed public ngrok tunnel without basic auth.
+      start "MARO ngrok tunnel" cmd /k ngrok http http://127.0.0.1:%PORT%
+    ) else (
+      echo Public tunnel not started. Set NGROK_BASIC_AUTH=user:password to open a protected tunnel.
+      echo Set MARO_ALLOW_PUBLIC_TUNNEL=1 only when unauthenticated public access is intentional.
+    )
   )
 ) else (
   echo ngrok was not found on PATH. MARO will still run locally.
@@ -164,8 +170,8 @@ Version ${appVersion}
 Open MARO from the Start Menu shortcut named "MARO".
 
 The app runs locally at http://127.0.0.1:3000/.
-If ngrok is installed and authenticated, the launcher also opens an ngrok tunnel.
-Set NGROK_BASIC_AUTH before launching if you want ngrok basic authentication.
+If ngrok is installed, the launcher opens a tunnel only when NGROK_BASIC_AUTH is set.
+Set MARO_ALLOW_PUBLIC_TUNNEL=1 only when unauthenticated public access is intentional.
 
 To remove MARO, use Windows Settings > Apps > Installed apps, or run the Start Menu shortcut named "Uninstall MARO".
 Close any MARO server or ngrok windows before uninstalling.

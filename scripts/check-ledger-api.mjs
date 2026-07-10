@@ -109,6 +109,7 @@ try {
   assert(runtime.localUrl === baseUrl, "Runtime status did not report the smoke local URL");
   assert(runtime.tunnel.active === false, "Runtime status should not report an active tunnel during smoke test");
   assert(runtime.auth.basicAuthConfigured === false, "Runtime status unexpectedly reported basic auth in smoke test");
+  assert(runtime.auth.publicTunnelExplicitlyAllowed === false, "Runtime status unexpectedly reported public tunnel opt-in in smoke test");
 
   const rootPage = await fetchText("/");
   assert(rootPage.response.status === 200, "Root page did not return HTTP 200");

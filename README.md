@@ -127,7 +127,7 @@ Run the default ngrok flow:
 npm run dev
 ```
 
-This builds the production app, starts the local Node server on `127.0.0.1:3000`, then opens an ngrok tunnel to that local server.
+This builds the production app, starts the local Node server on `127.0.0.1:3000`, then opens a basic-auth protected ngrok tunnel to that local server. Set `NGROK_BASIC_AUTH` first; MARO refuses to create an unprotected tunnel by default.
 
 For a local Vite-only development server:
 
@@ -159,14 +159,21 @@ Install and authenticate ngrok first:
 ngrok config add-authtoken <token>
 ```
 
-Optional basic auth for exposed tunnels:
+Required basic auth for the default tunnel flow:
 
 ```sh
 set NGROK_BASIC_AUTH=user:password
 npm run dev
 ```
 
-The command center reads `GET /api/runtime/status` to show the app version, local URL, detected ngrok tunnel URL, and basic-auth status. If ngrok is active and `NGROK_BASIC_AUTH` is not set, MARO shows a first-viewport warning before you share the tunnel URL.
+To intentionally allow an unauthenticated public tunnel, use the explicit override:
+
+```sh
+set MARO_ALLOW_PUBLIC_TUNNEL=1
+npm run dev
+```
+
+The command center reads `GET /api/runtime/status` to show the app version, local URL, detected ngrok tunnel URL, basic-auth status, and explicit public-tunnel opt-in. If an explicitly allowed public tunnel is active without `NGROK_BASIC_AUTH`, MARO shows a first-viewport warning before you share the tunnel URL.
 
 ## Windows Installer
 
@@ -182,7 +189,7 @@ The generated installer is written to:
 artifacts/MARO-Windows11-Setup.exe
 ```
 
-The installer embeds the built app and a Node runtime, installs MARO into `%LOCALAPPDATA%\MARO`, writes installed-version metadata, creates launch and uninstall shortcuts, registers an Add/Remove Programs uninstall entry for the current Windows user, starts the local server, opens the browser, and opens an ngrok tunnel automatically when ngrok is available on PATH.
+The installer embeds the built app and a Node runtime, installs MARO into `%LOCALAPPDATA%\MARO`, writes installed-version metadata, creates launch and uninstall shortcuts, registers an Add/Remove Programs uninstall entry for the current Windows user, starts the local server, and opens the browser. When ngrok is available on PATH, the launcher opens a tunnel only when `NGROK_BASIC_AUTH` is set or `MARO_ALLOW_PUBLIC_TUNNEL=1` explicitly permits public access.
 
 To remove an installed copy, use Windows Settings > Apps > Installed apps, or run the Start Menu shortcut named `Uninstall MARO`. Close MARO server and ngrok windows before uninstalling.
 

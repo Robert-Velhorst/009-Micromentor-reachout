@@ -1046,7 +1046,7 @@ export default function Home() {
         {publicTunnelWithoutAuth ? (
           <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
             <AlertTriangle className="h-4 w-4" />
-            ngrok is exposing this local ledger publicly without `NGROK_BASIC_AUTH`. Set basic auth before sharing the tunnel URL.
+            ngrok was explicitly opened publicly without `NGROK_BASIC_AUTH`. Protect the tunnel before sharing sensitive mentor data.
           </div>
         ) : null}
 
@@ -3137,6 +3137,7 @@ function RuntimeExposurePanel({
 }) {
   const tunnelActive = Boolean(runtimeStatus?.tunnel.active);
   const basicAuth = Boolean(runtimeStatus?.auth.basicAuthConfigured);
+  const publicTunnelAllowed = Boolean(runtimeStatus?.auth.publicTunnelExplicitlyAllowed);
   const publicWithoutAuth = Boolean(runtimeStatus?.warnings.includes("ngrok_public_without_basic_auth"));
   const encryptedStorage = Boolean(healthStatus?.storage.encrypted);
 
@@ -3173,17 +3174,17 @@ function RuntimeExposurePanel({
         <div className="grid grid-cols-2 gap-2 text-sm">
           <MiniStat label="Version" value={runtimeStatus?.version || "Loading"} />
           <MiniStat label="Mode" value={runtimeStatus?.mode || "Loading"} />
-          <MiniStat label="Auth" value={basicAuth ? "Basic auth" : "Not set"} />
+          <MiniStat label="Auth" value={basicAuth ? "Basic auth" : publicTunnelAllowed ? "Public opt-in" : "Required"} />
           <MiniStat label="Ledger" value={encryptedStorage ? "Encrypted" : healthStatus ? "Plain JSON" : "Loading"} />
         </div>
         {copyStatus ? <div className="text-xs text-muted-foreground">{copyStatus}</div> : null}
         {publicWithoutAuth ? (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-            This ngrok URL is public. Set `NGROK_BASIC_AUTH=user:pass` before sharing sensitive mentor data.
+            This ngrok URL was explicitly allowed to be public. Set `NGROK_BASIC_AUTH=user:pass` before sharing sensitive mentor data.
           </div>
         ) : (
           <div className="rounded-md border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
-            Browser checks local status only; tunnel metadata is read server-side from the local ngrok inspector when available.
+            Unprotected tunnels are blocked by default. Tunnel metadata is read server-side from the local ngrok inspector when available.
           </div>
         )}
       </CardContent>

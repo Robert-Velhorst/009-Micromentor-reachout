@@ -100,6 +100,7 @@ async function startServer() {
       tunnel,
       auth: {
         basicAuthConfigured: Boolean(process.env.NGROK_BASIC_AUTH),
+        publicTunnelExplicitlyAllowed: process.env.MARO_ALLOW_PUBLIC_TUNNEL === "1",
       },
       warnings: tunnel.active && !process.env.NGROK_BASIC_AUTH
         ? ["ngrok_public_without_basic_auth"]
