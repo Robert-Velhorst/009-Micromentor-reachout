@@ -50,6 +50,31 @@ export type MentorSource = {
   updatedAt: string;
 };
 
+export type DiscoveryPlanSource = {
+  id: string;
+  name: string;
+  sourceType: string;
+  searchQuery: string;
+  launchUrl: string;
+  rationale: string;
+  privacyNote: string;
+  status: "recommended" | "recorded";
+  sourceRecordId: string | null;
+};
+
+export type DiscoveryPlan = {
+  campaignId: string;
+  generatedAt: string;
+  queryBasis: {
+    targetMentorType: string;
+    skills: string[];
+    industries: string[];
+    locations: string[];
+  };
+  sources: DiscoveryPlanSource[];
+  unrecordedCount: number;
+};
+
 export type MentorProfile = {
   id: string;
   campaignId: string;
@@ -450,6 +475,7 @@ export type WorkspaceBackup = {
 
 export type CampaignDetails = {
   campaign: Campaign;
+  discoveryPlan: DiscoveryPlan;
   sourceRecords: MentorSource[];
   mentors: MentorProfile[];
   assessments: MatchAssessment[];
@@ -567,6 +593,13 @@ export const ledgerApi = {
     request<{ campaign: Campaign; rescoredMentors: number }>(`/api/campaigns/${campaignId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
+    }),
+  discoveryPlan: (campaignId: string) =>
+    request<{ discoveryPlan: DiscoveryPlan }>(`/api/campaigns/${campaignId}/discovery-plan`),
+  applyDiscoveryPlan: (campaignId: string) =>
+    request<{ discoveryPlan: DiscoveryPlan; createdSources: MentorSource[] }>(`/api/campaigns/${campaignId}/discovery-plan`, {
+      method: "POST",
+      body: JSON.stringify({ confirm: true }),
     }),
   createSourceRecord: (campaignId: string, payload: {
     name: string;

@@ -91,6 +91,31 @@ type MentorSource = {
   updatedAt: string;
 };
 
+type DiscoveryPlanSource = {
+  id: string;
+  name: string;
+  sourceType: string;
+  searchQuery: string;
+  launchUrl: string;
+  rationale: string;
+  privacyNote: string;
+  status: "recommended" | "recorded";
+  sourceRecordId: string | null;
+};
+
+type DiscoveryPlan = {
+  campaignId: string;
+  generatedAt: string;
+  queryBasis: {
+    targetMentorType: string;
+    skills: string[];
+    industries: string[];
+    locations: string[];
+  };
+  sources: DiscoveryPlanSource[];
+  unrecordedCount: number;
+};
+
 type MentorIdentity = {
   id: string;
   normalizedName: string;
@@ -706,6 +731,77 @@ function campaignScoringSignature(campaign: OutreachCampaign) {
   });
 }
 
+function discoveryQuery(parts: string[]) {
+  return stringList(parts).join(" ").slice(0, 240);
+}
+
+function buildDiscoveryPlan(state: LedgerState, campaign: OutreachCampaign): DiscoveryPlan {
+  const criteria = campaignCriteria(campaign.criteriaJson);
+  const skills = criteria.skills.slice(0, 5);
+  const industries = criteria.industries.slice(0, 3);
+  const locations = criteria.locations.slice(0, 3);
+  const commonParts = [campaign.targetMentorType, ...skills, ...industries, ...locations];
+  const recommendations = [
+    {
+      key: "micromentor",
+      name: "MicroMentor mentor directory",
+      sourceType: "MicroMentor",
+      searchQuery: discoveryQuery(commonParts),
+      launchUrl: "https://classic.micromentor.org/mentors",
+      rationale: "Start with the dedicated mentor directory and apply its expertise, industry, language, and country filters.",
+    },
+    {
+      key: "linkedin",
+      name: "LinkedIn people search",
+      sourceType: "LinkedIn",
+      searchQuery: discoveryQuery([campaign.targetMentorType, ...skills, ...industries, "mentor", "advisor", ...locations]),
+      launchUrl: "https://www.linkedin.com/search/results/people/",
+      rationale: "Use professional role and skill signals to find experienced advisors beyond the dedicated mentoring directory.",
+    },
+    {
+      key: "web",
+      name: "Open web mentor research",
+      sourceType: "Web search",
+      searchQuery: discoveryQuery([campaign.targetMentorType, ...skills, ...industries, "mentor", "advisor", ...locations]),
+      launchUrl: "https://www.google.com/",
+      rationale: "Find public bios, advisory profiles, and community pages that can be verified before manual intake.",
+    },
+  ];
+  const privacyNote = "Opening the source does not transmit this query; copy it only when you choose to search.";
+  const sources = recommendations.map((recommendation) => {
+    const sourceRecord = state.mentorSources.find(
+      (source) =>
+        source.campaignId === campaign.id &&
+        normalize(source.sourceType) === normalize(recommendation.sourceType) &&
+        normalize(source.searchQuery) === normalize(recommendation.searchQuery)
+    );
+    return {
+      id: `discovery:${campaign.id}:${recommendation.key}`,
+      name: recommendation.name,
+      sourceType: recommendation.sourceType,
+      searchQuery: recommendation.searchQuery,
+      launchUrl: recommendation.launchUrl,
+      rationale: recommendation.rationale,
+      privacyNote,
+      status: sourceRecord ? "recorded" as const : "recommended" as const,
+      sourceRecordId: sourceRecord?.id || null,
+    };
+  });
+
+  return {
+    campaignId: campaign.id,
+    generatedAt: now(),
+    queryBasis: {
+      targetMentorType: campaign.targetMentorType,
+      skills,
+      industries,
+      locations,
+    },
+    sources,
+    unrecordedCount: sources.filter((source) => source.status === "recommended").length,
+  };
+}
+
 function toneOpening(tone: string) {
   const lowerTone = tone.toLowerCase();
   if (lowerTone.includes("direct") && lowerTone.includes("practical")) {
@@ -1301,6 +1397,7 @@ function buildCampaignResults(state: LedgerState, campaignId: string): CampaignR
 
 function buildCampaignReadiness(state: LedgerState, campaignId: string): CampaignReadiness {
   const sourceRecords = state.mentorSources.filter((item) => item.campaignId === campaignId);
+  const searchedSourceRecords = sourceRecords.filter((item) => item.status === "searched" || item.status === "imported");
   const mentors = state.mentorProfiles.filter((item) => item.campaignId === campaignId);
   const mentorIds = new Set(mentors.map((mentor) => mentor.id));
   const assessments = state.matchAssessments.filter((item) => item.campaignId === campaignId && mentorIds.has(item.mentorProfileId));
@@ -1333,25 +1430,31 @@ function buildCampaignReadiness(state: LedgerState, campaignId: string): Campaig
     {
       id: "source-search",
       label: "Source search",
-      status: sourceRecords.length ? "complete" : "attention",
-      completed: sourceRecords.length ? 1 : 0,
+      status: searchedSourceRecords.length ? "complete" : "attention",
+      completed: searchedSourceRecords.length ? 1 : 0,
       total: 1,
-      detail: sourceRecords.length ? `${sourceRecords.length} source search record${sourceRecords.length === 1 ? "" : "s"} stored.` : "Record at least one mentor source search.",
-      nextActionType: sourceRecords.length ? null : "record_source_search",
+      detail: searchedSourceRecords.length
+        ? `${searchedSourceRecords.length} source search${searchedSourceRecords.length === 1 ? "" : "es"} recorded as searched or imported.`
+        : sourceRecords.length
+          ? `${sourceRecords.length} source${sourceRecords.length === 1 ? " is" : "s are"} planned; record a search outcome before candidate intake.`
+          : "Record at least one mentor source search.",
+      nextActionType: searchedSourceRecords.length ? null : "record_source_search",
     },
     {
       id: "source-candidates",
       label: "Source candidates",
-      status: sourceRecords.length && remainingSourceCandidates === 0 ? "complete" : "attention",
-      completed: sourceRecords.length && recordedSourceResults ? Math.min(importedSourceResults, recordedSourceResults) : 0,
+      status: searchedSourceRecords.length && remainingSourceCandidates === 0 ? "complete" : "attention",
+      completed: searchedSourceRecords.length && recordedSourceResults ? Math.min(importedSourceResults, recordedSourceResults) : 0,
       total: recordedSourceResults || 1,
       detail:
         !sourceRecords.length
           ? "Record a source search before candidate import can be assessed."
+          : !searchedSourceRecords.length
+            ? "Run a planned source search and record its result count before candidate import can be assessed."
           : remainingSourceCandidates === 0
           ? "No recorded source results are waiting to be imported."
           : `${remainingSourceCandidates} recorded source candidate${remainingSourceCandidates === 1 ? "" : "s"} still need import or skip review.`,
-      nextActionType: !sourceRecords.length ? "record_source_search" : remainingSourceCandidates === 0 ? null : "add_mentors",
+      nextActionType: !searchedSourceRecords.length ? "record_source_search" : remainingSourceCandidates === 0 ? null : "add_mentors",
     },
     {
       id: "mentor-profiles",
@@ -1467,6 +1570,7 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
   for (const campaign of targetCampaigns) {
     recalcCampaign(state, campaign.id);
     const sourceRecords = state.mentorSources.filter((source) => source.campaignId === campaign.id);
+    const searchedSourceRecords = sourceRecords.filter((source) => source.status === "searched" || source.status === "imported");
     const mentors = state.mentorProfiles.filter((mentor) => mentor.campaignId === campaign.id);
     const messages = state.messageDrafts.filter((message) => message.campaignId === campaign.id);
     const responses = state.mentorResponses.filter((response) => response.campaignId === campaign.id);
@@ -1481,19 +1585,25 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
       }))
       .filter((item) => item.source.status !== "planned" && item.source.status !== "skipped" && item.remainingResults > 0);
 
-    if (!sourceRecords.length) {
+    if (!searchedSourceRecords.length) {
+      const plannedSource = sourceRecords.find((source) => source.status === "planned") || null;
       pushAction({
         id: `action:record-source-search:${campaign.id}`,
         campaignId: campaign.id,
+        sourceRecordId: plannedSource?.id || null,
         mentorProfileId: null,
         messageDraftId: null,
         followUpId: null,
         responseId: null,
         priority: "medium",
         type: "record_source_search",
-        title: "Record source search",
-        description: "No source search has been recorded for this campaign.",
-        recommendedAction: "Record where you searched, the query used, and how many potential mentors were found before importing or drafting outreach.",
+        title: plannedSource ? `Run planned search: ${plannedSource.name}` : "Add a mentor discovery plan",
+        description: plannedSource
+          ? "A source is planned but has no searched or imported outcome yet."
+          : "No mentor source has been planned or searched for this campaign.",
+        recommendedAction: plannedSource
+          ? "Open the source, copy its prepared query, then record the result count before importing mentor profiles."
+          : "Review the campaign discovery plan and add its recommended sources to the ledger before searching.",
         dueAt: null,
       });
     }
@@ -1934,6 +2044,7 @@ function attachCampaignDetails(state: LedgerState, campaignId: string) {
 
   return {
     campaign,
+    discoveryPlan: buildDiscoveryPlan(state, campaign),
     sourceRecords,
     mentors,
     assessments: state.matchAssessments.filter((item) => item.campaignId === campaignId),
@@ -2843,6 +2954,37 @@ export function registerLedgerRoutes(app: Express) {
     const campaignId = routeId(req);
     if (!requireCampaign(state, campaignId)) return jsonError(res, 404, "Campaign not found");
     return { sources: state.mentorSources.filter((item) => item.campaignId === campaignId) };
+  }));
+
+  app.get("/api/campaigns/:id/discovery-plan", route((req, res, state) => {
+    const campaign = requireCampaign(state, routeId(req));
+    if (!campaign) return jsonError(res, 404, "Campaign not found");
+    return { discoveryPlan: buildDiscoveryPlan(state, campaign) };
+  }));
+
+  app.post("/api/campaigns/:id/discovery-plan", route((req, res, state) => {
+    const campaign = requireCampaign(state, routeId(req));
+    if (!campaign) return jsonError(res, 404, "Campaign not found");
+    if (req.body?.confirm !== true) return jsonError(res, 400, "Applying the discovery plan requires confirm=true");
+    const discoveryPlan = buildDiscoveryPlan(state, campaign);
+    const createdSources: MentorSource[] = [];
+    for (const recommendation of discoveryPlan.sources.filter((source) => source.status === "recommended")) {
+      const result = createSourceRecord(state, campaign, {
+        name: recommendation.name,
+        sourceType: recommendation.sourceType,
+        searchQuery: recommendation.searchQuery,
+        status: "planned",
+        resultsFound: 0,
+        importedCount: 0,
+        notes: `${recommendation.rationale} ${recommendation.privacyNote}`,
+      });
+      if ("error" in result) return jsonError(res, result.status ?? 400, result.error || "Discovery source creation failed");
+      createdSources.push(result.source);
+    }
+    return {
+      discoveryPlan: buildDiscoveryPlan(state, campaign),
+      createdSources,
+    };
   }));
 
   app.post("/api/campaigns/:id/sources", route((req, res, state) => {

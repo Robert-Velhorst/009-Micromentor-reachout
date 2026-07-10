@@ -233,6 +233,42 @@ try {
   assert(updatedCampaign.campaign.criteriaJson.industries[0] === "technology", "Campaign update did not persist industry criteria");
   assert(updatedCampaign.campaign.criteriaJson.locations[0] === "Amsterdam", "Campaign update did not persist location criteria");
 
+  const initialDiscoveryPlan = await api(`/api/campaigns/${campaignId}/discovery-plan`);
+  assert(initialDiscoveryPlan.discoveryPlan.sources.length === 3, "Discovery plan did not generate three focused source routes");
+  assert(initialDiscoveryPlan.discoveryPlan.unrecordedCount === 3, "New discovery plan did not report its unrecorded sources");
+  assert(
+    initialDiscoveryPlan.discoveryPlan.sources.every((source) => source.searchQuery.includes("Automation") || source.searchQuery.includes("automation")),
+    "Discovery queries did not use campaign target or skill criteria"
+  );
+  assert(
+    initialDiscoveryPlan.discoveryPlan.sources.every((source) => {
+      const launchUrl = new URL(source.launchUrl);
+      return !launchUrl.search && !launchUrl.hash && !source.launchUrl.includes(encodeURIComponent(source.searchQuery));
+    }),
+    "Discovery source URLs leaked the prepared query"
+  );
+  assert(
+    initialDiscoveryPlan.discoveryPlan.sources.every((source) => source.privacyNote.includes("does not transmit this query")),
+    "Discovery plan did not explain query privacy"
+  );
+  await expectFailure(`/api/campaigns/${campaignId}/discovery-plan`, { method: "POST", body: JSON.stringify({}) }, 400);
+  const appliedDiscoveryPlan = await api(`/api/campaigns/${campaignId}/discovery-plan`, {
+    method: "POST",
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert(appliedDiscoveryPlan.createdSources.length === 3, "Discovery plan did not create its recommended source records");
+  assert(appliedDiscoveryPlan.discoveryPlan.unrecordedCount === 0, "Applied discovery plan did not mark recommendations recorded");
+  assert(appliedDiscoveryPlan.createdSources.every((source) => source.status === "planned"), "Discovery plan sources were not safely created as planned");
+  const repeatedDiscoveryPlan = await api(`/api/campaigns/${campaignId}/discovery-plan`, {
+    method: "POST",
+    body: JSON.stringify({ confirm: true }),
+  });
+  assert(repeatedDiscoveryPlan.createdSources.length === 0, "Discovery plan application was not idempotent");
+  const plannedDiscoveryDetails = await api(`/api/campaigns/${campaignId}`);
+  assert(plannedDiscoveryDetails.readiness.items.some((item) => item.id === "source-search" && item.status === "attention"), "Planned sources incorrectly counted as completed searches");
+  assert(plannedDiscoveryDetails.readiness.items.some((item) => item.id === "source-candidates" && item.status === "attention"), "Planned sources incorrectly completed candidate intake readiness");
+  assert(plannedDiscoveryDetails.nextActions.some((action) => action.type === "record_source_search" && action.sourceRecordId), "Planned source did not produce a search-outcome next action");
+
   const sourceResult = await api(`/api/campaigns/${campaignId}/sources`, {
     method: "POST",
     body: JSON.stringify({
@@ -255,6 +291,7 @@ try {
   assert(updatedSource.source.importedCount === 2, "Source search update did not persist imported count");
   const sourceList = await api(`/api/campaigns/${campaignId}/sources`);
   assert(sourceList.sources.some((source) => source.id === sourceResult.source.id), "Campaign source list did not include source record");
+  assert(sourceList.sources.length === 4, "Campaign source list did not include the applied discovery plan");
   const sourceActions = await api(`/api/campaigns/${campaignId}/actions`);
   assert(
     sourceActions.actions.some(
@@ -640,7 +677,7 @@ try {
 
   const details = await api(`/api/campaigns/${campaignId}`);
   assert(details.campaign.criteriaJson.followUpAfterDays === 5, "Campaign details did not include follow-up rule");
-  assert(details.sourceRecords.length === 1, "Campaign details did not include source records");
+  assert(details.sourceRecords.length === 4, "Campaign details did not include manual and discovery-plan source records");
   assert(details.sourceRecords[0].searchQuery === "automation mentor operations", "Campaign details source record did not preserve query");
   assert(details.campaign.totalMentors === 4, "Campaign mentor count was not persisted");
   assert(details.campaign.messagesDrafted === 3, "Draft count was not persisted");
@@ -709,7 +746,7 @@ try {
   const backup = await api("/api/workspace/backup");
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
   assert(backup.summary.mentors === 4, "Workspace backup did not include mentor count");
-  assert(backup.summary.sourceRecords === 2, "Workspace backup did not include source record count");
+  assert(backup.summary.sourceRecords === 5, "Workspace backup did not include source record count");
   assert(backup.summary.qualityReviews === 3, "Workspace backup did not include quality review count");
   assert(backup.summary.invoiceRecords === 1, "Workspace backup did not include invoice count");
   const restorePreview = await api("/api/workspace/restore/preview", {
@@ -718,7 +755,7 @@ try {
   });
   assert(restorePreview.valid === true, "Workspace restore preview did not validate backup");
   assert(restorePreview.summary.drafts === 3, "Workspace restore preview did not include draft count");
-  assert(restorePreview.summary.sourceRecords === 2, "Workspace restore preview did not include source record count");
+  assert(restorePreview.summary.sourceRecords === 5, "Workspace restore preview did not include source record count");
   assert(restorePreview.summary.qualityReviews === 3, "Workspace restore preview did not include quality review count");
   assert(restorePreview.summary.invoiceRecords === 1, "Workspace restore preview did not include invoice count");
   const missingQualityReviewsBackup = structuredClone(backup);
@@ -753,12 +790,12 @@ try {
     body: JSON.stringify({ backupJson: JSON.stringify(backup), confirm: true }),
   });
   assert(restored.summary.drafts === 3, "Workspace restore did not restore draft count");
-  assert(restored.summary.sourceRecords === 2, "Workspace restore did not restore source record count");
+  assert(restored.summary.sourceRecords === 5, "Workspace restore did not restore source record count");
   assert(restored.summary.qualityReviews === 3, "Workspace restore did not restore quality review count");
   assert(restored.summary.invoiceRecords === 1, "Workspace restore did not restore invoice count");
   const restoredDetails = await api(`/api/campaigns/${campaignId}`);
   assert(restoredDetails.campaign.messagesDrafted === 3, "Restored campaign draft count was not available");
-  assert(restoredDetails.sourceRecords.length === 1, "Restored source record was not available");
+  assert(restoredDetails.sourceRecords.length === 4, "Restored source records were not available");
   assert(restoredDetails.qualityReviews.length === 3, "Restored quality review was not available");
   assert(restoredDetails.invoiceRecords.length === 1, "Restored invoice record was not available");
 

@@ -9,6 +9,8 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Edit active campaign goal, target mentor type, source, status, project, message tone, and follow-up timing rules from the command center.
 - Define structured fit criteria for skills, industries, locations, and the campaign's strong-match threshold.
 - Automatically rescore existing mentors when campaign fit criteria change, with stored reasons and threshold risk notes.
+- Generate a campaign-specific discovery plan for MicroMentor, LinkedIn, and open-web research from the stored target and fit criteria.
+- Add discovery recommendations to the source ledger idempotently, copy prepared queries, and open generic source pages without putting campaign queries into external URLs.
 - Record planned, searched, skipped, and imported mentor-source searches with query, result count, import count, and notes, then update source outcomes as discovery progresses.
 - Review source-search cards with linked mentor, strong-fit, and remaining-result counts, then filter the mentor list by source.
 - Open source-specific next actions that preselect the right source for manual or CSV mentor intake when search results remain unimported.
@@ -59,6 +61,7 @@ The Express server now exposes operational API routes before serving the fronten
 - `PATCH /api/campaigns/:id`
 - `GET /api/campaigns/:id`
 - `GET /api/campaigns/:id/actions`
+- `GET|POST /api/campaigns/:id/discovery-plan`
 - `GET|POST /api/campaigns/:id/sources`
 - `PATCH /api/sources/:id`
 - `GET|POST /api/campaigns/:id/mentors`
@@ -104,6 +107,8 @@ Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `s
 Projects group related outreach campaigns. Campaign creation and updates validate the selected project, and the command center can maintain active project and campaign context beside the campaign ledger.
 
 Campaign fit criteria are stored as normalized skill, industry, and location lists plus a configurable minimum fit score. MARO combines those signals with campaign goal and target-profile keywords, records the evidence and risks on each assessment, and rescores existing campaign mentors only when scoring inputs change. Tone, follow-up, or status-only edits do not trigger unnecessary rescoring.
+
+Campaign discovery plans are derived locally from the target mentor type and structured fit criteria. Applying a plan creates only planned source-ledger records and is idempotent; it does not scrape, sign in, search, or contact anyone. Source launch URLs remain generic and do not contain the prepared query, so copying or submitting that query stays an explicit operator action.
 
 Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation. Generated drafts and automatic follow-up suggestions use each campaign's stored tone and follow-up timing rule. Scheduled follow-ups can be converted into linked message drafts, which then use the same review, approval, and manual send confirmation workflow as first-touch outreach. Pending follow-ups are cancelled when a recorded response says the mentor is not interested or unavailable. Failed manual send attempts remain visible in the review queue and do not create follow-up work.
 

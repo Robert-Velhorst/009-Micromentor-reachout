@@ -34,6 +34,7 @@ import {
   type Campaign,
   type CampaignDetails,
   type CampaignReadiness,
+  type DiscoveryPlanSource,
   type HaiIntegrationStatus,
   type HealthStatus,
   type LedgerSummary,
@@ -385,6 +386,36 @@ function downloadText(filename: string, text: string, type = "text/plain;charset
   URL.revokeObjectURL(url);
 }
 
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        navigator.clipboard.writeText(text),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("Clipboard write timed out")), 1000);
+        }),
+      ]);
+      return;
+    } catch {
+      // Fall through to a local selection copy for browsers with blocked clipboard permissions.
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.appendChild(field);
+  field.select();
+  const copied = document.execCommand("copy");
+  field.remove();
+  if (!copied) throw new Error("Clipboard copy was blocked");
+}
+
 const readinessTone: Record<CampaignReadiness["status"], string> = {
   ready: "border-emerald-200 bg-emerald-50 text-emerald-700",
   needs_work: "border-amber-200 bg-amber-50 text-amber-700",
@@ -442,6 +473,7 @@ export default function Home() {
   const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
   const [sourceFilterId, setSourceFilterId] = useState("");
   const [sourceEdits, setSourceEdits] = useState<Record<string, SourceForm>>({});
+  const [discoveryStatus, setDiscoveryStatus] = useState("");
 
   const loadLedger = async (campaignId?: string) => {
     setLoading(true);
@@ -724,6 +756,35 @@ export default function Home() {
       setSourceForm(defaultSourceForm);
     });
 
+  const applyDiscoveryPlan = () =>
+    mutate(async () => {
+      if (!activeCampaignId) throw new Error("Select a campaign first");
+      const result = await ledgerApi.applyDiscoveryPlan(activeCampaignId);
+      setDiscoveryStatus(
+        result.createdSources.length
+          ? `${result.createdSources.length} recommended source${result.createdSources.length === 1 ? "" : "s"} added to the ledger.`
+          : "All recommended sources are already in the ledger."
+      );
+    });
+
+  const copyDiscoveryQuery = async (source: DiscoveryPlanSource) => {
+    try {
+      await copyTextToClipboard(source.searchQuery);
+      setDiscoveryStatus(`${source.name} query copied.`);
+    } catch {
+      setDiscoveryStatus("Clipboard blocked. Select and copy the query manually.");
+    }
+  };
+
+  const openDiscoverySource = (source: DiscoveryPlanSource) => {
+    const opened = window.open(source.launchUrl, "_blank", "noopener,noreferrer");
+    setDiscoveryStatus(
+      opened
+        ? `${source.name} opened without transmitting the prepared query.`
+        : "Source popup was blocked. Use the visible source link instead."
+    );
+  };
+
   const updateSourceSearch = (source: MentorSource) =>
     mutate(async () => {
       const edit = sourceEdits[source.id];
@@ -974,8 +1035,7 @@ export default function Home() {
     const body = draftEdits[message.id]?.body ?? message.body;
     const handoffText = `Subject: ${subject}\n\n${body}`;
     try {
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
-      await navigator.clipboard.writeText(handoffText);
+      await copyTextToClipboard(handoffText);
       setHandoffStatus((current) => ({
         ...current,
         [message.id]: "Draft copied for manual paste. Final send remains manual.",
@@ -1471,6 +1531,13 @@ export default function Home() {
                   <CardTitle className="text-lg">Source searches</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 px-5">
+                  <DiscoveryPlanPanel
+                    plan={details?.discoveryPlan || null}
+                    status={discoveryStatus}
+                    onApply={() => void applyDiscoveryPlan()}
+                    onCopy={(source) => void copyDiscoveryQuery(source)}
+                    onOpen={openDiscoverySource}
+                  />
                   {(details?.sourceRecords || []).map((source) => {
                     const linkedMentors = (details?.mentors || []).filter((mentor) => mentor.sourceRecordId === source.id);
                     const strongLinkedMentors = linkedMentors.filter(
@@ -2811,6 +2878,77 @@ function MentorDetailPanel({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function DiscoveryPlanPanel({
+  plan,
+  status,
+  onApply,
+  onCopy,
+  onOpen,
+}: {
+  plan: CampaignDetails["discoveryPlan"] | null;
+  status: string;
+  onApply: () => void;
+  onCopy: (source: DiscoveryPlanSource) => void;
+  onOpen: (source: DiscoveryPlanSource) => void;
+}) {
+  if (!plan) {
+    return <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">Select a campaign to build its discovery plan.</div>;
+  }
+
+  const recordedCount = plan.sources.length - plan.unrecordedCount;
+  return (
+    <div className="rounded-md border bg-muted/20 p-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-sm font-medium">Campaign discovery plan</div>
+          <div className="mt-1 text-xs text-muted-foreground">{recordedCount} of {plan.sources.length} recommended sources in the ledger</div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="rounded-md"
+          disabled={plan.unrecordedCount === 0}
+          onClick={onApply}
+        >
+          <Plus className="h-4 w-4" />
+          Add {plan.unrecordedCount || "recommended"} sources
+        </Button>
+      </div>
+      <div className="mt-3 divide-y border-t">
+        {plan.sources.map((source) => (
+          <div key={source.id} className="py-3 text-sm">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="font-medium">{source.name}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{source.sourceType}</div>
+              </div>
+              <Badge variant="outline" className="rounded-md">
+                {source.status === "recorded" ? "In ledger" : "Recommended"}
+              </Badge>
+            </div>
+            <div className="mt-2 break-words rounded-md border bg-background px-2.5 py-2 font-mono text-xs leading-5">
+              {source.searchQuery}
+            </div>
+            <div className="mt-2 text-xs leading-5 text-muted-foreground">{source.rationale}</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" className="h-8 rounded-md" onClick={() => onCopy(source)} aria-label={`Copy ${source.name} query`}>
+                <Copy className="h-3.5 w-3.5" />
+                Copy query
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 rounded-md" onClick={() => onOpen(source)} aria-label={`Open ${source.name}`}>
+                <ExternalLink className="h-3.5 w-3.5" />
+                Open source
+              </Button>
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">{source.privacyNote}</div>
+          </div>
+        ))}
+      </div>
+      {status ? <div className="border-t pt-2 text-xs text-muted-foreground">{status}</div> : null}
+    </div>
   );
 }
 

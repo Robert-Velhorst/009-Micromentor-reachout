@@ -30,6 +30,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Profile handoff URL hardening: mentor profile links are retained only for `http` and `https`; unsafe or malformed schemes are removed during create, update, and backup normalization.
 - Spreadsheet export hardening: CSV fields beginning with spreadsheet formula prefixes are neutralized before export so imported mentor content cannot become an active formula when opened in Excel.
 - Scoring input bounds: skill, industry, and location lists are deduplicated and capped at 25 entries of 80 characters each before persistence or scoring.
+- Discovery handoff privacy: generated queries remain local derived state, source launch URLs contain no query parameters or fragments, and adding recommendations creates only audited planned records without external requests.
 - Failure transparency: failed manual send attempts are audit logged and remain retryable instead of being hidden, converted into sent state, or allowed to schedule follow-ups.
 - Low-cognitive-load operations: dashboard next actions now open the relevant campaign tab directly and preserve mentor context where available, reducing manual navigation during review, follow-up, billing, and outcome work.
 - Project-linked integrity: campaign creation and updates now validate project IDs, and the command center exposes project creation plus campaign project assignment so outreach stays tied to the correct broader goal.
@@ -46,12 +47,13 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 ## Resource Analysis
 
 - Initial production JS observed earlier in the work: about 303.66 KB minified, 95.20 KB gzip.
-- Current production JS after the structured-fit slice: 312.17 KB minified, 87.71 KB gzip. The structured criteria UI and scoring integration added about 4.6 KB minified and 0.8 KB gzip over the preceding build without adding a dependency.
-- Current production CSS after removing external webfont references: 109.55 KB minified, 17.44 KB gzip.
+- Current production JS after the discovery-plan and clipboard-resilience slice: 315.75 KB minified, 88.56 KB gzip. The discovery controls, derived plan integration, and shared copy fallback added about 3.6 KB minified and 0.9 KB gzip over the structured-fit build without adding a dependency.
+- Current production CSS after removing external webfont references: 109.73 KB minified, 17.46 KB gzip.
 - Final served public payload directory: about 338 KB, down from tens of MB because unused legacy public images/zips are no longer copied into production builds.
 - Final installer: 33.1 MB, dominated by the embedded Node runtime.
 - Runtime optimizations applied: removed unused app providers, deferred mentor search input, debounced localStorage writes, cleaned stale production public assets, made development debug logging opt-in, and bundled only the current server/runtime payload.
 - Structured mentor scoring remains event-driven: existing profiles are recalculated only when campaign scoring inputs change, with no polling or background scoring process.
+- Discovery plans are read-time derivations over the stored campaign and source ledger; applying them is idempotent and adds no dependency, timer, scraper, or background worker.
 
 Current local QA sample on this Windows machine, recorded with one campaign and one structured mentor profile:
 
@@ -59,6 +61,12 @@ Current local QA sample on this Windows machine, recorded with one campaign and 
 - Local ledger size: 10,140 bytes.
 - Twenty-five persisted `GET /api/ledger/summary` reads averaged 15.53 ms each.
 - These values are a development-machine snapshot rather than a cross-device performance guarantee; they are useful as a regression baseline for later paging or storage work.
+
+Discovery-plan QA sample with three recorded source routes:
+
+- Node working set: 73.48 MB; private memory: 64.91 MB; 12 threads.
+- Local ledger size: 6,652 bytes.
+- Twenty-five derived `GET /api/campaigns/:id/discovery-plan` reads averaged 4.37 ms each, including the current local ledger read/write wrapper.
 
 ## Validation
 
@@ -81,7 +89,6 @@ Current local QA sample on this Windows machine, recorded with one campaign and 
 
 Detailed prioritization and acceptance criteria are in `analysis/ENHANCEMENT_BACKLOG.md`.
 
-- Generate campaign-specific mentor search plans and safe source handoff links from the stored structured criteria.
 - Browser-extension form-fill handoff that keeps the final send action manual and reviewable.
 - Authenticode-sign the installer and add signed-release update checks when certificate/release infrastructure exists.
 - Add pagination or table virtualization only after real campaign lists exceed a few hundred mentors.

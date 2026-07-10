@@ -92,6 +92,25 @@ Acceptance:
 
 Status: Implemented in the operating-ledger branch with normalized persisted criteria, transparent weighted scoring, campaign-wide rescoring, threshold-aware summaries/actions, command-center controls, CSV round-trip support, and API smoke coverage for both matched and deliberately mismatched criteria.
 
+### P1 - Campaign Discovery Plans And Safe Source Handoff
+
+Problem: source records could be entered manually, but the operator still had to invent every query and decide where to search. Planned sources were also counted as completed searches before any result was recorded.
+
+Build:
+- Derive focused MicroMentor, LinkedIn, and open-web queries from campaign target, skill, industry, and location criteria.
+- Keep external source URLs generic so opening a source does not transmit the campaign query.
+- Let the operator copy a query, open a source, and add all recommendations to the ledger explicitly.
+- Make plan application idempotent and audit each created source record.
+- Treat planned sources as incomplete until they are marked searched or imported.
+
+Acceptance:
+- A campaign receives a deterministic three-source discovery plan without an external request.
+- Applying the plan twice creates no duplicate source records.
+- Query text never appears in a source launch URL.
+- Planned-only campaigns retain a search-outcome next action and incomplete readiness state.
+
+Status: Implemented in the operating-ledger branch with derived discovery plans, explicit idempotent application, privacy-aware handoff controls, corrected readiness semantics, source-ledger audit events, and API smoke coverage.
+
 ### P1 - Ngrok Status And Exposure Controls
 
 Problem: the default runtime can expose the app through ngrok, but the UI does not show whether the app is local-only, tunneled, or protected by basic auth.
@@ -209,6 +228,7 @@ The same smoke path verifies campaign tone/goal propagation into generated outre
 ## Resource Usage Enhancements
 
 Done:
+- Discovery plans are derived on demand from existing campaign criteria and create no background polling, network requests, or duplicate source records.
 - Campaign-wide fit recalculation runs only when goal, target mentor type, structured fit criteria, or threshold changes; tone, status, and follow-up-only edits avoid unnecessary scorer work.
 - Persisted local invoice/usage-report records generated from stored billing records. Invoice reports are audit logged, included in workspace backup/restore/reset summaries, and explicitly documented as local records rather than external charges.
 - Removed Google Fonts requests and switched to local system font stacks so private/offline installs do not contact external font hosts during normal rendering.
