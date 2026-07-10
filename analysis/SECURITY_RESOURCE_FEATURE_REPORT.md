@@ -37,6 +37,8 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - Production surface regression risk: the encrypted-ledger smoke test now fails if the root app shell reintroduces external production asset URLs, Google Fonts references, development debug-collector injection, missing browser hardening headers, or weakened CSP directives.
 - Workspace restore integrity: restore validation now requires message-quality and invoice-record arrays, preventing accepted backups from silently dropping review or billing-report history.
 - Outreach control integrity: campaign-level tone and follow-up timing are persisted and used for generated drafts plus automatic follow-up suggestions after manual send confirmation, keeping workflow automation aligned with the operator's configured rules. Negative responses now cancel pending follow-ups instead of leaving accidental outreach work queued. Duplicate outreach guards now block active or sent campaign drafts for the same mentor identity/profile URL, including manual duplicate mentor records, and next actions identify duplicate profiles for operator review.
+- Relationship history integrity: mentor timelines are now derived from persisted server-side ledger records, are available through a dedicated local API route, and keep delivery evidence or failed-send details behind the existing privacy reveal controls instead of duplicating that derivation in the browser. The command center loads only the selected mentor's timeline so normal campaign refreshes do not serialize every contact's full history.
+- Dependency supply-chain integrity: added an npm lockfile for reproducible installs, applied non-breaking audit remediations, and upgraded the build-only Vite/esbuild toolchain to patched releases. The resolved graph now passes `npm audit` with zero known vulnerabilities.
 
 ## Resource Analysis
 
@@ -52,6 +54,7 @@ Repository revision scanned: 541aad3 plus local working-tree changes
 - `npm run build`: passed.
 - `npm run check`: passed.
 - `npm run check:release`: passed.
+- `npm audit`: passed with zero known vulnerabilities after lockfile and build-tool remediation.
 - `node scripts/ngrok.mjs`: correctly fails fast here because ngrok is not installed on PATH.
 - Safe installer run with `MARO_INSTALL_DIR`, `MARO_SKIP_SHORTCUTS=1`, `MARO_SKIP_REGISTRY=1`, and `MARO_SKIP_LAUNCH=1`: passed.
 - Release smoke server: returned HTTP 200 for `/`, enforced restrictive CSP directives, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`, and verified the root app shell had no external asset URLs, Google Fonts references, or development debug-collector injection.

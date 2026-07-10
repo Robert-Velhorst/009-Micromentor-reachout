@@ -13,6 +13,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Store campaign-level message tone and follow-up timing rules, then apply them to generated drafts and follow-up suggestions.
 - Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
 - Inspect each mentor's relationship timeline across drafts, approvals, sends, replies, follow-ups, outcomes, and audit events.
+- Expose the same privacy-aware relationship timeline through the local ledger API for trusted local integrations.
 - Require approval before a message can be manually confirmed as sent.
 - Convert scheduled follow-ups into linked review drafts before any manual follow-up delivery.
 - Record failed manual send attempts without marking messages sent or scheduling follow-ups.
@@ -68,6 +69,7 @@ The Express server now exposes operational API routes before serving the fronten
 - `GET|POST /api/campaigns/:id/invoices`
 - `GET|POST /api/mentors`
 - `GET|PATCH /api/mentors/:id`
+- `GET /api/mentors/:id/timeline`
 - `POST /api/mentors/:id/resolve-duplicate`
 - `GET|POST /api/messages`
 - `PATCH /api/messages/:id`

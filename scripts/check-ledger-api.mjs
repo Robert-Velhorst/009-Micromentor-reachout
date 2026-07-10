@@ -591,6 +591,22 @@ try {
   assert(Array.isArray(details.nextActions), "Campaign details did not include next actions");
   assert(details.nextActions.some((action) => action.type === "draft_message" || action.type === "generate_cost_record"), "Next actions did not include remaining operational work");
   assert(details.auditEvents.length >= 10, "Audit trail was not recorded");
+  const mentorTimeline = await api(`/api/mentors/${mentorId}/timeline`);
+  const relationshipTimeline = mentorTimeline.relationshipTimeline;
+  assert(relationshipTimeline?.entries.some((entry) => entry.label === "Draft"), "Mentor timeline endpoint did not include the relationship draft timeline");
+  assert(relationshipTimeline?.entries.some((entry) => entry.label === "Approval"), "Mentor timeline endpoint did not include the relationship approval timeline");
+  assert(relationshipTimeline?.entries.some((entry) => entry.label === "Send"), "Mentor timeline endpoint did not include the relationship send timeline");
+  assert(relationshipTimeline?.entries.some((entry) => entry.label === "Response"), "Mentor timeline endpoint did not include the relationship response timeline");
+  assert(relationshipTimeline?.entries.some((entry) => entry.label === "Outcome"), "Mentor timeline endpoint did not include the relationship outcome timeline");
+  const confirmedSendTimelineEntry = relationshipTimeline.entries.find(
+    (entry) => entry.label === "Send" && entry.title === "Manual send confirmed"
+  );
+  assert(!confirmedSendTimelineEntry?.detail.includes("Confirmed manually in smoke test"), "Relationship timeline exposed delivery evidence outside privacy controls");
+  assert(confirmedSendTimelineEntry?.sensitiveText?.includes("Confirmed manually in smoke test"), "Relationship timeline did not preserve delivery evidence behind privacy controls");
+
+  assert(mentorTimeline.relationshipTimeline.mentorProfileId === mentorId, "Mentor timeline endpoint did not return the requested mentor");
+  const mentorDetails = await api(`/api/mentors/${mentorId}`);
+  assert(mentorDetails.relationshipTimeline.entries.length === relationshipTimeline.entries.length, "Mentor details did not match the dedicated relationship timeline endpoint");
 
   const haiStatus = await api("/api/integrations/hai/status");
   const haiCampaign = haiStatus.campaigns.find((campaign) => campaign.campaignId === campaignId);

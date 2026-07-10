@@ -346,6 +346,24 @@ export type AuditEvent = {
   createdAt: string;
 };
 
+export type RelationshipTimelineEntry = {
+  id: string;
+  occurredAt: string;
+  label: "Draft" | "Approval" | "Send" | "Response" | "Follow-up" | "Outcome" | "Audit";
+  title: string;
+  detail: string;
+  tone: "neutral" | "success" | "warning" | "danger";
+  sensitiveKey?: string;
+  sensitiveText?: string;
+  sensitivePlaceholder?: string;
+};
+
+export type MentorRelationshipTimeline = {
+  mentorProfileId: string;
+  generatedAt: string;
+  entries: RelationshipTimelineEntry[];
+};
+
 export type LedgerSummary = {
   activeCampaigns: Campaign[];
   totals: {
@@ -605,6 +623,8 @@ export const ledgerApi = {
     request<{ filename: string; csv: string }>(`/api/campaigns/${campaignId}/mentors/export`),
   exportCampaignHistoryCsv: (campaignId: string) =>
     request<{ filename: string; csv: string }>(`/api/campaigns/${campaignId}/history/export`),
+  mentorTimeline: (mentorId: string) =>
+    request<{ relationshipTimeline: MentorRelationshipTimeline }>(`/api/mentors/${mentorId}/timeline`),
   createDraft: (campaignId: string, mentorProfileId: string) =>
     request<{ draft: MessageDraft }>(`/api/campaigns/${campaignId}/messages`, {
       method: "POST",

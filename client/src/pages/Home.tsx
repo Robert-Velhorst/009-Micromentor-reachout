@@ -46,6 +46,8 @@ import {
   type NextActionRecommendation,
   type OutreachOutcome,
   type OutreachProject,
+  type MentorRelationshipTimeline,
+  type RelationshipTimelineEntry,
   type RuntimeStatus,
   type UsageReport,
   type WorkspaceSummary,
@@ -95,18 +97,6 @@ type SourceForm = {
 type CsvColumnKey = keyof Required<MentorCsvColumnMap>;
 type LedgerTab = "ledger" | "mentors" | "review" | "responses" | "billing" | "audit";
 type ResultFilter = "all" | "awaiting_outcome" | "follow_up_due" | "booked" | "declined" | "no_response" | "open";
-type RelationshipTimelineEntry = {
-  id: string;
-  occurredAt: string;
-  label: string;
-  title: string;
-  detail: string;
-  tone: "neutral" | "success" | "warning" | "danger";
-  sensitiveKey?: string;
-  sensitiveText?: string;
-  sensitivePlaceholder?: string;
-};
-
 const csvColumnFields: Array<{ key: CsvColumnKey; label: string; required?: boolean }> = [
   { key: "name", label: "Name", required: true },
   { key: "company", label: "Company" },
@@ -272,114 +262,6 @@ function latestByCreatedAt<T extends { createdAt: string }>(items: T[]) {
   return [...items].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0] || null;
 }
 
-function buildRelationshipTimeline({
-  messages,
-  approvalsByMessage,
-  sendAttempts,
-  responses,
-  followUps,
-  outcomes,
-  auditEvents,
-}: {
-  messages: CampaignDetails["messages"];
-  approvalsByMessage: Map<string, CampaignDetails["approvals"]>;
-  sendAttempts: CampaignDetails["sendAttempts"];
-  responses: CampaignDetails["responses"];
-  followUps: CampaignDetails["followUps"];
-  outcomes: CampaignDetails["outcomes"];
-  auditEvents: CampaignDetails["auditEvents"];
-}) {
-  const entries: RelationshipTimelineEntry[] = [];
-
-  for (const message of messages) {
-    entries.push({
-      id: `message:${message.id}`,
-      occurredAt: message.updatedAt,
-      label: "Draft",
-      title: message.subject || "Message draft",
-      detail: `Status: ${message.status}`,
-      tone: message.status === "rejected" ? "danger" : message.status === "sent" ? "success" : message.status === "approved" ? "warning" : "neutral",
-    });
-
-    for (const approval of approvalsByMessage.get(message.id) || []) {
-      entries.push({
-        id: `approval:${approval.id}`,
-        occurredAt: approval.decidedAt || approval.createdAt,
-        label: "Approval",
-        title: approval.decision === "approved" ? "Message approved" : "Message rejected",
-        detail: approval.decisionReason || "No decision reason recorded.",
-        tone: approval.decision === "approved" ? "success" : "danger",
-      });
-    }
-  }
-
-  for (const attempt of sendAttempts) {
-    entries.push({
-      id: `send:${attempt.id}`,
-      occurredAt: attempt.finishedAt || attempt.startedAt || attempt.createdAt,
-      label: "Send",
-      title: attempt.status === "confirmed_sent" ? "Manual send confirmed" : "Manual send failed",
-      detail: attempt.errorMessage || attempt.deliveryEvidence || "No delivery detail recorded.",
-      tone: attempt.status === "confirmed_sent" ? "success" : "danger",
-      sensitiveKey: attempt.deliveryEvidence ? `timeline-send:${attempt.id}` : undefined,
-      sensitiveText: attempt.deliveryEvidence ? `Delivery evidence: ${attempt.deliveryEvidence}` : undefined,
-      sensitivePlaceholder: "Delivery evidence hidden",
-    });
-  }
-
-  for (const response of responses) {
-    entries.push({
-      id: `response:${response.id}`,
-      occurredAt: response.createdAt,
-      label: "Response",
-      title: `Response recorded: ${response.classification.replace("_", " ")}`,
-      detail: response.nextAction || "Classify the response and decide the next step.",
-      tone: response.classification === "interested" || response.classification === "more_info" ? "success" : response.classification === "not_interested" || response.classification === "unavailable" ? "warning" : "neutral",
-      sensitiveKey: `timeline-response:${response.id}`,
-      sensitiveText: response.body || "No response text recorded.",
-      sensitivePlaceholder: "Response text hidden",
-    });
-  }
-
-  for (const followUp of followUps) {
-    entries.push({
-      id: `follow-up:${followUp.id}`,
-      occurredAt: followUp.updatedAt || followUp.createdAt,
-      label: "Follow-up",
-      title: `Follow-up ${followUp.status}`,
-      detail: `Due ${formatDate(followUp.dueAt)}`,
-      tone: followUp.status === "cancelled" ? "warning" : followUp.status === "completed" ? "success" : "neutral",
-      sensitiveKey: `timeline-follow-up:${followUp.id}`,
-      sensitiveText: followUp.suggestedMessage,
-      sensitivePlaceholder: "Follow-up message hidden",
-    });
-  }
-
-  for (const outcome of outcomes) {
-    entries.push({
-      id: `outcome:${outcome.id}`,
-      occurredAt: outcome.updatedAt || outcome.createdAt,
-      label: "Outcome",
-      title: `Outcome: ${outcome.status.replace("_", " ")}`,
-      detail: outcome.summary || "No outcome summary recorded.",
-      tone: outcome.status === "booked" || outcome.status === "helpful" ? "success" : outcome.status === "declined" || outcome.status === "no_response" || outcome.status === "not_relevant" ? "warning" : "neutral",
-    });
-  }
-
-  for (const event of auditEvents.slice(0, 6)) {
-    entries.push({
-      id: `audit:${event.id}`,
-      occurredAt: event.createdAt,
-      label: "Audit",
-      title: event.action.replaceAll("_", " "),
-      detail: `${event.entityType} event recorded with ${event.riskLevel} risk.`,
-      tone: event.riskLevel === "high" ? "danger" : event.riskLevel === "medium" ? "warning" : "neutral",
-    });
-  }
-
-  return entries.sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime());
-}
-
 function parseCsvHeaderCells(text: string) {
   const cells: string[] = [];
   let cell = "";
@@ -523,6 +405,7 @@ export default function Home() {
   const [haiStatus, setHaiStatus] = useState<HaiIntegrationStatus | null>(null);
   const [runtimeCopyStatus, setRuntimeCopyStatus] = useState("");
   const [handoffStatus, setHandoffStatus] = useState<Record<string, string>>({});
+  const [selectedTimeline, setSelectedTimeline] = useState<MentorRelationshipTimeline | null>(null);
   const [workspaceBackupText, setWorkspaceBackupText] = useState("");
   const [workspacePreview, setWorkspacePreview] = useState<WorkspaceSummary | null>(null);
   const [workspaceStatus, setWorkspaceStatus] = useState("");
@@ -698,6 +581,27 @@ export default function Home() {
     const mentors = details?.mentors || [];
     return mentors.find((mentor) => mentor.id === selectedMentorId) || filteredMentors[0] || mentors[0] || null;
   }, [details?.mentors, filteredMentors, selectedMentorId]);
+  const timelineRevision = details?.auditEvents[0]?.id || "";
+
+  useEffect(() => {
+    if (!selectedMentor) {
+      setSelectedTimeline(null);
+      return;
+    }
+    let cancelled = false;
+    setSelectedTimeline(null);
+    ledgerApi
+      .mentorTimeline(selectedMentor.id)
+      .then(({ relationshipTimeline }) => {
+        if (!cancelled) setSelectedTimeline(relationshipTimeline);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load mentor relationship timeline");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMentor?.id, timelineRevision]);
   const pendingReview = (details?.messages || []).filter((message) => message.status === "draft");
   const approvedMessages = (details?.messages || []).filter((message) => message.status === "approved");
   const sentMessages = (details?.messages || []).filter((message) => message.status === "sent");
@@ -1867,6 +1771,7 @@ export default function Home() {
               responses={selectedMentor ? responsesByMentor.get(selectedMentor.id) || [] : []}
               followUps={selectedMentor ? followUpsByMentor.get(selectedMentor.id) || [] : []}
               outcomes={selectedMentor ? outcomesByMentor.get(selectedMentor.id) || [] : []}
+              timeline={selectedTimeline}
               nextActions={selectedMentor ? nextActions.filter((action) => action.mentorProfileId === selectedMentor.id) : []}
               auditEvents={
                 selectedMentor
@@ -2563,6 +2468,7 @@ function MentorDetailPanel({
   responses,
   followUps,
   outcomes,
+  timeline,
   nextActions,
   auditEvents,
   privacyMode,
@@ -2581,6 +2487,7 @@ function MentorDetailPanel({
   responses: CampaignDetails["responses"];
   followUps: CampaignDetails["followUps"];
   outcomes: CampaignDetails["outcomes"];
+  timeline: MentorRelationshipTimeline | null;
   nextActions: NextActionRecommendation[];
   auditEvents: CampaignDetails["auditEvents"];
   privacyMode: boolean;
@@ -2591,8 +2498,6 @@ function MentorDetailPanel({
   onResolveDuplicate: (mentor: MentorProfile) => void;
 }) {
   const duplicateAction = mentor ? nextActions.find((action) => action.type === "review_duplicate_profile") : null;
-  const timeline = buildRelationshipTimeline({ messages, approvalsByMessage, sendAttempts, responses, followUps, outcomes, auditEvents });
-
   return (
     <Card className="rounded-md py-5">
       <CardHeader className="px-5">
@@ -2662,7 +2567,7 @@ function MentorDetailPanel({
             </div>
 
             <RelationshipTimeline
-              entries={timeline}
+              entries={timeline?.entries || []}
               privacyMode={privacyMode}
               isSensitiveVisible={isSensitiveVisible}
               onRevealSensitive={onRevealSensitive}

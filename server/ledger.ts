@@ -403,6 +403,24 @@ type HaiIntegrationStatus = {
   };
 };
 
+type RelationshipTimelineEntry = {
+  id: string;
+  occurredAt: string;
+  label: "Draft" | "Approval" | "Send" | "Response" | "Follow-up" | "Outcome" | "Audit";
+  title: string;
+  detail: string;
+  tone: "neutral" | "success" | "warning" | "danger";
+  sensitiveKey?: string;
+  sensitiveText?: string;
+  sensitivePlaceholder?: string;
+};
+
+type MentorRelationshipTimeline = {
+  mentorProfileId: string;
+  generatedAt: string;
+  entries: RelationshipTimelineEntry[];
+};
+
 type AuditEvent = {
   id: string;
   userId: string;
@@ -1699,6 +1717,138 @@ function buildHaiIntegrationStatus(state: LedgerState, includeArchived = false):
   };
 }
 
+function formatTimelineDate(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function buildMentorRelationshipTimeline(state: LedgerState, mentor: MentorProfile): MentorRelationshipTimeline {
+  const messages = state.messageDrafts.filter((item) => item.mentorProfileId === mentor.id);
+  const messageIds = new Set(messages.map((item) => item.id));
+  const followUps = state.followUpPlans.filter((item) => item.mentorProfileId === mentor.id);
+  const followUpIds = new Set(followUps.map((item) => item.id));
+  const responses = state.mentorResponses.filter((item) => item.mentorProfileId === mentor.id);
+  const responseIds = new Set(responses.map((item) => item.id));
+  const outcomes = state.outreachOutcomes.filter((item) => item.mentorProfileId === mentor.id);
+  const outcomeIds = new Set(outcomes.map((item) => item.id));
+  const approvalsByMessage = new Map<string, MessageApproval[]>();
+  for (const approval of state.messageApprovals.filter((item) => messageIds.has(item.messageDraftId))) {
+    approvalsByMessage.set(approval.messageDraftId, [...(approvalsByMessage.get(approval.messageDraftId) || []), approval]);
+  }
+
+  const entries: RelationshipTimelineEntry[] = [];
+  for (const message of messages) {
+    entries.push({
+      id: `message:${message.id}`,
+      occurredAt: message.updatedAt,
+      label: "Draft",
+      title: message.subject || "Message draft",
+      detail: `Status: ${message.status}`,
+      tone: message.status === "rejected" ? "danger" : message.status === "sent" ? "success" : message.status === "approved" ? "warning" : "neutral",
+    });
+    for (const approval of approvalsByMessage.get(message.id) || []) {
+      entries.push({
+        id: `approval:${approval.id}`,
+        occurredAt: approval.decidedAt || approval.createdAt,
+        label: "Approval",
+        title: approval.decision === "approved" ? "Message approved" : "Message rejected",
+        detail: approval.decisionReason || "No decision reason recorded.",
+        tone: approval.decision === "approved" ? "success" : "danger",
+      });
+    }
+  }
+
+  for (const attempt of state.messageSendAttempts.filter((item) => item.mentorProfileId === mentor.id)) {
+    const sensitiveText = attempt.deliveryEvidence
+      ? `Delivery evidence: ${attempt.deliveryEvidence}`
+      : attempt.errorMessage
+      ? `Failure detail: ${attempt.errorMessage}`
+      : undefined;
+    entries.push({
+      id: `send:${attempt.id}`,
+      occurredAt: attempt.finishedAt || attempt.startedAt || attempt.createdAt,
+      label: "Send",
+      title: attempt.status === "confirmed_sent" ? "Manual send confirmed" : "Manual send failed",
+      detail: attempt.status === "confirmed_sent" ? "Manual delivery evidence is recorded." : "Manual delivery failed and remains retryable.",
+      tone: attempt.status === "confirmed_sent" ? "success" : "danger",
+      sensitiveKey: sensitiveText ? `timeline-send:${attempt.id}` : undefined,
+      sensitiveText,
+      sensitivePlaceholder: sensitiveText ? "Delivery details hidden" : undefined,
+    });
+  }
+
+  for (const response of responses) {
+    entries.push({
+      id: `response:${response.id}`,
+      occurredAt: response.createdAt,
+      label: "Response",
+      title: `Response recorded: ${response.classification.replace("_", " ")}`,
+      detail: response.nextAction || "Classify the response and decide the next step.",
+      tone: response.classification === "interested" || response.classification === "more_info" ? "success" : response.classification === "not_interested" || response.classification === "unavailable" ? "warning" : "neutral",
+      sensitiveKey: `timeline-response:${response.id}`,
+      sensitiveText: response.body || "No response text recorded.",
+      sensitivePlaceholder: "Response text hidden",
+    });
+  }
+
+  for (const followUp of followUps) {
+    entries.push({
+      id: `follow-up:${followUp.id}`,
+      occurredAt: followUp.updatedAt || followUp.createdAt,
+      label: "Follow-up",
+      title: `Follow-up ${followUp.status}`,
+      detail: `Due ${formatTimelineDate(followUp.dueAt)}`,
+      tone: followUp.status === "cancelled" ? "warning" : followUp.status === "completed" ? "success" : "neutral",
+      sensitiveKey: `timeline-follow-up:${followUp.id}`,
+      sensitiveText: followUp.suggestedMessage,
+      sensitivePlaceholder: "Follow-up message hidden",
+    });
+  }
+
+  for (const outcome of outcomes) {
+    entries.push({
+      id: `outcome:${outcome.id}`,
+      occurredAt: outcome.updatedAt || outcome.createdAt,
+      label: "Outcome",
+      title: `Outcome: ${outcome.status.replace("_", " ")}`,
+      detail: outcome.summary || "No outcome summary recorded.",
+      tone: outcome.status === "booked" || outcome.status === "helpful" ? "success" : outcome.status === "declined" || outcome.status === "no_response" || outcome.status === "not_relevant" ? "warning" : "neutral",
+    });
+  }
+
+  const auditEvents = state.auditEvents
+    .filter(
+      (event) =>
+        event.entityId === mentor.id ||
+        messageIds.has(event.entityId) ||
+        followUpIds.has(event.entityId) ||
+        responseIds.has(event.entityId) ||
+        outcomeIds.has(event.entityId)
+    )
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 6);
+  for (const event of auditEvents) {
+    entries.push({
+      id: `audit:${event.id}`,
+      occurredAt: event.createdAt,
+      label: "Audit",
+      title: event.action.replaceAll("_", " "),
+      detail: `${event.entityType} event recorded with ${event.riskLevel} risk.`,
+      tone: event.riskLevel === "high" ? "danger" : event.riskLevel === "medium" ? "warning" : "neutral",
+    });
+  }
+
+  return {
+    mentorProfileId: mentor.id,
+    generatedAt: now(),
+    entries: entries.sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime()),
+  };
+}
+
 function attachCampaignDetails(state: LedgerState, campaignId: string) {
   recalcCampaign(state, campaignId);
   const campaign = state.campaigns.find((item) => item.id === campaignId);
@@ -2700,7 +2850,14 @@ export function registerLedgerRoutes(app: Express) {
       responses: state.mentorResponses.filter((item) => item.mentorProfileId === mentor.id),
       followUps: state.followUpPlans.filter((item) => item.mentorProfileId === mentor.id),
       outcomes: state.outreachOutcomes.filter((item) => item.mentorProfileId === mentor.id),
+      relationshipTimeline: buildMentorRelationshipTimeline(state, mentor),
     };
+  }));
+
+  app.get("/api/mentors/:id/timeline", route((req, res, state) => {
+    const mentor = state.mentorProfiles.find((item) => item.id === routeId(req));
+    if (!mentor) return jsonError(res, 404, "Mentor not found");
+    return { relationshipTimeline: buildMentorRelationshipTimeline(state, mentor) };
   }));
 
   app.post("/api/mentors", route((req, res, state) => {
