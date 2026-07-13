@@ -264,10 +264,6 @@ const resultFilters: Array<{ value: ResultFilter; label: string }> = [
   { value: "open", label: "Open" },
 ];
 
-function latestCampaign(campaigns: Campaign[]) {
-  return campaigns.find((campaign) => campaign.status === "active") || campaigns[0] || null;
-}
-
 function groupBy<T>(items: T[], getKey: (item: T) => string) {
   const map = new Map<string, T[]>();
   for (const item of items) {
@@ -478,29 +474,23 @@ export default function Home() {
   const [sourceEdits, setSourceEdits] = useState<Record<string, SourceForm>>({});
   const [discoveryStatus, setDiscoveryStatus] = useState("");
 
-  const loadLedger = async (campaignId?: string) => {
+  const loadLedger = async (campaignId?: string, options: { refreshRuntime?: boolean } = {}) => {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, campaignResult, projectResult, nextHealthStatus, nextRuntimeStatus, nextHaiStatus] = await Promise.all([
-        ledgerApi.summary(),
-        ledgerApi.campaigns(),
-        ledgerApi.projects(),
-        ledgerApi.health().catch(() => null),
-        ledgerApi.runtimeStatus().catch(() => null),
-        ledgerApi.haiStatus().catch(() => null),
+      const requestedCampaignId = campaignId !== undefined ? campaignId : activeCampaignId;
+      const [snapshot, nextRuntimeStatus] = await Promise.all([
+        ledgerApi.dashboard(requestedCampaignId || undefined),
+        options.refreshRuntime ? ledgerApi.runtimeStatus().catch(() => null) : Promise.resolve(runtimeStatus),
       ]);
-      const nextCampaigns = campaignResult.campaigns;
-      const selectedId = campaignId !== undefined ? campaignId || latestCampaign(nextCampaigns)?.id || "" : activeCampaignId || latestCampaign(nextCampaigns)?.id || "";
-      const nextDetails = selectedId ? await ledgerApi.campaign(selectedId) : null;
-      setSummary(nextSummary);
-      setProjects(projectResult.projects);
-      setCampaigns(nextCampaigns);
-      setActiveCampaignId(selectedId);
-      setDetails(nextDetails);
-      setHealthStatus(nextHealthStatus);
+      setSummary(snapshot.summary);
+      setProjects(snapshot.projects);
+      setCampaigns(snapshot.campaigns);
+      setActiveCampaignId(snapshot.selectedCampaignId);
+      setDetails(snapshot.details);
+      setHealthStatus(snapshot.health);
       setRuntimeStatus(nextRuntimeStatus);
-      setHaiStatus(nextHaiStatus);
+      setHaiStatus(snapshot.haiStatus);
       setDraftEdits({});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
@@ -510,7 +500,7 @@ export default function Home() {
   };
 
   useEffect(() => {
-    void loadLedger();
+    void loadLedger(undefined, { refreshRuntime: true });
     // Load once on mount; subsequent refreshes are explicit after mutations.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1179,7 +1169,7 @@ export default function Home() {
               {privacyMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               <span className="hidden sm:inline">{privacyMode ? "Privacy on" : "Privacy off"}</span>
             </Button>
-            <Button variant="outline" className="rounded-md" onClick={() => void loadLedger(activeCampaignId)} aria-label="Refresh ledger">
+            <Button variant="outline" className="rounded-md" onClick={() => void loadLedger(activeCampaignId, { refreshRuntime: true })} aria-label="Refresh ledger">
               <RefreshCcw className="h-4 w-4" />
               <span className="hidden sm:inline">Refresh</span>
             </Button>

@@ -1,6 +1,6 @@
 # MARO Completion Audit
 
-Date: 2026-07-10
+Date: 2026-07-14
 
 ## Repository Understanding
 
@@ -22,7 +22,10 @@ The ledger uses local JSON persistence with optional AES-256-GCM encryption rath
 | Resource sessions can be stored | Process-level CPU time, RSS duration, ledger storage, and observed payload bytes are stored on session end. Measurement limitations are disclosed. | Proven |
 | Cost reports can be generated | Billing uses stored measured sessions and the documented `resource cost x 2` formula; usage reports and immutable local invoice snapshots are covered by smoke tests. | Proven |
 | Audit events are recorded | Important creates, edits, approvals, handoffs, attempts, responses, follow-ups, outcomes, restore/reset, billing, and duplicate decisions write persisted audit events. | Proven |
-| Frontend dashboard uses real persisted data | The command dashboard, ledger, mentor, review, response, billing, audit, workspace, and relationship timeline surfaces load through `client/src/lib/ledgerApi.ts`. Production browser QA confirms mutations persist and rerender. | Proven |
+| Frontend dashboard uses real persisted data | The initial command-center load uses the aggregate `/api/dashboard` snapshot; focused routes still serve relationship history and mutations. Production browser QA confirms campaign edits persist and rerender. | Proven |
+| Storage survives interrupted or corrupt writes | Ledger writes use temporary-file sync plus atomic replacement. A rolling backup is recovered and audit logged when the primary file is corrupt; smoke coverage verifies recovery and temporary-file cleanup. | Proven |
+| Backup restore preserves referential integrity | Restore preview rejects duplicate IDs and orphaned project, campaign, mentor, message, session, billing, response, follow-up, invoice, and outcome references. | Proven |
+| Local API resists Host-header rebinding | The server accepts local hosts, configured exact hosts, and ngrok suffixes only when tunnel mode is explicitly configured; unknown hosts receive HTTP 421. | Proven |
 | Build and type contract pass | `npm run build`, `npm run check`, and the composite `npm run check:release` are release gates. | Proven |
 | No private runtime artifacts are committed | Runtime ledger paths, installer output, exports, invoices, logs, and environment files are ignored; tracked-file hygiene checks find none. | Proven |
 | No unsafe autonomous outreach exists | The server exposes manual evidence recording, not a platform send endpoint. The optional extension has no background worker, storage, network client, persistent host access, or send action. | Proven |
@@ -32,7 +35,7 @@ The ledger uses local JSON persistence with optional AES-256-GCM encryption rath
 - Ngrok replaces Vite as the default development and preview entry point. Unauthenticated public tunnels are refused unless the operator explicitly opts in; basic authentication is the documented normal path.
 - The Windows 11 self-extracting installer embeds Node and the production app, writes version metadata, creates launch and uninstall paths, and registers current-user uninstall metadata. An isolated install verifies all required payload files.
 - The security audit covers local bind scope, tunnel exposure, browser headers and CSP, encrypted storage, privacy reveal controls, CSV formula injection, unsafe profile URLs, bounded scoring input, cross-site API mutations, approval snapshots, duplicate outreach, extension permissions, dependency vulnerabilities, and error disclosure.
-- The resource audit replaces production random usage with process-level measurements, avoids read-only ledger rewrites, caches encrypted reads, removes external font requests, avoids polling, and measures final bundle and installer sizes.
+- The resource audit replaces production random usage with process-level measurements, avoids read-only ledger rewrites, caches encrypted reads, removes external font requests and 59.6 MB of unreachable assets, coalesces identical in-flight requests, and uses one aggregate dashboard read instead of seven startup reads.
 - Feature analysis is maintained in `analysis/ENHANCEMENT_BACKLOG.md`; all five operating-ledger implementation slices are delivered.
 
 ## Remaining External Work

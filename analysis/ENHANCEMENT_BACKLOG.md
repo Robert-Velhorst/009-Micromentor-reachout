@@ -1,6 +1,6 @@
 # MARO Enhancement Backlog
 
-Updated: 2026-07-10
+Updated: 2026-07-14
 Scope: current `client/src/pages/Home.tsx` production app, Express operating ledger, ngrok launcher, Windows installer, and security/resource analysis.
 
 ## Current Product Shape
@@ -243,7 +243,7 @@ Acceptance:
 
 Why later: valuable once the next feature slice introduces more state transitions.
 
-Status: Implemented as a local release gate. `npm run check:release` now runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, production surface checks for CSP/security headers and external asset regressions, and the Windows installer build on Windows hosts. The smoke test covers root route serving, restrictive CSP, browser hardening headers, no external production asset URLs in the app shell, CSV parsing/import/export, mapped headers, duplicate skips, template quality blocking, approval-before-send enforcement, follow-up state transitions, response/outcome tracking, billing records, invoice report generation, backup/restore/reset validation, encryption-at-rest, and next-action coverage including invoice-report recommendations.
+Status: Implemented as a local release gate. `npm run check:release` now runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, production surface checks for CSP/security headers and external asset regressions, the Windows installer build, and an isolated install/payload check on Windows hosts. The smoke test covers root route serving, restrictive CSP, browser hardening headers, no external production asset URLs in the app shell, CSV parsing/import/export, mapped headers, duplicate skips, template quality blocking, approval-before-send enforcement, follow-up state transitions, response/outcome tracking, billing records, invoice report generation, backup/restore/reset validation, encryption-at-rest, and next-action coverage including invoice-report recommendations.
 It also verifies that campaign-level follow-up timing persists and controls the automatic follow-up generated after manual send confirmation.
 The same smoke path verifies campaign tone/goal propagation into generated outreach text, cancellation of pending follow-ups after a negative response, and failed manual send attempts remaining retryable without generating follow-up work.
 
@@ -258,14 +258,16 @@ Done:
 - Removed Google Fonts requests and switched to local system font stacks so private/offline installs do not contact external font hosts during normal rendering.
 - Added production surface assertions to the release gate so root HTML, CSP, browser hardening headers, and external asset regressions are checked before installer builds.
 - Made the Vite browser debug collector opt-in with `MARO_DEBUG_COLLECTOR=1`, avoiding background log ingestion and `.manus-logs` churn during normal development.
-- Aligned the legacy `src/utils/api.js` utility with the real ledger endpoints so it no longer points at removed bulk-send, mentor-delete, or simulated billing flows.
+- Removed the inactive parallel `src/` frontend and its unsupported API utility so the audited `client/src` command center is the only product surface.
+- Added one aggregate dashboard endpoint and coalesced identical in-flight client requests, reducing refresh chatter without adding polling or stale client caches.
+- Removed unused component libraries and 59.6 MB of unreachable image assets; the production CSS payload fell from 109.78 KB to 39.59 KB minified.
 
 Do next:
 
 - Virtualize mentor and queue tables only after real lists exceed a few hundred rows. The current UI does not need virtualization yet.
 - Move CSV parsing and backup restore validation into chunked browser work if files become large.
 - Keep generated messages derived with `useMemo`; persist only durable campaign snapshots, not every keystroke.
-- Remove or quarantine unused legacy `src/` app code once no longer needed as reference. It increases dependency pressure and code-review noise.
+- Keep list virtualization and chunked restore work evidence-triggered; the current event-driven workflow remains responsive without those background mechanisms.
 
 Avoid for now:
 
@@ -287,9 +289,11 @@ Done:
 - Bound handoff and send confirmation to the latest approved content snapshot; editing approved content now invalidates approval and is audit logged.
 - Added duplicate outreach guards and review actions so one mentor identity/profile cannot receive multiple active or sent campaign drafts through manual/API paths, and the operator can see which profile needs duplicate review.
 - Added audited duplicate-resolution controls that close duplicate source rows while preserving history and canonical outreach context.
-- Added release-gate checks that prevent the legacy API utility from reintroducing unsafe bulk-send, mentor-delete, or unsupported mentor-update paths.
+- Removed the legacy API utility and parallel frontend entirely, eliminating its unsupported bulk-send and simulated billing paths from the repository.
 - Added release-gate checks that fail on missing security headers, weakened CSP self-only directives, Google Fonts reintroduction, or external asset URLs in the production app shell.
 - Added same-app mutation protection for the local ledger API: mutating requests require a custom marker, browser-reported cross-site requests are rejected, and smoke tests cover blocked and allowed paths.
+- Added Host validation against local, configured, and explicitly enabled ngrok hosts to close the DNS-rebinding path around same-origin mutation controls.
+- Added atomic ledger replacement, rolling-backup recovery, and cross-record restore validation so interrupted writes or orphaned backups fail safely.
 
 Do next:
 

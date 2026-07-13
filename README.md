@@ -49,7 +49,8 @@ The Express server now exposes operational API routes before serving the fronten
 
 - `GET /api/health`
 - `GET /api/runtime/status`
-- `GET /api/workspace/backup`
+- `GET /api/dashboard`
+- `POST /api/workspace/backup`
 - `POST /api/workspace/restore/preview`
 - `POST /api/workspace/restore`
 - `POST /api/workspace/reset`
@@ -67,8 +68,8 @@ The Express server now exposes operational API routes before serving the fronten
 - `PATCH /api/sources/:id`
 - `GET|POST /api/campaigns/:id/mentors`
 - `POST /api/campaigns/:id/mentors/import`
-- `GET /api/campaigns/:id/mentors/export`
-- `GET /api/campaigns/:id/history/export`
+- `POST /api/campaigns/:id/mentors/export`
+- `POST /api/campaigns/:id/history/export`
 - `GET|POST /api/campaigns/:id/messages`
 - `GET /api/campaigns/:id/follow-ups`
 - `GET /api/campaigns/:id/usage-report`
@@ -96,9 +97,11 @@ The Express server now exposes operational API routes before serving the fronten
 - `GET /api/invoices`
 - `GET /api/audit`
 
-All `POST`, `PATCH`, `PUT`, and `DELETE` requests under `/api` must include `X-MARO-Request: 1`. The app adds this marker automatically. Combined with the server's no-CORS policy and `Sec-Fetch-Site` check, it prevents cross-site pages and form posts from changing the local ledger. Trusted local integrations must add the header explicitly.
+All `POST`, `PATCH`, `PUT`, and `DELETE` requests under `/api` must include `X-MARO-Request: 1`. The app adds this marker automatically. Combined with the server's no-CORS policy, `Sec-Fetch-Site` check, and request-host allowlist, it prevents cross-site pages, form posts, and DNS-rebinding hosts from reading or changing the local ledger. Trusted local integrations must add the header explicitly.
 
-The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to store it elsewhere. Runtime ledger data is ignored by git.
+MARO accepts `localhost`, `127.0.0.1`, and IPv6 loopback hosts by default. Protected ngrok hosts are accepted only while tunnel mode is configured. Set `MARO_ALLOWED_HOSTS` to a comma-separated list of exact additional hosts when placing MARO behind a trusted local reverse proxy.
+
+The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to store it elsewhere. Runtime ledger data is ignored by git. Writes use a flushed temporary file plus atomic replacement and retain `maro-ledger.json.backup` as the previous valid state. If the primary file becomes unreadable, MARO restores the rolling backup and records a high-risk recovery audit event.
 
 Set `MARO_LEDGER_PASSPHRASE` to encrypt the local ledger file at rest with AES-256-GCM. Existing plaintext ledger files are migrated to an encrypted envelope on the next API read/write when this passphrase is present. Keep the passphrase somewhere safe; MARO cannot recover encrypted ledger data without it. Workspace backups remain portable JSON exports and should be handled as sensitive files.
 
@@ -106,7 +109,7 @@ Resource sessions are process-level local measurements. MARO records Node CPU ti
 
 Invoice reports are persisted local ledger snapshots generated from stored billing records. They are audit logged and are not external charges, payment requests, or platform billing actions.
 
-Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates the required ledger arrays, including mentor source records, message quality reviews, and invoice records, before replacing local data. Mentor exports and campaign-history exports include industries, location, and the linked source-search name when a mentor came from a recorded search. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
+Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates required arrays, unique record IDs, and cross-record references before replacing local data. Mentor exports and campaign-history exports include industries, location, and the linked source-search name when a mentor came from a recorded search. Export routes are guarded mutations because they append audit evidence. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
 
 Projects group related outreach campaigns. Campaign creation and updates validate the selected project, and the command center can maintain active project and campaign context beside the campaign ledger.
 

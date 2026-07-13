@@ -510,6 +510,16 @@ export type CampaignDetails = {
   auditEvents: AuditEvent[];
 };
 
+export type DashboardSnapshot = {
+  summary: LedgerSummary;
+  projects: OutreachProject[];
+  campaigns: Campaign[];
+  selectedCampaignId: string;
+  details: CampaignDetails | null;
+  health: HealthStatus;
+  haiStatus: HaiIntegrationStatus;
+};
+
 export type UsageReport = {
   reportId: string;
   generatedAt: string;
@@ -541,29 +551,58 @@ export type MentorImportResult = {
 
 export type MentorCsvColumnMap = Partial<Record<"name" | "company" | "headline" | "bio" | "skills" | "industries" | "location" | "profileUrl" | "notes" | "source" | "priority" | "stage", string>>;
 
-async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const method = (options.method || "GET").toUpperCase();
-  const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
-  if (!["GET", "HEAD"].includes(method)) {
-    headers.set("X-MARO-Request", "1");
-  }
+const inFlightRequests = new Map<string, Promise<unknown>>();
 
+async function performRequest<T>(url: string, options: RequestInit, headers: Headers): Promise<T> {
   const response = await fetch(url, {
     ...options,
     headers,
   });
-  const data = (await response.json()) as T & { error?: string };
-  if (!response.ok) {
-    throw new Error(data.error || `Request failed with ${response.status}`);
+  const responseText = await response.text();
+  let data: (T & { error?: string }) | null = null;
+  if (responseText) {
+    try {
+      data = JSON.parse(responseText) as T & { error?: string };
+    } catch {
+      if (!response.ok) throw new Error(`Request failed with ${response.status}`);
+      throw new Error("MARO returned an invalid API response");
+    }
   }
+  if (!response.ok) {
+    throw new Error(data?.error || `Request failed with ${response.status}`);
+  }
+  if (!data) throw new Error("MARO returned an empty API response");
   return data;
+}
+
+async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers);
+  headers.set("Accept", "application/json");
+  if (options.body !== undefined) headers.set("Content-Type", "application/json");
+  if (!["GET", "HEAD"].includes(method)) {
+    headers.set("X-MARO-Request", "1");
+  }
+
+  const key = `${method}:${url}:${typeof options.body === "string" ? options.body : ""}`;
+  const existing = inFlightRequests.get(key);
+  if (existing) return existing as Promise<T>;
+
+  const pending = performRequest<T>(url, options, headers);
+  inFlightRequests.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (inFlightRequests.get(key) === pending) inFlightRequests.delete(key);
+  }
 }
 
 export const ledgerApi = {
   health: () => request<HealthStatus>("/api/health"),
   runtimeStatus: () => request<RuntimeStatus>("/api/runtime/status"),
-  workspaceBackup: () => request<WorkspaceBackup>("/api/workspace/backup"),
+  dashboard: (campaignId?: string) =>
+    request<DashboardSnapshot>(campaignId ? `/api/dashboard?campaignId=${encodeURIComponent(campaignId)}` : "/api/dashboard"),
+  workspaceBackup: () => request<WorkspaceBackup>("/api/workspace/backup", { method: "POST" }),
   previewWorkspaceRestore: (backupJson: string) =>
     request<{ valid: true; summary: WorkspaceSummary }>("/api/workspace/restore/preview", {
       method: "POST",
@@ -683,9 +722,9 @@ export const ledgerApi = {
       body: JSON.stringify({ csvText, preview, columnMap, sourceRecordId }),
     }),
   exportMentorCsv: (campaignId: string) =>
-    request<{ filename: string; csv: string }>(`/api/campaigns/${campaignId}/mentors/export`),
+    request<{ filename: string; csv: string }>(`/api/campaigns/${campaignId}/mentors/export`, { method: "POST" }),
   exportCampaignHistoryCsv: (campaignId: string) =>
-    request<{ filename: string; csv: string }>(`/api/campaigns/${campaignId}/history/export`),
+    request<{ filename: string; csv: string }>(`/api/campaigns/${campaignId}/history/export`, { method: "POST" }),
   mentorTimeline: (mentorId: string) =>
     request<{ relationshipTimeline: MentorRelationshipTimeline }>(`/api/mentors/${mentorId}/timeline`),
   createDraft: (campaignId: string, mentorProfileId: string) =>

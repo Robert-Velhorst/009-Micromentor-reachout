@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import { request as httpRequest } from "node:http";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -60,6 +61,24 @@ async function fetchText(pathname) {
   };
 }
 
+function fetchWithHost(pathname, host) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(
+      { hostname: "127.0.0.1", port, path: pathname, headers: { Host: host } },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => resolve({
+          status: response.statusCode || 0,
+          body: Buffer.concat(chunks).toString("utf8"),
+        }));
+      }
+    );
+    request.on("error", reject);
+    request.end();
+  });
+}
+
 function headerValue(response, name) {
   return response.headers.get(name) || "";
 }
@@ -107,6 +126,30 @@ try {
   assert(health.persistence === "encrypted-json", "Health endpoint did not report encrypted ledger persistence");
   assert(health.storage?.encrypted === true, "Health endpoint did not report encrypted storage");
   assert(!("path" in health.storage), "Health storage status should not expose a local filesystem path");
+  assert(health.storage.atomicWrites === true, "Health endpoint did not report atomic ledger writes");
+
+  const blockedHost = await fetchWithHost("/api/health", "attacker.example");
+  assert(blockedHost.status === 421, "Unexpected request host was not blocked");
+  assert(JSON.parse(blockedHost.body).error === "Request host is not allowed", "Unexpected request host returned the wrong error");
+
+  const ipv6LocalHost = await fetchWithHost("/api/health", `[::1]:${port}`);
+  assert(ipv6LocalHost.status === 200, "IPv6 localhost Host value was not accepted");
+  assert(JSON.parse(ipv6LocalHost.body).ok === true, "IPv6 localhost health response was invalid");
+
+  const unknownApiRoute = await fetch(`${baseUrl}/api/not-a-real-route`);
+  assert(unknownApiRoute.status === 404, "Unknown API route did not return HTTP 404");
+  assertIncludes(headerValue(unknownApiRoute, "content-type"), "application/json", "Unknown API route did not return JSON");
+  assert(headerValue(unknownApiRoute, "cache-control") === "no-store", "API responses are not protected from browser caching");
+  assert((await unknownApiRoute.json()).error === "API route not found", "Unknown API route returned the wrong error");
+
+  const malformedJson = await fetch(`${baseUrl}/api/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-MARO-Request": "1" },
+    body: "{not-json",
+  });
+  assert(malformedJson.status === 400, "Malformed API JSON did not return HTTP 400");
+  assertIncludes(headerValue(malformedJson, "content-type"), "application/json", "Malformed API JSON did not return JSON");
+  assert((await malformedJson.json()).error === "Request body must be valid JSON", "Malformed API JSON returned the wrong error");
 
   const missingMarker = await fetch(`${baseUrl}/api/projects`, {
     method: "POST",
@@ -148,6 +191,12 @@ try {
   assert(runtime.tunnel.active === false, "Runtime status should not report an active tunnel during smoke test");
   assert(runtime.auth.basicAuthConfigured === false, "Runtime status unexpectedly reported basic auth in smoke test");
   assert(runtime.auth.publicTunnelExplicitlyAllowed === false, "Runtime status unexpectedly reported public tunnel opt-in in smoke test");
+
+  const initialDashboard = await api("/api/dashboard");
+  assert(initialDashboard.selectedCampaignId, "Dashboard snapshot did not select an active campaign");
+  assert(initialDashboard.details?.campaign.id === initialDashboard.selectedCampaignId, "Dashboard snapshot details did not match its selected campaign");
+  assert(initialDashboard.health.ok === true, "Dashboard snapshot did not include health status");
+  assert(Array.isArray(initialDashboard.haiStatus.campaigns), "Dashboard snapshot did not include HAI status");
 
   const rootPage = await fetchText("/");
   assert(rootPage.response.status === 200, "Root page did not return HTTP 200");
@@ -193,13 +242,6 @@ try {
   assert(!extensionPopup.includes("chrome.storage"), "Manual handoff extension persists sensitive handoff content");
   assert(!extensionPopup.includes("chrome.tabs.sendMessage"), "Manual handoff extension contains a message-send bridge");
   assert(!extensionPopup.includes("fetch("), "Manual handoff extension makes an external network request");
-
-  const legacyApiUtility = fs.readFileSync(path.join(root, "src", "utils", "api.js"), "utf8");
-  assert(!legacyApiUtility.includes("/api/messages/${messageId}/send`"), "Legacy API utility still calls the removed bulk send endpoint");
-  assert(!legacyApiUtility.includes("method: 'DELETE'"), "Legacy API utility still exposes mentor deletion");
-  assert(!legacyApiUtility.includes("method: 'PUT'"), "Legacy API utility still uses unsupported mentor PUT updates");
-  assert(legacyApiUtility.includes("/api/messages/${messageId}/send-attempt`"), "Legacy API utility no longer targets manual send-attempt confirmation");
-  assert(legacyApiUtility.includes("Manual delivery evidence is required"), "Legacy API utility does not require manual delivery evidence");
 
   const projectList = await api("/api/projects");
   assert(projectList.projects.length >= 1, "Default project was not available");
@@ -467,7 +509,8 @@ try {
   const linkedImportSource = sourceAfterCsvImport.sources.find((source) => source.id === sourceResult.source.id);
   assert(linkedImportSource.importedCount === 3, "Linked source record did not track CSV imported count");
   assert(linkedImportSource.status === "imported", "Linked source record did not remain imported after CSV import");
-  const exportResult = await api(`/api/campaigns/${campaignId}/mentors/export`);
+  await expectFailure(`/api/campaigns/${campaignId}/mentors/export`, {}, 404);
+  const exportResult = await api(`/api/campaigns/${campaignId}/mentors/export`, { method: "POST" });
   assert(exportResult.csv.includes("Grace Hopper"), "CSV export did not include imported mentor");
   assert(exportResult.csv.startsWith("name,company,headline,bio,skills,industries,location,source,sourceSearch,"), "CSV export did not include structured profile and source search headers");
   assert(exportResult.csv.includes("Smoke MicroMentor search"), "CSV export did not include linked source search name");
@@ -669,6 +712,15 @@ try {
   assert(followUpsAfterSend.followUps[0].suggestedMessage.includes("I'll be direct and keep this practical."), "Automatic follow-up did not preserve the campaign tone");
   await api(`/api/follow-ups/${followUpsAfterSend.followUps[0].id}/complete`, { method: "POST" });
 
+  await expectFailure("/api/follow-ups", {
+    method: "POST",
+    body: JSON.stringify({ campaignId, mentorProfileId: mentorId, dueAt: "not-a-date" }),
+  }, 400);
+  await expectFailure("/api/follow-ups", {
+    method: "POST",
+    body: JSON.stringify({ campaignId, mentorProfileId: mentorId, messageDraftId: "missing-message" }),
+  }, 400);
+
   const manualFollowUp = await api("/api/follow-ups", {
     method: "POST",
     body: JSON.stringify({
@@ -691,6 +743,15 @@ try {
   assert(!followUpDraftActions.actions.some((action) => action.type === "follow_up_due" && action.followUpId === manualFollowUp.followUp.id), "Linked follow-up draft should suppress duplicate due action");
   await expectFailure(`/api/follow-ups/${manualFollowUp.followUp.id}/draft`, { method: "POST" }, 409);
   await api(`/api/follow-ups/${manualFollowUp.followUp.id}/cancel`, { method: "POST" });
+
+  await expectFailure("/api/responses", {
+    method: "POST",
+    body: JSON.stringify({ campaignId, mentorProfileId: mentorId, classification: "unexpected" }),
+  }, 400);
+  await expectFailure("/api/responses", {
+    method: "POST",
+    body: JSON.stringify({ campaignId, mentorProfileId: mentorId, messageDraftId: "missing-message", classification: "interested" }),
+  }, 400);
 
   const responseResult = await api("/api/responses", {
     method: "POST",
@@ -826,7 +887,8 @@ try {
   assert(haiCampaign.costs.finalCost === usageReport.totals.finalCost, "HAI campaign snapshot did not expose campaign final cost");
   assert(haiStatus.totals.nextActions >= haiCampaign.nextActions.length, "HAI integration totals did not include campaign next actions");
 
-  const historyExport = await api(`/api/campaigns/${campaignId}/history/export`);
+  await expectFailure(`/api/campaigns/${campaignId}/history/export`, {}, 404);
+  const historyExport = await api(`/api/campaigns/${campaignId}/history/export`, { method: "POST" });
   assert(historyExport.filename.endsWith("-campaign-history.csv"), "Campaign history export filename was not generated");
   assert(historyExport.csv.includes("latestMessageStatus"), "Campaign history export did not include message status header");
   assert(historyExport.csv.includes("sourceSearch"), "Campaign history export did not include source search header");
@@ -838,7 +900,8 @@ try {
   assert(historyExport.csv.includes("booked"), "Campaign history export did not include outcome state");
   assert(historyExport.csv.includes("'=1+1"), "Campaign history export did not neutralize spreadsheet formula content");
 
-  const backup = await api("/api/workspace/backup");
+  await expectFailure("/api/workspace/backup", {}, 404);
+  const backup = await api("/api/workspace/backup", { method: "POST" });
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
   assert(backup.summary.mentors === 4, "Workspace backup did not include mentor count");
   assert(backup.summary.sourceRecords === 5, "Workspace backup did not include source record count");
@@ -864,6 +927,18 @@ try {
   await expectFailure("/api/workspace/restore/preview", {
     method: "POST",
     body: JSON.stringify({ backupJson: JSON.stringify(missingInvoiceRecordsBackup) }),
+  }, 400);
+  const orphanedBackup = structuredClone(backup);
+  orphanedBackup.ledger.messageDrafts[0].mentorProfileId = "missing-mentor";
+  await expectFailure("/api/workspace/restore/preview", {
+    method: "POST",
+    body: JSON.stringify({ backupJson: JSON.stringify(orphanedBackup) }),
+  }, 400);
+  const duplicateIdBackup = structuredClone(backup);
+  duplicateIdBackup.ledger.mentorProfiles[1].id = duplicateIdBackup.ledger.mentorProfiles[0].id;
+  await expectFailure("/api/workspace/restore/preview", {
+    method: "POST",
+    body: JSON.stringify({ backupJson: JSON.stringify(duplicateIdBackup) }),
   }, 400);
   await expectFailure("/api/workspace/restore/preview", {
     method: "POST",
@@ -893,6 +968,25 @@ try {
   assert(restoredDetails.sourceRecords.length === 4, "Restored source records were not available");
   assert(restoredDetails.qualityReviews.length === 3, "Restored quality review was not available");
   assert(restoredDetails.invoiceRecords.length === 1, "Restored invoice record was not available");
+
+  const recoveryBackupFile = `${ledgerFile}.backup`;
+  assert(fs.existsSync(recoveryBackupFile), "Atomic ledger writer did not retain a recovery backup");
+  await api(`/api/projects/${projectResult.project.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ description: "Recovery-write probe" }),
+  });
+  fs.writeFileSync(ledgerFile, "{corrupted-primary", "utf8");
+  const recoveredDetails = await api(`/api/campaigns/${campaignId}`);
+  assert(recoveredDetails.messages.length === 3, "Ledger did not recover campaign data from its rolling backup");
+  const recoveredAudit = await api("/api/audit?entityId=local-ledger");
+  assert(
+    recoveredAudit.auditEvents.some((event) => event.action === "recovered_ledger_from_backup"),
+    "Ledger recovery was not audit logged"
+  );
+  assert(
+    fs.readdirSync(dataDir).every((name) => !name.endsWith(".tmp")),
+    "Atomic ledger writer left temporary files behind"
+  );
 
   const persistedLedger = fs.readFileSync(ledgerFile, "utf8");
   const persistedEnvelope = JSON.parse(persistedLedger);

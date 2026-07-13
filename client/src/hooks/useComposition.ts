@@ -29,53 +29,45 @@ export function useComposition<
     onCompositionEnd: originalOnCompositionEnd,
   } = options;
 
-  const c = useRef(false);
-  const timer = useRef<TimerResponse | null>(null);
-  const timer2 = useRef<TimerResponse | null>(null);
+  const composing = useRef(false);
+  const endTimer = useRef<TimerResponse | null>(null);
+  const releaseTimer = useRef<TimerResponse | null>(null);
 
-  const onCompositionStart = usePersistFn((e: React.CompositionEvent<T>) => {
-    if (timer.current) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-    if (timer2.current) {
-      clearTimeout(timer2.current);
-      timer2.current = null;
-    }
-    c.current = true;
-    originalOnCompositionStart?.(e);
+  const onCompositionStart = usePersistFn((event: React.CompositionEvent<T>) => {
+    if (endTimer.current) clearTimeout(endTimer.current);
+    if (releaseTimer.current) clearTimeout(releaseTimer.current);
+    endTimer.current = null;
+    releaseTimer.current = null;
+    composing.current = true;
+    originalOnCompositionStart?.(event);
   });
 
-  const onCompositionEnd = usePersistFn((e: React.CompositionEvent<T>) => {
-    // 使用两层 setTimeout 来处理 Safari 浏览器中 compositionEnd 先于 onKeyDown 触发的问题
-    timer.current = setTimeout(() => {
-      timer2.current = setTimeout(() => {
-        c.current = false;
+  const onCompositionEnd = usePersistFn((event: React.CompositionEvent<T>) => {
+    // Safari can fire compositionEnd before the confirming keydown event.
+    endTimer.current = setTimeout(() => {
+      releaseTimer.current = setTimeout(() => {
+        composing.current = false;
       });
     });
-    originalOnCompositionEnd?.(e);
+    originalOnCompositionEnd?.(event);
   });
 
-  const onKeyDown = usePersistFn((e: React.KeyboardEvent<T>) => {
-    // 在 composition 状态下，阻止 ESC 和 Enter（非 shift+Enter）事件的冒泡
+  const onKeyDown = usePersistFn((event: React.KeyboardEvent<T>) => {
+    // Keep Enter and Escape from reaching business handlers during IME composition.
     if (
-      c.current &&
-      (e.key === "Escape" || (e.key === "Enter" && !e.shiftKey))
+      composing.current &&
+      (event.key === "Escape" || (event.key === "Enter" && !event.shiftKey))
     ) {
-      e.stopPropagation();
+      event.stopPropagation();
       return;
     }
-    originalOnKeyDown?.(e);
-  });
-
-  const isComposing = usePersistFn(() => {
-    return c.current;
+    originalOnKeyDown?.(event);
   });
 
   return {
     onCompositionStart,
     onCompositionEnd,
     onKeyDown,
-    isComposing,
+    isComposing: usePersistFn(() => composing.current),
   };
 }

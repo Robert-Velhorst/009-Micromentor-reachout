@@ -1,13 +1,44 @@
-import express from "express";
+import express, { type ErrorRequestHandler, type Request } from "express";
 import { createServer } from "http";
 import path from "path";
 import { registerLedgerRoutes } from "./ledger";
 
 const serverDir = path.dirname(path.resolve(process.argv[1] || "."));
 const appVersion = process.env.MARO_APP_VERSION || process.env.MARO_BUILD_VERSION || "development";
+const localHosts = new Set(["127.0.0.1", "localhost", "::1"]);
+const ngrokHostSuffixes = [".ngrok.app", ".ngrok-free.app", ".ngrok.io"];
 
 function hostAlias(host: string) {
   return host === "localhost" ? "127.0.0.1" : host;
+}
+
+function requestHostname(value: string | undefined) {
+  const host = String(value || "").split(",", 1)[0].trim();
+  if (!host) return "";
+  try {
+    const hostname = new URL(`http://${host}`).hostname.toLowerCase();
+    return hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  } catch {
+    return "";
+  }
+}
+
+function configuredAllowedHosts() {
+  return new Set(
+    String(process.env.MARO_ALLOWED_HOSTS || "")
+      .split(",")
+      .map((host) => requestHostname(host))
+      .filter(Boolean)
+  );
+}
+
+function hostIsAllowed(req: Request) {
+  const hostname = requestHostname(req.get("host"));
+  if (!hostname) return false;
+  if (localHosts.has(hostname) || configuredAllowedHosts().has(hostname)) return true;
+
+  const tunnelEnabled = Boolean(process.env.NGROK_BASIC_AUTH) || process.env.MARO_ALLOW_PUBLIC_TUNNEL === "1";
+  return tunnelEnabled && ngrokHostSuffixes.some((suffix) => hostname.endsWith(suffix));
 }
 
 function tunnelTargetsServer(addr: string | undefined, host: string, port: number) {
@@ -58,8 +89,6 @@ async function startServer() {
   const isProduction = process.env.NODE_ENV === "production";
 
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "1mb" }));
-
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
@@ -85,6 +114,14 @@ async function startServer() {
     next();
   });
 
+  app.use((req, res, next) => {
+    if (!hostIsAllowed(req)) {
+      res.status(421).json({ error: "Request host is not allowed" });
+      return;
+    }
+    next();
+  });
+
   const mutationMethods = new Set(["POST", "PATCH", "PUT", "DELETE"]);
   app.use("/api", (req, res, next) => {
     if (!mutationMethods.has(req.method.toUpperCase())) {
@@ -104,6 +141,12 @@ async function startServer() {
 
     next();
   });
+
+  app.use("/api", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+  });
+  app.use(express.json({ limit: "1mb", type: "application/json" }));
 
   registerLedgerRoutes(app);
 
@@ -128,6 +171,27 @@ async function startServer() {
     });
   });
 
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ error: "API route not found" });
+  });
+
+  const apiErrorHandler: ErrorRequestHandler = (error, req, res, next) => {
+    if (!req.path.startsWith("/api")) {
+      next(error);
+      return;
+    }
+
+    const status = typeof error?.status === "number" ? error.status : 500;
+    const message = status === 413
+      ? "Request body is too large"
+      : status === 400
+        ? "Request body must be valid JSON"
+        : "Internal API error";
+    if (status >= 500) console.error(error);
+    res.status(status).json({ error: message });
+  };
+  app.use(apiErrorHandler);
+
   const staticPath = isProduction
     ? path.resolve(serverDir, "public")
     : path.resolve(serverDir, "..", "dist", "public");
@@ -136,9 +200,18 @@ async function startServer() {
     express.static(staticPath, {
       dotfiles: "ignore",
       fallthrough: true,
-      maxAge: isProduction ? "1h" : 0,
-      setHeaders(res) {
-        res.setHeader("Cache-Control", isProduction ? "public, max-age=3600" : "no-store");
+      maxAge: 0,
+      setHeaders(res, filePath) {
+        if (!isProduction) {
+          res.setHeader("Cache-Control", "no-store");
+          return;
+        }
+        const filename = path.basename(filePath);
+        const fingerprintedAsset = /-[A-Za-z0-9_-]{8,}\.(?:css|js|mjs|png|jpe?g|gif|svg|webp|woff2?)$/i.test(filename);
+        res.setHeader(
+          "Cache-Control",
+          fingerprintedAsset ? "public, max-age=31536000, immutable" : "no-cache"
+        );
       },
     })
   );

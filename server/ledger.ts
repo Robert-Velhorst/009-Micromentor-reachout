@@ -564,6 +564,10 @@ function dataPath() {
   return path.join(dataDir, "maro-ledger.json");
 }
 
+function backupDataPath() {
+  return `${dataPath()}.backup`;
+}
+
 function ledgerPassphrase() {
   return (process.env.MARO_LEDGER_PASSPHRASE || "").trim();
 }
@@ -572,6 +576,8 @@ function storageStatus() {
   return {
     persistence: ledgerPassphrase() ? "encrypted-json" : "local-json",
     encrypted: Boolean(ledgerPassphrase()),
+    atomicWrites: true,
+    recoveryBackupAvailable: fs.existsSync(backupDataPath()),
   };
 }
 
@@ -684,6 +690,18 @@ function parseNonNegativeInteger(value: unknown, fallback = 0, max = 100000) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(0, Math.round(parsed)));
+}
+
+function parseIsoDate(value: unknown) {
+  const date = new Date(String(value || ""));
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function parseResponseClassification(value: unknown): ResponseClassification | null {
+  const classification = String(value || "unknown");
+  return ["interested", "not_interested", "more_info", "unavailable", "unknown"].includes(classification)
+    ? classification as ResponseClassification
+    : null;
 }
 
 function stringList(value: unknown) {
@@ -1167,7 +1185,25 @@ function readState(): LedgerState {
     return structuredClone(ledgerCache.state);
   }
 
-  const stored = parseStoredLedger(fs.readFileSync(filePath, "utf8"));
+  let stored: ReturnType<typeof parseStoredLedger>;
+  try {
+    stored = parseStoredLedger(fs.readFileSync(filePath, "utf8"));
+  } catch (primaryError) {
+    const backupPath = backupDataPath();
+    if (!fs.existsSync(backupPath)) throw primaryError;
+    try {
+      stored = parseStoredLedger(fs.readFileSync(backupPath, "utf8"));
+      const recovered = normalizeState(stored.state);
+      audit(recovered, "recovered_ledger_from_backup", "workspace", "local-ledger", workspaceSummary(recovered), {
+        actor: "system",
+        riskLevel: "high",
+      });
+      writeState(recovered, { preserveBackup: true });
+      return structuredClone(recovered);
+    } catch {
+      throw primaryError;
+    }
+  }
   const state = normalizeState(stored.state);
   if (passphrase && !stored.encrypted) {
     writeState(state);
@@ -1183,10 +1219,32 @@ function readState(): LedgerState {
   return structuredClone(state);
 }
 
-function writeState(state: LedgerState) {
+function atomicWriteFile(filePath: string, contents: string) {
+  const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const handle = fs.openSync(tempPath, "wx", 0o600);
+  try {
+    fs.writeFileSync(handle, contents, "utf8");
+    fs.fsyncSync(handle);
+  } finally {
+    fs.closeSync(handle);
+  }
+
+  try {
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
+}
+
+function writeState(state: LedgerState, options: { preserveBackup?: boolean } = {}) {
   const filePath = dataPath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, encryptLedgerJson(JSON.stringify(state, null, 2)), "utf8");
+  if (!options.preserveBackup && fs.existsSync(filePath)) {
+    atomicWriteFile(backupDataPath(), fs.readFileSync(filePath, "utf8"));
+  }
+  atomicWriteFile(filePath, encryptLedgerJson(JSON.stringify(state, null, 2)));
   const stat = fs.statSync(filePath);
   ledgerCache = {
     filePath,
@@ -1239,6 +1297,120 @@ function parseBackupPayload(body: unknown) {
   return payload;
 }
 
+function workspaceIntegrityError(state: LedgerState) {
+  const ids = <T extends { id: string }>(label: string, records: T[]) => {
+    const result = new Set<string>();
+    for (const record of records) {
+      if (!record || typeof record.id !== "string" || !record.id.trim()) {
+        return { error: `${label} contains a record without a valid id`, ids: result };
+      }
+      if (result.has(record.id)) {
+        return { error: `${label} contains duplicate id: ${record.id}`, ids: result };
+      }
+      result.add(record.id);
+    }
+    return { error: "", ids: result };
+  };
+  const collections = {
+    operators: ids("operators", state.operators),
+    projects: ids("projects", state.projects),
+    campaigns: ids("campaigns", state.campaigns),
+    sources: ids("mentorSources", state.mentorSources),
+    identities: ids("mentorIdentities", state.mentorIdentities),
+    mentors: ids("mentorProfiles", state.mentorProfiles),
+    assessments: ids("matchAssessments", state.matchAssessments),
+    messages: ids("messageDrafts", state.messageDrafts),
+    qualityReviews: ids("messageQualityReviews", state.messageQualityReviews),
+    approvals: ids("messageApprovals", state.messageApprovals),
+    sendAttempts: ids("messageSendAttempts", state.messageSendAttempts),
+    responses: ids("mentorResponses", state.mentorResponses),
+    followUps: ids("followUpPlans", state.followUpPlans),
+    sessions: ids("resourceUsageSessions", state.resourceUsageSessions),
+    billing: ids("billingRecords", state.billingRecords),
+    invoices: ids("invoiceRecords", state.invoiceRecords),
+    outcomes: ids("outreachOutcomes", state.outreachOutcomes),
+    audit: ids("auditEvents", state.auditEvents),
+  };
+  const invalidCollection = Object.values(collections).find((collection) => collection.error);
+  if (invalidCollection) return invalidCollection.error;
+
+  const requireReference = (condition: boolean, label: string) => condition ? "" : label;
+  for (const project of state.projects) {
+    const error = requireReference(collections.operators.ids.has(project.userId), `Project ${project.id} references a missing operator`);
+    if (error) return error;
+  }
+  for (const campaign of state.campaigns) {
+    const error = requireReference(
+      collections.operators.ids.has(campaign.userId) && collections.projects.ids.has(campaign.projectId),
+      `Campaign ${campaign.id} references a missing operator or project`
+    );
+    if (error) return error;
+  }
+  for (const source of state.mentorSources) {
+    if (!collections.campaigns.ids.has(source.campaignId)) return `Source ${source.id} references a missing campaign`;
+  }
+  for (const mentor of state.mentorProfiles) {
+    if (!collections.campaigns.ids.has(mentor.campaignId) || !collections.identities.ids.has(mentor.mentorIdentityId)) {
+      return `Mentor ${mentor.id} references a missing campaign or identity`;
+    }
+    if (mentor.sourceRecordId && !collections.sources.ids.has(mentor.sourceRecordId)) {
+      return `Mentor ${mentor.id} references a missing source record`;
+    }
+  }
+  for (const assessment of state.matchAssessments) {
+    if (!collections.campaigns.ids.has(assessment.campaignId) || !collections.mentors.ids.has(assessment.mentorProfileId)) {
+      return `Assessment ${assessment.id} references a missing campaign or mentor`;
+    }
+  }
+  for (const message of state.messageDrafts) {
+    if (!collections.campaigns.ids.has(message.campaignId) || !collections.mentors.ids.has(message.mentorProfileId)) {
+      return `Message ${message.id} references a missing campaign or mentor`;
+    }
+  }
+  for (const quality of state.messageQualityReviews) {
+    if (!collections.messages.ids.has(quality.messageDraftId) || !collections.campaigns.ids.has(quality.campaignId) || !collections.mentors.ids.has(quality.mentorProfileId)) {
+      return `Quality review ${quality.id} contains an orphaned reference`;
+    }
+  }
+  for (const approval of state.messageApprovals) {
+    if (!collections.messages.ids.has(approval.messageDraftId)) return `Approval ${approval.id} references a missing message`;
+  }
+  for (const attempt of state.messageSendAttempts) {
+    if (!collections.messages.ids.has(attempt.messageDraftId) || !collections.campaigns.ids.has(attempt.campaignId) || !collections.mentors.ids.has(attempt.mentorProfileId)) {
+      return `Send attempt ${attempt.id} contains an orphaned reference`;
+    }
+  }
+  for (const response of state.mentorResponses) {
+    if (!collections.campaigns.ids.has(response.campaignId) || !collections.mentors.ids.has(response.mentorProfileId) || (response.messageDraftId && !collections.messages.ids.has(response.messageDraftId))) {
+      return `Response ${response.id} contains an orphaned reference`;
+    }
+  }
+  for (const followUp of state.followUpPlans) {
+    if (!collections.campaigns.ids.has(followUp.campaignId) || !collections.mentors.ids.has(followUp.mentorProfileId) || (followUp.messageDraftId && !collections.messages.ids.has(followUp.messageDraftId))) {
+      return `Follow-up ${followUp.id} contains an orphaned reference`;
+    }
+  }
+  for (const session of state.resourceUsageSessions) {
+    if (!collections.campaigns.ids.has(session.campaignId) || !collections.operators.ids.has(session.userId)) {
+      return `Resource session ${session.id} contains an orphaned reference`;
+    }
+  }
+  for (const billing of state.billingRecords) {
+    if (!collections.campaigns.ids.has(billing.campaignId) || !collections.sessions.ids.has(billing.resourceUsageSessionId)) {
+      return `Billing record ${billing.id} contains an orphaned reference`;
+    }
+  }
+  for (const invoice of state.invoiceRecords) {
+    if (!collections.campaigns.ids.has(invoice.campaignId)) return `Invoice ${invoice.id} references a missing campaign`;
+  }
+  for (const outcome of state.outreachOutcomes) {
+    if (!collections.campaigns.ids.has(outcome.campaignId) || !collections.mentors.ids.has(outcome.mentorProfileId)) {
+      return `Outcome ${outcome.id} contains an orphaned reference`;
+    }
+  }
+  return "";
+}
+
 function validateWorkspaceBackup(body: unknown): { state: LedgerState } | { error: string } {
   let payload: unknown;
   try {
@@ -1273,6 +1445,8 @@ function validateWorkspaceBackup(body: unknown): { state: LedgerState } | { erro
   if (!normalized.campaigns.length) {
     return { error: "Backup must contain at least one campaign" };
   }
+  const integrityError = workspaceIntegrityError(normalized);
+  if (integrityError) return { error: integrityError };
 
   return { state: normalized };
 }
@@ -1356,13 +1530,54 @@ function recalcCampaign(state: LedgerState, campaignId: string) {
     (item) => item.campaignId === campaignId && item.status === "scheduled" && new Date(item.dueAt).getTime() <= currentTime
   );
 
-  campaign.totalMentors = mentors.length;
-  campaign.messagesDrafted = drafts.length;
-  campaign.messagesApproved = drafts.filter((item) => item.status === "approved" || item.status === "sent").length;
-  campaign.messagesSent = drafts.filter((item) => item.status === "sent").length;
-  campaign.responsesReceived = responses.length;
-  campaign.followUpsDue = dueFollowUps.length;
-  campaign.updatedAt = now();
+  const totals = {
+    totalMentors: mentors.length,
+    messagesDrafted: drafts.length,
+    messagesApproved: drafts.filter((item) => item.status === "approved" || item.status === "sent").length,
+    messagesSent: drafts.filter((item) => item.status === "sent").length,
+    responsesReceived: responses.length,
+    followUpsDue: dueFollowUps.length,
+  };
+  const changed = Object.entries(totals).some(
+    ([key, value]) => campaign[key as keyof typeof totals] !== value
+  );
+  Object.assign(campaign, totals);
+  if (changed) campaign.updatedAt = now();
+}
+
+function buildLedgerSummary(state: LedgerState) {
+  state.campaigns.forEach((campaign) => recalcCampaign(state, campaign.id));
+  const activeCampaigns = state.campaigns.filter((campaign) => campaign.status === "active");
+  const nextActions = buildNextActionRecommendations(state);
+  const totals = state.campaigns.reduce(
+    (acc, campaign) => ({
+      mentors: acc.mentors + campaign.totalMentors,
+      strongMatches:
+        acc.strongMatches +
+        state.matchAssessments.filter(
+          (item) => item.campaignId === campaign.id && item.score >= campaignFitThreshold(campaign)
+        ).length,
+      drafts: acc.drafts + campaign.messagesDrafted,
+      approvals: acc.approvals + campaign.messagesApproved,
+      sent: acc.sent + campaign.messagesSent,
+      responses: acc.responses + campaign.responsesReceived,
+      followUpsDue: acc.followUpsDue + campaign.followUpsDue,
+      finalCost:
+        acc.finalCost +
+        state.billingRecords
+          .filter((item) => item.campaignId === campaign.id)
+          .reduce((sum, item) => sum + item.finalCost, 0),
+      nextActions: acc.nextActions + nextActions.filter((item) => item.campaignId === campaign.id).length,
+    }),
+    { mentors: 0, strongMatches: 0, drafts: 0, approvals: 0, sent: 0, responses: 0, followUpsDue: 0, finalCost: 0, nextActions: 0 }
+  );
+
+  return {
+    activeCampaigns,
+    totals,
+    nextActions: nextActions.slice(0, 8),
+    recentActivity: state.auditEvents.slice(0, 8),
+  };
 }
 
 function priorityWeight(priority: NextActionPriority) {
@@ -2657,6 +2872,8 @@ function createSourceRecord(state: LedgerState, campaign: OutreachCampaign, body
   const name = String(body?.name || "").trim();
   if (!name) return { error: "Source name is required", status: 400 };
   const status = sourceStatus(body?.status);
+  const searchedAt = status === "planned" ? null : parseIsoDate(body?.searchedAt || createdAt);
+  if (status !== "planned" && !searchedAt) return { error: "searchedAt must be a valid date", status: 400 };
   const source: MentorSource = {
     id: randomUUID(),
     campaignId: campaign.id,
@@ -2667,7 +2884,7 @@ function createSourceRecord(state: LedgerState, campaign: OutreachCampaign, body
     resultsFound: parseNonNegativeInteger(body?.resultsFound),
     importedCount: parseNonNegativeInteger(body?.importedCount),
     notes: String(body?.notes || "").trim(),
-    searchedAt: status === "planned" ? null : String(body?.searchedAt || createdAt),
+    searchedAt,
     createdAt,
     updatedAt: createdAt,
   };
@@ -2688,7 +2905,9 @@ function updateSourceRecord(state: LedgerState, sourceId: string, body: Record<s
   if (body?.importedCount !== undefined) source.importedCount = parseNonNegativeInteger(body.importedCount);
   if (typeof body?.notes === "string") source.notes = body.notes.trim();
   if (typeof body?.searchedAt === "string") {
-    source.searchedAt = body.searchedAt.trim() || null;
+    const searchedAt = body.searchedAt.trim() ? parseIsoDate(body.searchedAt) : null;
+    if (body.searchedAt.trim() && !searchedAt) return { error: "searchedAt must be a valid date", status: 400 };
+    source.searchedAt = searchedAt;
   } else if (source.status !== "planned" && !source.searchedAt) {
     source.searchedAt = now();
   }
@@ -2786,7 +3005,7 @@ export function registerLedgerRoutes(app: Express) {
     timestamp: now(),
   })));
 
-  app.get("/api/workspace/backup", route((_req, _res, state) => {
+  app.post("/api/workspace/backup", route((_req, _res, state) => {
     audit(state, "exported_workspace_backup", "workspace", "local-ledger", workspaceSummary(state), { riskLevel: "medium" });
     return {
       kind: "maro-workspace-backup",
@@ -2795,7 +3014,7 @@ export function registerLedgerRoutes(app: Express) {
       summary: workspaceSummary(state),
       ledger: state,
     };
-  }, { persist: true }));
+  }));
 
   app.post("/api/workspace/restore/preview", route((req, res) => {
     const validation = validateWorkspaceBackup(req.body || {});
@@ -2836,34 +3055,31 @@ export function registerLedgerRoutes(app: Express) {
     };
   }));
 
-  app.get("/api/ledger/summary", route((_req, _res, state) => {
-    state.campaigns.forEach((campaign) => recalcCampaign(state, campaign.id));
-    const activeCampaigns = state.campaigns.filter((campaign) => campaign.status === "active");
-    const nextActions = buildNextActionRecommendations(state);
-    const totals = state.campaigns.reduce(
-      (acc, campaign) => ({
-        mentors: acc.mentors + campaign.totalMentors,
-        strongMatches:
-          acc.strongMatches +
-          state.matchAssessments.filter(
-            (item) => item.campaignId === campaign.id && item.score >= campaignFitThreshold(campaign)
-          ).length,
-        drafts: acc.drafts + campaign.messagesDrafted,
-        approvals: acc.approvals + campaign.messagesApproved,
-        sent: acc.sent + campaign.messagesSent,
-        responses: acc.responses + campaign.responsesReceived,
-        followUpsDue: acc.followUpsDue + campaign.followUpsDue,
-        finalCost: acc.finalCost + state.billingRecords.filter((item) => item.campaignId === campaign.id).reduce((sum, item) => sum + item.finalCost, 0),
-        nextActions: acc.nextActions + nextActions.filter((item) => item.campaignId === campaign.id).length,
-      }),
-      { mentors: 0, strongMatches: 0, drafts: 0, approvals: 0, sent: 0, responses: 0, followUpsDue: 0, finalCost: 0, nextActions: 0 }
-    );
+  app.get("/api/ledger/summary", route((_req, _res, state) => buildLedgerSummary(state)));
 
+  app.get("/api/dashboard", route((req, res, state) => {
+    const summary = buildLedgerSummary(state);
+    const requestedCampaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : "";
+    if (requestedCampaignId && !requireCampaign(state, requestedCampaignId)) {
+      return jsonError(res, 404, "Campaign not found");
+    }
+    const selectedCampaignId = requestedCampaignId || state.campaigns.find((campaign) => campaign.status === "active")?.id || state.campaigns[0]?.id || "";
     return {
-      activeCampaigns,
-      totals,
-      nextActions: nextActions.slice(0, 8),
-      recentActivity: state.auditEvents.slice(0, 8),
+      summary,
+      projects: state.projects,
+      campaigns: state.campaigns,
+      selectedCampaignId,
+      details: selectedCampaignId ? attachCampaignDetails(state, selectedCampaignId) : null,
+      health: {
+        ok: true,
+        service: "maro-ledger",
+        schemaVersion: state.schemaVersion,
+        persistence: storageStatus().persistence,
+        storage: storageStatus(),
+        pricingFormula: PRICING_FORMULA,
+        timestamp: now(),
+      },
+      haiStatus: buildHaiIntegrationStatus(state),
     };
   }));
 
@@ -3160,7 +3376,7 @@ export function registerLedgerRoutes(app: Express) {
     };
   }));
 
-  app.get("/api/campaigns/:id/mentors/export", route((req, res, state) => {
+  app.post("/api/campaigns/:id/mentors/export", route((req, res, state) => {
     const campaignId = routeId(req);
     const campaign = requireCampaign(state, campaignId);
     if (!campaign) return jsonError(res, 404, "Campaign not found");
@@ -3171,9 +3387,9 @@ export function registerLedgerRoutes(app: Express) {
       filename: `${exportSlug(campaign.title)}-mentors.csv`,
       csv: mentorsToCsv(mentors, assessments, state.mentorSources.filter((item) => item.campaignId === campaignId)),
     };
-  }, { persist: true }));
+  }));
 
-  app.get("/api/campaigns/:id/history/export", route((req, res, state) => {
+  app.post("/api/campaigns/:id/history/export", route((req, res, state) => {
     const campaignId = routeId(req);
     const campaign = requireCampaign(state, campaignId);
     if (!campaign) return jsonError(res, 404, "Campaign not found");
@@ -3183,7 +3399,7 @@ export function registerLedgerRoutes(app: Express) {
       filename: `${exportSlug(campaign.title)}-campaign-history.csv`,
       csv: campaignHistoryToCsv(state, campaign),
     };
-  }, { persist: true }));
+  }));
 
   app.get("/api/mentors", route((req, _res, state) => {
     const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : null;
@@ -3520,12 +3736,19 @@ export function registerLedgerRoutes(app: Express) {
     if (!requireCampaign(state, campaignId)) return jsonError(res, 404, "Campaign not found");
     const mentor = state.mentorProfiles.find((item) => item.id === mentorProfileId && item.campaignId === campaignId);
     if (!mentor) return jsonError(res, 400, "Valid mentorProfileId is required");
-    const classification = (req.body?.classification || "unknown") as ResponseClassification;
+    const classification = parseResponseClassification(req.body?.classification);
+    if (!classification) return jsonError(res, 400, "Valid response classification is required");
+    const messageDraftId = req.body?.messageDraftId ? String(req.body.messageDraftId) : null;
+    if (messageDraftId && !state.messageDrafts.some(
+      (message) => message.id === messageDraftId && message.campaignId === campaignId && message.mentorProfileId === mentorProfileId
+    )) {
+      return jsonError(res, 400, "messageDraftId does not belong to this mentor and campaign");
+    }
     const response: MentorResponse = {
       id: randomUUID(),
       campaignId,
       mentorProfileId,
-      messageDraftId: req.body?.messageDraftId ? String(req.body.messageDraftId) : null,
+      messageDraftId,
       classification,
       body: String(req.body?.body || ""),
       nextAction: String(req.body?.nextAction || (responseCancelsFollowUps(classification) ? "Do not follow up unless the mentor explicitly reopens the conversation." : "Review response and decide next action")),
@@ -3567,7 +3790,11 @@ export function registerLedgerRoutes(app: Express) {
     const followUp = state.followUpPlans.find((item) => item.id === routeId(req));
     if (!followUp) return jsonError(res, 404, "Follow-up not found");
     const before = { ...followUp };
-    if (req.body?.dueAt) followUp.dueAt = new Date(String(req.body.dueAt)).toISOString();
+    if (req.body?.dueAt) {
+      const dueAt = parseIsoDate(req.body.dueAt);
+      if (!dueAt) return jsonError(res, 400, "dueAt must be a valid date");
+      followUp.dueAt = dueAt;
+    }
     if (typeof req.body?.suggestedMessage === "string") followUp.suggestedMessage = req.body.suggestedMessage;
     if (["scheduled", "completed", "cancelled"].includes(String(req.body?.status))) {
       followUp.status = String(req.body.status) as FollowUpStatus;
@@ -3620,13 +3847,21 @@ export function registerLedgerRoutes(app: Express) {
     if (!mentor) {
       return jsonError(res, 400, "Valid mentorProfileId is required");
     }
+    const messageDraftId = req.body?.messageDraftId ? String(req.body.messageDraftId) : null;
+    if (messageDraftId && !state.messageDrafts.some(
+      (message) => message.id === messageDraftId && message.campaignId === campaignId && message.mentorProfileId === mentorProfileId
+    )) {
+      return jsonError(res, 400, "messageDraftId does not belong to this mentor and campaign");
+    }
+    const dueAt = req.body?.dueAt ? parseIsoDate(req.body.dueAt) : addDays(new Date(), campaignFollowUpAfterDays(campaign));
+    if (!dueAt) return jsonError(res, 400, "dueAt must be a valid date");
     const createdAt = now();
     const followUp: FollowUpPlan = {
       id: randomUUID(),
       campaignId,
       mentorProfileId,
-      messageDraftId: req.body?.messageDraftId ? String(req.body.messageDraftId) : null,
-      dueAt: req.body?.dueAt ? new Date(String(req.body.dueAt)).toISOString() : addDays(new Date(), campaignFollowUpAfterDays(campaign)),
+      messageDraftId,
+      dueAt,
       status: "scheduled",
       suggestedMessage: String(req.body?.suggestedMessage || buildFollowUpSuggestion(campaign, mentor)),
       createdAt,
