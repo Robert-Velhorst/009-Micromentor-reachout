@@ -15,6 +15,8 @@ const PROJECT_ROOT = import.meta.dirname;
 const LOG_DIR = path.join(PROJECT_ROOT, ".manus-logs");
 const MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024; // 1MB per log file
 const TRIM_TARGET_BYTES = Math.floor(MAX_LOG_SIZE_BYTES * 0.6); // Trim to 60% to avoid constant re-trimming
+const MAX_DEBUG_PAYLOAD_BYTES = 256 * 1024;
+const DEBUG_COLLECTOR_ENABLED = process.env.MARO_DEBUG_COLLECTOR === "1";
 
 type LogSource = "browserConsole" | "networkRequests" | "sessionReplay";
 
@@ -132,7 +134,15 @@ function vitePluginManusDebugCollector(): Plugin {
         }
 
         let body = "";
+        let receivedBytes = 0;
         req.on("data", (chunk) => {
+          receivedBytes += chunk.length;
+          if (receivedBytes > MAX_DEBUG_PAYLOAD_BYTES) {
+            res.writeHead(413, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: false, error: "Payload too large" }));
+            req.destroy();
+            return;
+          }
           body += chunk.toString();
         });
 
@@ -150,19 +160,23 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), vitePluginManusDebugCollector()];
+const plugins = [
+  react(),
+  tailwindcss(),
+  ...(DEBUG_COLLECTOR_ENABLED ? [vitePluginManusDebugCollector()] : []),
+];
 
 export default defineConfig({
   plugins,
   resolve: {
+    preserveSymlinks: true,
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },
   envDir: path.resolve(import.meta.dirname),
   root: path.resolve(import.meta.dirname, "client"),
+  publicDir: process.env.NODE_ENV === "production" ? false : "public",
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
@@ -170,7 +184,7 @@ export default defineConfig({
   server: {
     port: 3000,
     strictPort: false, // Will find next available port if 3000 is busy
-    host: true,
+    host: "127.0.0.1",
     allowedHosts: [
       ".manuspre.computer",
       ".manus.computer",
@@ -183,6 +197,9 @@ export default defineConfig({
     fs: {
       strict: true,
       deny: ["**/.*"],
+    },
+    watch: {
+      ignored: ["**/vite.config.ts"],
     },
   },
 });

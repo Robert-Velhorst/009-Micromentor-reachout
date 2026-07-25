@@ -1,128 +1,225 @@
-# Mentor Messenger Magic
+# MARO - Micromentor Reachout Console
 
-A fully-fledged tool for automating mentor outreach with resource-based pay-as-you-go pricing.
+MARO is a local-first MicroMentor outreach operating ledger for preparing, reviewing, confirming, following up, and costing mentor outreach.
 
-## Features
+## What It Does
 
-- **Appealing Landing Page**: Highlights time savings and cost benefits of using the tool
-- **Resource Monitoring System**: Tracks CPU, RAM, storage, bandwidth, and electricity usage
-- **Pay-as-you-go Pricing Model**: Resources used × 2 = actual price
-- **Resource Optimization**: Maximizes performance while minimizing resource usage
+- Manage outreach projects and campaigns.
+- Attach each outreach campaign to a project context so related mentor work stays grouped.
+- Edit active campaign goal, target mentor type, source, status, project, message tone, and follow-up timing rules from the command center.
+- Define structured fit criteria for skills, industries, locations, and the campaign's strong-match threshold.
+- Automatically rescore existing mentors when campaign fit criteria change, with stored reasons and threshold risk notes.
+- Generate a campaign-specific discovery plan for MicroMentor, LinkedIn, and open-web research from the stored target and fit criteria.
+- Add discovery recommendations to the source ledger idempotently, copy prepared queries, and open generic source pages without putting campaign queries into external URLs.
+- Record planned, searched, skipped, and imported mentor-source searches with query, result count, import count, and notes, then update source outcomes as discovery progresses.
+- Review source-search cards with linked mentor, strong-fit, and remaining-result counts, then filter the mentor list by source.
+- Open source-specific next actions that preselect the right source for manual or CSV mentor intake when search results remain unimported.
+- Store campaign-level message tone and follow-up timing rules, then apply them to generated drafts and follow-up suggestions.
+- Persist mentor profiles, fit scores, message drafts, approvals, manual send confirmations, responses, follow-ups, billing records, and audit events through the local Express API.
+- Inspect each mentor's relationship timeline across drafts, approvals, sends, replies, follow-ups, outcomes, and audit events.
+- Expose the same privacy-aware relationship timeline through the local ledger API for trusted local integrations.
+- Require approval before a message can be handed off or manually confirmed as sent, and invalidate approval whenever approved content changes.
+- Convert scheduled follow-ups into linked review drafts before any manual follow-up delivery.
+- Record failed manual send attempts without marking messages sent or scheduling follow-ups.
+- Review draft quality before approval, including unresolved template tokens, personalization coverage, length, reading time, and call-to-action checks.
+- Show deterministic next-action recommendations for drafts, approvals, duplicate profile review, due follow-ups, response outcomes, and resource-cost records.
+- Review a campaign readiness checklist that scores source search, mentor import, fit review, drafts, approvals, manual delivery, outcomes, costs, and invoice snapshots.
+- Block marking a campaign completed until the readiness checklist has no blockers or attention items.
+- Expose a read-only HAI integration status snapshot with campaign readiness, blockers, next actions, queue counts, outcomes, and cost totals.
+- Record delivery evidence instead of faking external sends.
+- Import mentors from pasted CSV text or `.csv` files with configurable source-column mapping, industries, location, and duplicate preview.
+- Block duplicate active or sent outreach drafts for the same mentor identity or profile URL within a campaign.
+- Resolve duplicate mentor review actions without deleting source-history rows.
+- Export mentor rows and full campaign history CSVs with message status, send timestamp, response, follow-up, outcome, and notes.
+- Track response classifications and follow-up suggestions, including automatic cancellation of pending follow-ups when a mentor declines or is unavailable.
+- Review campaign results with response rate, booking rate, positive outcome rate, overdue follow-ups, and outcome filters.
+- Generate local process-measured resource-cost records using `Resource Cost x 2 = Final Price`.
+- Persist invoice/usage-report snapshots for campaign billing transparency without charging anyone.
+- Show whether the app is local-only or reachable through ngrok, including a warning when the tunnel is public without basic auth.
+- Export, validate, restore, and reset the local workspace with schema-versioned JSON backups.
+- Use session privacy mode to hide mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
+- Open the stored source profile and copy an approved snapshot from the message queue for manual MicroMentor handoff; MARO never auto-sends.
+- Download a least-privilege browser extension that fills one short-lived approved package into the matching active MicroMentor profile without storing content or pressing send.
+- Keep work local by default in a JSON ledger under `data/`, with optional encryption at rest.
+- Render with local system font stacks so normal app use does not depend on external webfont requests.
 
-## Getting Started
+## Local Ledger API
 
-### Prerequisites
+The Express server now exposes operational API routes before serving the frontend:
 
-- Node.js 16+ and npm
-- Modern web browser
+- `GET /api/health`
+- `GET /api/runtime/status`
+- `GET /api/dashboard`
+- `POST /api/workspace/backup`
+- `POST /api/workspace/restore/preview`
+- `POST /api/workspace/restore`
+- `POST /api/workspace/reset`
+- `GET /api/ledger/summary`
+- `GET /api/actions`
+- `GET /api/integrations/hai/status`
+- `GET|POST /api/projects`
+- `PATCH /api/projects/:id`
+- `GET|POST /api/campaigns`
+- `PATCH /api/campaigns/:id`
+- `GET /api/campaigns/:id`
+- `GET /api/campaigns/:id/actions`
+- `GET|POST /api/campaigns/:id/discovery-plan`
+- `GET|POST /api/campaigns/:id/sources`
+- `PATCH /api/sources/:id`
+- `GET|POST /api/campaigns/:id/mentors`
+- `POST /api/campaigns/:id/mentors/import`
+- `POST /api/campaigns/:id/mentors/export`
+- `POST /api/campaigns/:id/history/export`
+- `GET|POST /api/campaigns/:id/messages`
+- `GET /api/campaigns/:id/follow-ups`
+- `GET /api/campaigns/:id/usage-report`
+- `GET|POST /api/campaigns/:id/invoices`
+- `GET|POST /api/mentors`
+- `GET|PATCH /api/mentors/:id`
+- `GET /api/mentors/:id/timeline`
+- `POST /api/mentors/:id/resolve-duplicate`
+- `GET|POST /api/messages`
+- `PATCH /api/messages/:id`
+- `POST /api/messages/:id/approve`
+- `POST /api/messages/:id/reject`
+- `POST /api/messages/:id/handoff`
+- `POST /api/messages/:id/send-attempt`
+- `GET|POST /api/responses`
+- `GET|POST /api/follow-ups`
+- `PATCH /api/follow-ups/:id`
+- `POST /api/follow-ups/:id/draft`
+- `POST /api/follow-ups/:id/complete`
+- `POST /api/follow-ups/:id/cancel`
+- `GET|POST /api/outcomes`
+- `POST /api/resource-sessions`
+- `POST /api/resource-sessions/:id/end`
+- `GET /api/billing`
+- `GET /api/invoices`
+- `GET /api/audit`
 
-### Installation
+All `POST`, `PATCH`, `PUT`, and `DELETE` requests under `/api` must include `X-MARO-Request: 1`. The app adds this marker automatically. Combined with the server's no-CORS policy, `Sec-Fetch-Site` check, and request-host allowlist, it prevents cross-site pages, form posts, and DNS-rebinding hosts from reading or changing the local ledger. Trusted local integrations must add the header explicitly.
 
-1. Clone the repository:
-```sh
-git clone <repository-url>
-cd mentor-messenger-magic
-```
+MARO accepts `localhost`, `127.0.0.1`, and IPv6 loopback hosts by default. Protected ngrok hosts are accepted only while tunnel mode is configured. Set `MARO_ALLOWED_HOSTS` to a comma-separated list of exact additional hosts when placing MARO behind a trusted local reverse proxy.
 
-2. Install dependencies:
+The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to store it elsewhere. Runtime ledger data is ignored by git. Writes use a flushed temporary file plus atomic replacement and retain `maro-ledger.json.backup` as the previous valid state. If the primary file becomes unreadable, MARO restores the rolling backup and records a high-risk recovery audit event.
+
+Set `MARO_LEDGER_PASSPHRASE` to encrypt the local ledger file at rest with AES-256-GCM. Existing plaintext ledger files are migrated to an encrypted envelope on the next API read/write when this passphrase is present. Keep the passphrase somewhere safe; MARO cannot recover encrypted ledger data without it. Workspace backups remain portable JSON exports and should be handled as sensitive files.
+
+Resource sessions are process-level local measurements. MARO records Node CPU time, RSS memory over session duration, local ledger file size, and observed API payload bytes. It does not use random simulated usage as billing evidence.
+
+Invoice reports are persisted local ledger snapshots generated from stored billing records. They are audit logged and are not external charges, payment requests, or platform billing actions.
+
+Workspace backups are JSON envelopes with `kind: "maro-workspace-backup"` and `schemaVersion: 1`. Restore validates required arrays, unique record IDs, and cross-record references before replacing local data. Mentor exports and campaign-history exports include industries, location, and the linked source-search name when a mentor came from a recorded search. Export routes are guarded mutations because they append audit evidence. Reset supports `queue`, `mentors`, and `workspace` scopes and requires explicit confirmation.
+
+Projects group related outreach campaigns. Campaign creation and updates validate the selected project, and the command center can maintain active project and campaign context beside the campaign ledger.
+
+Campaign fit criteria are stored as normalized skill, industry, and location lists plus a configurable minimum fit score. MARO combines those signals with campaign goal and target-profile keywords, records the evidence and risks on each assessment, and rescores existing campaign mentors only when scoring inputs change. Tone, follow-up, or status-only edits do not trigger unnecessary rescoring.
+
+Campaign discovery plans are derived locally from the target mentor type and structured fit criteria. Applying a plan creates only planned source-ledger records and is idempotent; it does not scrape, sign in, search, or contact anyone. Source launch URLs remain generic and do not contain the prepared query, so copying or submitting that query stays an explicit operator action.
+
+Next actions and campaign results are read-time recommendations derived from persisted ledger state. They do not send messages or mutate external platforms; they point the operator toward review, manual send confirmation, response outcome recording, due follow-up handling, and transparent cost-record generation. Generated drafts and automatic follow-up suggestions use each campaign's stored tone and follow-up timing rule. Scheduled follow-ups can be converted into linked message drafts, which then use the same review, approval, and manual send confirmation workflow as first-touch outreach. Pending follow-ups are cancelled when a recorded response says the mentor is not interested or unavailable. Failed manual send attempts remain visible in the review queue and do not create follow-up work.
+
+Manual handoff packages contain the latest approved subject/body snapshot, expire after ten minutes, and are rejected after any content edit until the message is approved again. The bundled Manifest V3 extension requests only `activeTab`, `scripting`, and clipboard-write access. It has no background worker, persistent host access, storage, queue processor, network client, or send action. Extract the downloaded extension ZIP and load its folder through the browser's extension developer mode.
+
+Manual duplicate mentor records can remain in the ledger for source history, but MARO blocks active or sent duplicate outreach for the same mentor identity/profile in a campaign, suppresses duplicate draft recommendations, and surfaces a duplicate-profile review action. Resolving a duplicate links it to the canonical mentor identity, closes the duplicate row, cancels its pending follow-ups, and records an audit event without deleting historical source data.
+
+The HAI integration status endpoint is read-only. It exposes campaign readiness, blockers, attention items, next actions, queue counts, response/outcome totals, and local cost totals so another operator system can inspect MARO state without approving drafts, confirming sends, or mutating external platforms.
+
+## Requirements
+
+- Windows 11, macOS, or Linux for development.
+- Node.js and npm for development.
+- ngrok CLI installed and authenticated if you want the default dev command to expose the app through ngrok.
+
+## Development
+
+Install dependencies:
+
 ```sh
 npm install
 ```
 
-3. Start the development server:
+Run the default ngrok flow:
+
 ```sh
 npm run dev
 ```
 
-4. Build for production:
+This builds the production app, starts the local Node server on `127.0.0.1:3000`, then opens a basic-auth protected ngrok tunnel to that local server. Set `NGROK_BASIC_AUTH` first; MARO refuses to create an unprotected tunnel by default.
+
+For a local Vite-only development server:
+
+```sh
+npm run dev:vite
+```
+
+The browser debug collector is disabled by default to avoid background request logging and `.manus-logs` churn during normal development. Enable it only for focused UI diagnostics:
+
+```sh
+set MARO_DEBUG_COLLECTOR=1
+npm run dev:vite
+```
+
+## Production Build
+
 ```sh
 npm run build
+npm run start
 ```
 
-5. Preview the production build:
+The production server binds to `127.0.0.1` by default. Set `PORT` or `HOST` if you need a different local port or host.
+
+## ngrok
+
+Install and authenticate ngrok first:
+
 ```sh
-npm run preview
+ngrok config add-authtoken <token>
 ```
 
-## Resource Monitoring System
+Required basic auth for the default tunnel flow:
 
-The application includes a comprehensive resource monitoring system that tracks:
-
-- **CPU Usage**: Measures CPU core-hours consumed
-- **RAM Usage**: Tracks memory consumption in GB-hours
-- **Storage**: Monitors storage usage in GB-hours
-- **Bandwidth**: Records network traffic in GB
-- **Electricity**: Estimates power consumption in kWh
-
-The monitoring system automatically starts when the application loads and provides real-time usage statistics in the Dashboard.
-
-## Pay-as-you-go Pricing Model
-
-The pricing model follows a simple formula:
-
-```
-Final Price = Resource Cost × 2
-```
-
-Where Resource Cost is calculated based on:
-- CPU: $0.02 per core-hour
-- RAM: $0.01 per GB-hour
-- Storage: $0.0005 per GB-hour
-- Bandwidth: $0.08 per GB
-- Electricity: $0.12 per kWh
-
-Users receive detailed usage reports via email, showing resource consumption and associated costs.
-
-## Resource Optimization
-
-The application is optimized for maximum efficiency through:
-
-- **Memoization**: Caches expensive function results
-- **Debouncing & Throttling**: Reduces frequency of resource-intensive operations
-- **Lazy Loading**: Loads components only when needed
-- **Virtual Scrolling**: Renders only visible items in large lists
-- **Image Optimization**: Reduces image size while maintaining quality
-- **Request Batching**: Combines multiple API requests
-- **Data Compression**: Minimizes bandwidth usage
-
-## Deployment
-
-### Static Deployment
-
-The built application can be deployed to any static hosting service:
-
-1. Build the project:
 ```sh
+set NGROK_BASIC_AUTH=user:password
+npm run dev
+```
+
+To intentionally allow an unauthenticated public tunnel, use the explicit override:
+
+```sh
+set MARO_ALLOW_PUBLIC_TUNNEL=1
+npm run dev
+```
+
+The command center reads `GET /api/runtime/status` to show the app version, local URL, detected ngrok tunnel URL, basic-auth status, and explicit public-tunnel opt-in. If an explicitly allowed public tunnel is active without `NGROK_BASIC_AUTH`, MARO shows a first-viewport warning before you share the tunnel URL.
+
+## Windows Installer
+
+Build a Windows 11 installer:
+
+```sh
+npm run installer:win
+```
+
+The generated installer is written to:
+
+```text
+artifacts/MARO-Windows11-Setup.exe
+```
+
+The installer embeds the built app and a Node runtime, installs MARO into `%LOCALAPPDATA%\MARO`, writes installed-version metadata, creates launch and uninstall shortcuts, registers an Add/Remove Programs uninstall entry for the current Windows user, starts the local server, and opens the browser. When ngrok is available on PATH, the launcher opens a tunnel only when `NGROK_BASIC_AUTH` is set or `MARO_ALLOW_PUBLIC_TUNNEL=1` explicitly permits public access.
+
+To remove an installed copy, use Windows Settings > Apps > Installed apps, or run the Start Menu shortcut named `Uninstall MARO`. Close MARO server and ngrok windows before uninstalling.
+
+## Checks
+
+```sh
+npm run check
 npm run build
+npm run check:api
+npm run check:release
 ```
 
-2. Deploy the `dist` directory to your hosting service of choice (Netlify, Vercel, GitHub Pages, etc.)
+`npm run check:release` runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, production surface checks for CSP/security headers and external asset regressions, and the Windows installer build on Windows hosts.
 
-### Docker Deployment
-
-For containerized deployment:
-
-1. Build the Docker image:
-```sh
-docker build -t mentor-messenger-magic .
-```
-
-2. Run the container:
-```sh
-docker run -p 8080:80 mentor-messenger-magic
-```
-
-## Project Structure
-
-- `src/components/` - UI components
-- `src/pages/` - Application pages
-- `src/utils/` - Utility functions and services
-  - `resourceMonitor.js` - Resource usage tracking
-  - `pricingModel.js` - Pay-as-you-go pricing implementation
-  - `resourceOptimizer.js` - Optimization utilities
-  - `api.js` - API service with integrated optimizations
-  - `appInitializer.js` - Application initialization
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+Security, resource, and feature analysis notes are in `analysis/SECURITY_RESOURCE_FEATURE_REPORT.md`. The requirement-to-evidence closeout is in `analysis/COMPLETION_AUDIT.md`.

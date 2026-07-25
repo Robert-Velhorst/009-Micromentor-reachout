@@ -23,6 +23,8 @@ class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const showDetails = import.meta.env.DEV;
+
       return (
         <div className="flex items-center justify-center min-h-screen p-8 bg-background">
           <div className="flex flex-col items-center w-full max-w-2xl p-8">
@@ -33,11 +35,17 @@ class ErrorBoundary extends Component<Props, State> {
 
             <h2 className="text-xl mb-4">An unexpected error occurred.</h2>
 
-            <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
-              <pre className="text-sm text-muted-foreground whitespace-break-spaces">
-                {this.state.error?.stack}
-              </pre>
-            </div>
+            {showDetails ? (
+              <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
+                <pre className="text-sm text-muted-foreground whitespace-break-spaces">
+                  {this.state.error?.stack}
+                </pre>
+              </div>
+            ) : (
+              <p className="mb-6 text-center text-sm text-muted-foreground">
+                Reload the page to recover. Technical details are hidden in production builds.
+              </p>
+            )}
 
             <button
               onClick={() => window.location.reload()}
