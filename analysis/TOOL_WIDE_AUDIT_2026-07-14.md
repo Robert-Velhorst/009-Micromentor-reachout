@@ -23,10 +23,10 @@ Scope: active React command center, Express API, local ledger persistence, ngrok
 - Production JavaScript: 318.70 KB minified, 89.29 KB gzip.
 - Production CSS: 39.59 KB minified, 7.48 KB gzip, down from 109.78 KB and 17.46 KB gzip.
 - Served production directory: 370,955 bytes across four files.
-- Installed dependency graph: 202 packages; `npm audit --audit-level=low` reports zero known vulnerabilities.
+- Dependency audit: `npm audit --audit-level=low` reports zero known vulnerabilities after patching `body-parser` to 1.20.6 and `postcss` to 8.5.23.
 - Production runtime snapshot: 16.86 MB working set, 64.43 MB private memory, and 12 threads.
 - Aggregate dashboard benchmark: 25 requests averaged 28.56 ms with a 43.47 ms p95 for a 21,590-byte response on this Windows machine.
-- Windows installer: 34,659,840 bytes; isolated seven-file payload check passed; SHA-256 `0D6FF5D05440BCF24B701C4478FF7F5F508EB5B4C4E599E5F6D120E14137BAD9B`.
+- Windows installer: 34,659,840 bytes; isolated seven-file payload check passed. The dependency-refreshed build SHA-256 is `68101A5549A5434B8D7B5EAECE5D917C9ADBDC8279C539AAFA26985A263CDC1B`.
 - Browser QA: persisted campaign edit, clean console, meaningful DOM, and no horizontal overflow at desktop width or the in-app browser's effective 749 px minimum width.
 - API smoke covers Host rejection, mutation guards, invalid JSON and oversized payloads, guarded exports, restore integrity, corrupt-ledger recovery, workflow validation, and the complete outreach/billing lifecycle.
 

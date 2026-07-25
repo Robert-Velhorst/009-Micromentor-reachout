@@ -1,6 +1,7 @@
 # MARO Completion Audit
 
 Date: 2026-07-14
+Archive reconciliation and dependency refresh: 2026-07-26
 
 ## Repository Understanding
 
@@ -29,6 +30,7 @@ The ledger uses local JSON persistence with optional AES-256-GCM encryption rath
 | Build and type contract pass | `npm run build`, `npm run check`, and the composite `npm run check:release` are release gates. | Proven |
 | No private runtime artifacts are committed | Runtime ledger paths, installer output, exports, invoices, logs, and environment files are ignored; tracked-file hygiene checks find none. | Proven |
 | No unsafe autonomous outreach exists | The server exposes manual evidence recording, not a platform send endpoint. The optional extension has no background worker, storage, network client, persistent host access, or send action. | Proven |
+| Supplied legacy archives are reconciled | `analysis/ARCHIVE_PORT_AUDIT_2026-07-26.md` compares both ZIPs with main, syntax-checks their JavaScript without execution, maps useful concepts to current features, and rejects incomplete or autonomous-send code. | Proven |
 
 ## Requested Delivery Evidence
 
