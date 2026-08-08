@@ -21,11 +21,11 @@ The release candidate passed the local production gate. The final commit and rem
 
 - Windows installer: `artifacts/MARO-Windows11-Setup.exe`
 - Installer size: 34,665,984 bytes (33.1 MB).
-- Installer SHA-256: `5C5A197E5F173DD1BFF788675F371A64602810322FECA486216B45C3E544C615`.
+- Installer SHA-256: `23D3EAF433F8E879481C85E9724363EE09E26E373F4804AEFA3F7AC5B1459751`.
 - Production browser payload: 377,717 bytes across four files; JavaScript 324.76 KB (90.55 KB gzip), CSS 39.84 KB (7.56 KB gzip).
 - Browser-QA Node process: 71.1 MB RSS after interactive use; 20 dashboard reads measured 6.86 ms median and 9.65 ms p95.
 - Hardened container idle sample: 0.00% CPU, 17.84 MiB memory, 11 processes.
-- Docker context optimization reduced transfer from 342.91 MB to 3.52 KB by excluding generated local caches.
+- Docker context optimization reduced the observed changed-source transfer from 342.91 MB to 806.21 KB by excluding generated local caches; a subsequent cached no-change pass transferred 3.52 KB.
 
 ## Workflow Evidence
 

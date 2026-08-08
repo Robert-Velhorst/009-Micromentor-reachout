@@ -26,7 +26,7 @@ MARO is a local-first, single-operator outreach ledger. It helps an operator def
 | Medium | Diagnostics, retention, support export, integrity, and startup checks were incomplete. | Added readiness, diagnostics, settings, integrity, sanitized support bundle, retention preview/apply, and `npm run doctor`. |
 | Medium | No CI. | Added Linux verification/Docker and Windows installer jobs. |
 | Medium | HAI integration status was descriptive rather than consumable. | Added an opt-in, read-only `hai.generic_json_feed.v1` manifest/feed with stable action cards, conditional reads, and no provider-write authority. |
-| Low | Local npm cache inflated Docker context transfer to 342.91 MB. | Excluded generated caches and private environment files; the final context transfer measured 3.52 KB. |
+| Low | Local npm cache inflated Docker context transfer to 342.91 MB. | Excluded generated caches and private environment files; the final changed-source transfer measured 806.21 KB and a cached no-change pass measured 3.52 KB. |
 
 ## Architecture Decisions
 

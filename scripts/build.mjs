@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { build as buildServer } from "esbuild";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const isWindows = process.platform === "win32";
@@ -70,18 +71,17 @@ async function withBuildRoot(callback) {
 await withBuildRoot(async (buildRoot) => {
   fs.rmSync(path.join(buildRoot, "dist"), { recursive: true, force: true });
   await run(process.execPath, ["node_modules/vite/bin/vite.js", "build"], buildRoot);
-  await run(
-    process.execPath,
-    [
-      "node_modules/esbuild/bin/esbuild",
-      "server/index.ts",
-      "--platform=node",
-      "--bundle",
-      "--format=cjs",
-      "--outfile=dist/index.cjs",
-      `--define:process.env.MARO_BUILD_VERSION=${JSON.stringify(appVersion)}`,
-    ],
-    buildRoot
-  );
+  await buildServer({
+    absWorkingDir: buildRoot,
+    entryPoints: ["server/index.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/index.cjs",
+    define: {
+      "process.env.MARO_BUILD_VERSION": JSON.stringify(appVersion),
+    },
+    logLevel: "info",
+  });
   await run(process.execPath, ["scripts/build-extension.mjs"], buildRoot);
 });
