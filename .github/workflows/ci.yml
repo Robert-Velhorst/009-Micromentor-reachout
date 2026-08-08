@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run doctor
+      - run: npm run check
+      - run: npm run audit:security
+      - run: npm test
+      - run: docker build -t maro:ci .
+
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run installer:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MARO-Windows11-Setup
+          path: artifacts/MARO-Windows11-Setup.exe

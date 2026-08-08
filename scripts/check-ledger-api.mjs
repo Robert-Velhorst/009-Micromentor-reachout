@@ -109,6 +109,7 @@ const server = spawn(process.execPath, ["dist/index.cjs"], {
     PORT: String(port),
     MARO_DATA_DIR: dataDir,
     MARO_LEDGER_PASSPHRASE: "smoke-test-ledger-passphrase",
+    MARO_HAI_FEED_ENABLED: "1",
   },
   shell: false,
   stdio: ["ignore", "pipe", "pipe"],
@@ -881,11 +882,28 @@ try {
   assert(haiStatus.safety.externalSending === "manual_only", "HAI integration status did not preserve manual-only sending policy");
   assert(haiStatus.safety.approvalRequiredBeforeSend === true, "HAI integration status did not expose approval safety policy");
   assert(haiStatus.safety.completionRequiresReadiness === true, "HAI integration status did not expose completion readiness policy");
+  assert(haiStatus.connector.schema === "hai.generic_json_feed.v1", "HAI connector schema is missing");
+  assert(haiStatus.connector.enabled === true, "HAI connector did not report its enabled smoke state");
+  assert(haiStatus.connector.readOnly === true, "HAI connector did not preserve its read-only boundary");
   assert(haiCampaign, "HAI integration status did not include the campaign snapshot");
   assert(haiCampaign.readiness.score === details.readiness.score, "HAI campaign snapshot readiness did not match campaign details");
   assert(haiCampaign.queue.responsesAwaitingOutcome >= 1, "HAI campaign snapshot did not expose response outcome queue counts");
   assert(haiCampaign.costs.finalCost === usageReport.totals.finalCost, "HAI campaign snapshot did not expose campaign final cost");
   assert(haiStatus.totals.nextActions >= haiCampaign.nextActions.length, "HAI integration totals did not include campaign next actions");
+  const haiManifest = await api("/api/integrations/hai/manifest");
+  assert(haiManifest.provider === "generic_json_feed", "HAI manifest did not advertise the supported generic feed provider");
+  assert(haiManifest.authority.canApproveDrafts === false, "HAI manifest granted draft approval authority");
+  assert(haiManifest.authority.canConfirmSends === false, "HAI manifest granted send confirmation authority");
+  const haiFeedResponse = await fetch(`${baseUrl}/api/integrations/hai/feed`);
+  assert(haiFeedResponse.ok, "HAI generic JSON feed was not readable");
+  const haiFeedEtag = haiFeedResponse.headers.get("etag");
+  const haiFeed = await haiFeedResponse.json();
+  assert(typeof haiFeed.cursor === "string" && haiFeed.cursor.length > 0, "HAI feed cursor is missing");
+  assert(haiFeed.items.length === haiStatus.connector.itemCount, "HAI feed item count did not match connector status");
+  assert(haiFeed.items.every((item) => item.provider === "generic_json_feed" && item.itemType === "card"), "HAI feed emitted an unsupported item contract");
+  assert(haiFeed.items.every((item) => item.metadata.externalSending === "manual_only"), "HAI feed did not preserve manual-send metadata");
+  const unchangedHaiFeed = await fetch(`${baseUrl}/api/integrations/hai/feed`, { headers: { "If-None-Match": haiFeedEtag } });
+  assert(unchangedHaiFeed.status === 304, "HAI feed did not support efficient conditional reads");
 
   await expectFailure(`/api/campaigns/${campaignId}/history/export`, {}, 404);
   const historyExport = await api(`/api/campaigns/${campaignId}/history/export`, { method: "POST" });
@@ -968,6 +986,94 @@ try {
   assert(restoredDetails.sourceRecords.length === 4, "Restored source records were not available");
   assert(restoredDetails.qualityReviews.length === 3, "Restored quality review was not available");
   assert(restoredDetails.invoiceRecords.length === 1, "Restored invoice record was not available");
+
+  const readiness = await api("/api/readiness");
+  assert(readiness.ready === true, "Readiness endpoint did not pass for a valid writable workspace");
+  assert(Object.values(readiness.checks).every(Boolean), "Readiness endpoint reported a failed check");
+  const diagnostics = await api("/api/diagnostics");
+  assert(diagnostics.safety.manualSendOnly === true, "Diagnostics did not preserve manual-only sending");
+  assert(!JSON.stringify(diagnostics).includes(dataDir), "Diagnostics leaked the local data directory");
+  const integrity = await api("/api/workspace/integrity");
+  assert(integrity.valid === true, "Workspace integrity endpoint did not validate a healthy ledger");
+  const initialSettings = await api("/api/workspace/settings");
+  assert(initialSettings.settings.outreachCooldownDays === 30, "Default identity cooldown is not 30 days");
+  await expectFailure("/api/workspace/settings", {
+    method: "PATCH",
+    body: JSON.stringify({ retentionDays: 2 }),
+  }, 400);
+
+  const safetyMentor = await api(`/api/campaigns/${campaignId}/mentors`, {
+    method: "POST",
+    body: JSON.stringify({ name: "Safety Test", company: "MARO QA", headline: "Operations mentor" }),
+  });
+  const safetyDraft = await api(`/api/campaigns/${campaignId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ mentorProfileId: safetyMentor.mentor.id }),
+  });
+  await api(`/api/messages/${safetyDraft.draft.id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ decisionReason: "Adversarial safety test" }),
+  });
+  await api("/api/workspace/settings", {
+    method: "PATCH",
+    body: JSON.stringify({ outboundPaused: true, firstRunCompleted: true }),
+  });
+  await expectFailure(`/api/messages/${safetyDraft.draft.id}/handoff`, { method: "POST" }, 423);
+  await api("/api/workspace/settings", {
+    method: "PATCH",
+    body: JSON.stringify({ outboundPaused: false }),
+  });
+  const uncertain = await api(`/api/messages/${safetyDraft.draft.id}/send-attempt`, {
+    method: "POST",
+    body: JSON.stringify({ status: "uncertain", channel: "manual", errorMessage: "Browser closed before confirmation" }),
+  });
+  assert(uncertain.attempt.status === "uncertain", "Ambiguous send was not kept uncertain");
+  assert(uncertain.draft.status === "approved", "Ambiguous send incorrectly marked the draft sent");
+  const resolved = await api(`/api/send-attempts/${uncertain.attempt.id}/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ resolution: "failed", note: "No delivery evidence" }),
+  });
+  assert(resolved.attempt.status === "failed", "Uncertain send did not resolve to failed");
+  await api(`/api/mentors/${safetyMentor.mentor.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ doNotContact: true, doNotContactReason: "QA opt-out" }),
+  });
+  await expectFailure(`/api/messages/${safetyDraft.draft.id}/handoff`, { method: "POST" }, 409);
+  await expectFailure(`/api/campaigns/${campaignId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ mentorProfileId: safetyMentor.mentor.id }),
+  }, 409);
+
+  const idempotentBody = JSON.stringify({ title: "Idempotency probe", description: "Created once" });
+  const idempotentHeaders = { "Content-Type": "application/json", "X-MARO-Request": "1", "Idempotency-Key": "smoke-idempotency-project-1" };
+  const firstIdempotent = await fetch(`${baseUrl}/api/projects`, { method: "POST", headers: idempotentHeaders, body: idempotentBody });
+  const firstIdempotentBody = await firstIdempotent.json();
+  const replayedIdempotent = await fetch(`${baseUrl}/api/projects`, { method: "POST", headers: idempotentHeaders, body: idempotentBody });
+  const replayedIdempotentBody = await replayedIdempotent.json();
+  assert(firstIdempotentBody.project.id === replayedIdempotentBody.project.id, "Idempotency replay created a second project");
+  assert(replayedIdempotent.headers.get("x-idempotent-replay") === "1", "Idempotency replay was not identified");
+  const conflictingIdempotent = await fetch(`${baseUrl}/api/projects`, {
+    method: "POST",
+    headers: idempotentHeaders,
+    body: JSON.stringify({ title: "Different idempotency content" }),
+  });
+  assert(conflictingIdempotent.status === 409, "Idempotency key reuse with different content was not rejected");
+
+  const supportBundle = await api("/api/workspace/support-bundle", { method: "POST" });
+  const supportText = JSON.stringify(supportBundle);
+  assert(supportBundle.kind === "maro-sanitized-support-bundle", "Support bundle kind is missing");
+  assert(!supportText.includes("Safety Test"), "Support bundle leaked mentor identity");
+  assert(!supportText.includes("Browser closed before confirmation"), "Support bundle leaked send details");
+  const retentionPreview = await api("/api/workspace/retention", {
+    method: "POST",
+    body: JSON.stringify({ retentionDays: 365, confirm: false }),
+  });
+  assert(retentionPreview.preview === true && retentionPreview.preservedSafetyRecords === true, "Retention preview did not preserve safety records");
+
+  await api("/api/workspace/restore", {
+    method: "POST",
+    body: JSON.stringify({ backupJson: JSON.stringify(backup), confirm: true }),
+  });
 
   const recoveryBackupFile = `${ledgerFile}.backup`;
   assert(fs.existsSync(recoveryBackupFile), "Atomic ledger writer did not retain a recovery backup");

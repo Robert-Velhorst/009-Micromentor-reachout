@@ -89,6 +89,9 @@ export type MentorProfile = {
   profileUrl: string | null;
   stage: MentorStage;
   notes: string;
+  doNotContact: boolean;
+  doNotContactReason: string;
+  doNotContactAt: string | null;
 };
 
 export type MatchAssessment = {
@@ -162,7 +165,7 @@ export type MessageSendAttempt = {
   messageDraftId: string;
   mentorProfileId: string;
   campaignId: string;
-  status: "queued" | "confirmed_sent" | "failed";
+  status: "confirmed_sent" | "failed" | "uncertain";
   channel: string;
   startedAt: string;
   finishedAt: string;
@@ -365,6 +368,13 @@ export type HaiCampaignSnapshot = {
 export type HaiIntegrationStatus = {
   service: "maro-ledger";
   generatedAt: string;
+  connector: {
+    schema: "hai.generic_json_feed.v1";
+    enabled: boolean;
+    readOnly: true;
+    feedPath: "/api/integrations/hai/feed";
+    itemCount: number;
+  };
   safety: {
     externalSending: "manual_only";
     approvalRequiredBeforeSend: true;
@@ -478,6 +488,33 @@ export type WorkspaceSummary = {
   billingRecords: number;
   invoiceRecords: number;
   auditEvents: number;
+  doNotContact: number;
+  uncertainSendAttempts: number;
+};
+
+export type WorkspaceSettings = {
+  locale: "en" | "nl";
+  firstRunCompleted: boolean;
+  outboundPaused: boolean;
+  retentionDays: number;
+  outreachCooldownDays: number;
+  defaultTone: string;
+  defaultFollowUpAfterDays: number;
+};
+
+export type ReadinessStatus = {
+  ready: boolean;
+  checks: Record<string, boolean>;
+  timestamp: string;
+};
+
+export type Diagnostics = {
+  generatedAt: string;
+  uptimeSeconds: number;
+  process: { node: string; platform: string; architecture: string; rssMb: number };
+  storage: HealthStatus["storage"] & Record<string, unknown>;
+  safety: { manualSendOnly: true; outboundPaused: boolean; doNotContactCount: number; uncertainSendAttempts: number };
+  counts: WorkspaceSummary;
 };
 
 export type WorkspaceBackup = {
@@ -582,6 +619,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   if (options.body !== undefined) headers.set("Content-Type", "application/json");
   if (!["GET", "HEAD"].includes(method)) {
     headers.set("X-MARO-Request", "1");
+    headers.set("Idempotency-Key", globalThis.crypto?.randomUUID?.() || `maro-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   }
 
   const key = `${method}:${url}:${typeof options.body === "string" ? options.body : ""}`;
@@ -599,6 +637,8 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
 export const ledgerApi = {
   health: () => request<HealthStatus>("/api/health"),
+  readiness: () => request<ReadinessStatus>("/api/readiness"),
+  diagnostics: () => request<Diagnostics>("/api/diagnostics"),
   runtimeStatus: () => request<RuntimeStatus>("/api/runtime/status"),
   dashboard: (campaignId?: string) =>
     request<DashboardSnapshot>(campaignId ? `/api/dashboard?campaignId=${encodeURIComponent(campaignId)}` : "/api/dashboard"),
@@ -618,6 +658,18 @@ export const ledgerApi = {
       method: "POST",
       body: JSON.stringify({ scope, confirm: true }),
     }),
+  workspaceSettings: () => request<{ settings: WorkspaceSettings; environmentOutboundPause: boolean }>("/api/workspace/settings"),
+  updateWorkspaceSettings: (payload: Partial<WorkspaceSettings>) =>
+    request<{ settings: WorkspaceSettings; environmentOutboundPause: boolean }>("/api/workspace/settings", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  workspaceIntegrity: () => request<{ valid: boolean; error: string | null; checkedAt: string; summary: WorkspaceSummary }>("/api/workspace/integrity"),
+  supportBundle: () => request<Record<string, unknown>>("/api/workspace/support-bundle", { method: "POST" }),
+  retention: (retentionDays: number, confirm = false) => request<Record<string, unknown>>("/api/workspace/retention", {
+    method: "POST",
+    body: JSON.stringify({ retentionDays, confirm }),
+  }),
   actions: (campaignId?: string) =>
     request<{ actions: NextActionRecommendation[] }>(campaignId ? `/api/actions?campaignId=${encodeURIComponent(campaignId)}` : "/api/actions"),
   summary: () => request<LedgerSummary>("/api/ledger/summary"),
@@ -706,6 +758,8 @@ export const ledgerApi = {
     profileUrl: string;
     notes: string;
     stage: MentorStage;
+    doNotContact: boolean;
+    doNotContactReason: string;
   }>) =>
     request<{ mentor: MentorProfile; assessment: MatchAssessment }>(`/api/mentors/${mentorId}`, {
       method: "PATCH",
@@ -760,6 +814,16 @@ export const ledgerApi = {
     request<{ draft: MessageDraft; attempt: MessageSendAttempt }>(`/api/messages/${messageId}/send-attempt`, {
       method: "POST",
       body: JSON.stringify({ channel: "manual", status: "failed", errorMessage }),
+    }),
+  recordUncertainSendAttempt: (messageId: string, details: string) =>
+    request<{ draft: MessageDraft; attempt: MessageSendAttempt; requiresResolution: true }>(`/api/messages/${messageId}/send-attempt`, {
+      method: "POST",
+      body: JSON.stringify({ channel: "manual", status: "uncertain", errorMessage: details }),
+    }),
+  resolveSendAttempt: (attemptId: string, resolution: "confirmed_sent" | "failed", deliveryEvidence = "", note = "") =>
+    request<{ draft: MessageDraft; attempt: MessageSendAttempt; followUp?: FollowUpPlan }>(`/api/send-attempts/${attemptId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ resolution, deliveryEvidence, note }),
     }),
   recordResponse: (payload: {
     campaignId: string;

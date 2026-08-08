@@ -21,11 +21,13 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Require approval before a message can be handed off or manually confirmed as sent, and invalidate approval whenever approved content changes.
 - Convert scheduled follow-ups into linked review drafts before any manual follow-up delivery.
 - Record failed manual send attempts without marking messages sent or scheduling follow-ups.
+- Record uncertain delivery without marking a message sent, then resolve it explicitly before retrying.
+- Enforce mentor do-not-contact state, identity cooldown, and a durable or environment-forced outbound safety stop.
 - Review draft quality before approval, including unresolved template tokens, personalization coverage, length, reading time, and call-to-action checks.
 - Show deterministic next-action recommendations for drafts, approvals, duplicate profile review, due follow-ups, response outcomes, and resource-cost records.
 - Review a campaign readiness checklist that scores source search, mentor import, fit review, drafts, approvals, manual delivery, outcomes, costs, and invoice snapshots.
 - Block marking a campaign completed until the readiness checklist has no blockers or attention items.
-- Expose a read-only HAI integration status snapshot with campaign readiness, blockers, next actions, queue counts, outcomes, and cost totals.
+- Expose a read-only HAI status snapshot and opt-in `generic_json_feed` connector with campaign actions, stable IDs, cursor, and conditional-read support.
 - Record delivery evidence instead of faking external sends.
 - Import mentors from pasted CSV text or `.csv` files with configurable source-column mapping, industries, location, and duplicate preview.
 - Block duplicate active or sent outreach drafts for the same mentor identity or profile URL within a campaign.
@@ -48,15 +50,23 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 The Express server now exposes operational API routes before serving the frontend:
 
 - `GET /api/health`
+- `GET /api/readiness`
+- `GET /api/diagnostics`
 - `GET /api/runtime/status`
 - `GET /api/dashboard`
 - `POST /api/workspace/backup`
 - `POST /api/workspace/restore/preview`
 - `POST /api/workspace/restore`
 - `POST /api/workspace/reset`
+- `GET|PATCH /api/workspace/settings`
+- `GET /api/workspace/integrity`
+- `POST /api/workspace/support-bundle`
+- `POST /api/workspace/retention`
 - `GET /api/ledger/summary`
 - `GET /api/actions`
 - `GET /api/integrations/hai/status`
+- `GET /api/integrations/hai/manifest`
+- `GET /api/integrations/hai/feed`
 - `GET|POST /api/projects`
 - `PATCH /api/projects/:id`
 - `GET|POST /api/campaigns`
@@ -84,6 +94,7 @@ The Express server now exposes operational API routes before serving the fronten
 - `POST /api/messages/:id/reject`
 - `POST /api/messages/:id/handoff`
 - `POST /api/messages/:id/send-attempt`
+- `POST /api/send-attempts/:id/resolve`
 - `GET|POST /api/responses`
 - `GET|POST /api/follow-ups`
 - `PATCH /api/follow-ups/:id`
@@ -123,7 +134,7 @@ Manual handoff packages contain the latest approved subject/body snapshot, expir
 
 Manual duplicate mentor records can remain in the ledger for source history, but MARO blocks active or sent duplicate outreach for the same mentor identity/profile in a campaign, suppresses duplicate draft recommendations, and surfaces a duplicate-profile review action. Resolving a duplicate links it to the canonical mentor identity, closes the duplicate row, cancels its pending follow-ups, and records an audit event without deleting historical source data.
 
-The HAI integration status endpoint is read-only. It exposes campaign readiness, blockers, attention items, next actions, queue counts, response/outcome totals, and local cost totals so another operator system can inspect MARO state without approving drafts, confirming sends, or mutating external platforms.
+The HAI integration is read-only. Status exposes campaign readiness, blockers, attention items, next actions, queue counts, response/outcome totals, and local cost totals. Set `MARO_HAI_FEED_ENABLED=1` to expose the same pending actions as HAI's validated `generic_json_feed` contract at `/api/integrations/hai/feed`. Register the local URL in the owner-scoped HAI workspace; neither endpoint can approve drafts, confirm sends, or mutate external platforms.
 
 ## Requirements
 
@@ -133,10 +144,11 @@ The HAI integration status endpoint is read-only. It exposes campaign readiness,
 
 ## Development
 
-Install dependencies:
+Install dependencies and run preflight:
 
 ```sh
-npm install
+npm ci
+npm run doctor
 ```
 
 Run the default ngrok flow:
@@ -147,18 +159,7 @@ npm run dev
 
 This builds the production app, starts the local Node server on `127.0.0.1:3000`, then opens a basic-auth protected ngrok tunnel to that local server. Set `NGROK_BASIC_AUTH` first; MARO refuses to create an unprotected tunnel by default.
 
-For a local Vite-only development server:
-
-```sh
-npm run dev:vite
-```
-
-The browser debug collector is disabled by default to avoid background request logging and `.manus-logs` churn during normal development. Enable it only for focused UI diagnostics:
-
-```sh
-set MARO_DEBUG_COLLECTOR=1
-npm run dev:vite
-```
+Vite is used only as the frontend compiler. The running application is always the Express API plus its built frontend; the default development path is the guarded ngrok launcher.
 
 ## Production Build
 
@@ -168,6 +169,14 @@ npm run start
 ```
 
 The production server binds to `127.0.0.1` by default. Set `PORT` or `HOST` if you need a different local port or host.
+
+## Docker
+
+```sh
+docker compose up --build
+```
+
+Open `http://127.0.0.1:8080`. The container runs Express as a non-root user with a read-only root filesystem and persists the ledger in the `maro-data` volume.
 
 ## ngrok
 
@@ -215,11 +224,11 @@ To remove an installed copy, use Windows Settings > Apps > Installed apps, or ru
 
 ```sh
 npm run check
-npm run build
-npm run check:api
+npm test
+npm run audit:security
 npm run check:release
 ```
 
 `npm run check:release` runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, production surface checks for CSP/security headers and external asset regressions, and the Windows installer build on Windows hosts.
 
-Security, resource, and feature analysis notes are in `analysis/SECURITY_RESOURCE_FEATURE_REPORT.md`. The requirement-to-evidence closeout is in `analysis/COMPLETION_AUDIT.md`.
+The current audit, critical path, acceptance matrix, security model, runbook, action audits, phase completion matrix, and final verification are under `docs/`.

@@ -46,6 +46,12 @@ const installerSource = fs.readFileSync(path.join(process.cwd(), "scripts", "bui
 const serverSource = fs.readFileSync(path.join(process.cwd(), "server", "index.ts"), "utf8");
 const ledgerSource = fs.readFileSync(path.join(process.cwd(), "server", "ledger.ts"), "utf8");
 const ledgerClientSource = fs.readFileSync(path.join(process.cwd(), "client", "src", "lib", "ledgerApi.ts"), "utf8");
+const dockerSource = fs.readFileSync(path.join(process.cwd(), "Dockerfile"), "utf8");
+const requiredDocs = [
+  "TECHNICAL_AUDIT.md", "CRITICAL_PATH.md", "ACCEPTANCE_TESTS.md", "GOAL_COMPLETION_MATRIX.md",
+  "FINAL_VERIFICATION_REPORT.md", "UI_ACTION_AUDIT.md", "API_USAGE_AUDIT.md", "SECURITY.md",
+  "OPERATOR_RUNBOOK.md", "CODEX_WORKLOG.md", "CODEX_CHECKPOINTS.md", "TASK_GRAPH.md",
+];
 assertSourceIncludes(
   tunnelLauncherSource,
   "if (!basicAuth && !allowPublicTunnel)",
@@ -111,7 +117,15 @@ assertSourceIncludes(
   "workspaceIntegrityError",
   "Workspace restore no longer validates ledger references"
 );
+assertSourceIncludes(dockerSource, 'CMD ["node", "dist/index.cjs"]', "Docker runtime no longer starts the Express application");
+assertSourceIncludes(dockerSource, "USER maro", "Docker runtime no longer drops root privileges");
+assertSourceIncludes(dockerSource, "/api/readiness", "Docker healthcheck no longer uses readiness");
+for (const filename of requiredDocs) {
+  if (!fs.existsSync(path.join(process.cwd(), "docs", filename))) throw new Error(`Required release document is missing: ${filename}`);
+}
 
+await runNpm("Doctor preflight", ["run", "doctor"]);
+await runNpm("Dependency security audit", ["run", "audit:security"]);
 await runNpm("TypeScript contract check", ["run", "check"]);
 await runNpm("Build plus encrypted ledger API smoke test", ["run", "check:api"]);
 

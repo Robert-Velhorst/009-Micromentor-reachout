@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  Ban,
   Check,
   ClipboardCheck,
   Copy,
@@ -21,6 +22,8 @@ import {
   Search,
   Send,
   ShieldCheck,
+  CirclePause,
+  CirclePlay,
   Users,
 } from "lucide-react";
 
@@ -54,6 +57,7 @@ import {
   type RuntimeStatus,
   type UsageReport,
   type WorkspaceSummary,
+  type WorkspaceSettings,
   ledgerApi,
 } from "@/lib/ledgerApi";
 
@@ -468,6 +472,8 @@ export default function Home() {
   const [workspaceBackupText, setWorkspaceBackupText] = useState("");
   const [workspacePreview, setWorkspacePreview] = useState<WorkspaceSummary | null>(null);
   const [workspaceStatus, setWorkspaceStatus] = useState("");
+  const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings | null>(null);
+  const [environmentOutboundPause, setEnvironmentOutboundPause] = useState(false);
   const [activeTab, setActiveTab] = useState<LedgerTab>("ledger");
   const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
   const [sourceFilterId, setSourceFilterId] = useState("");
@@ -479,9 +485,10 @@ export default function Home() {
     setError("");
     try {
       const requestedCampaignId = campaignId !== undefined ? campaignId : activeCampaignId;
-      const [snapshot, nextRuntimeStatus] = await Promise.all([
+      const [snapshot, nextRuntimeStatus, settingsResult] = await Promise.all([
         ledgerApi.dashboard(requestedCampaignId || undefined),
         options.refreshRuntime ? ledgerApi.runtimeStatus().catch(() => null) : Promise.resolve(runtimeStatus),
+        ledgerApi.workspaceSettings(),
       ]);
       setSummary(snapshot.summary);
       setProjects(snapshot.projects);
@@ -491,6 +498,8 @@ export default function Home() {
       setHealthStatus(snapshot.health);
       setRuntimeStatus(nextRuntimeStatus);
       setHaiStatus(snapshot.haiStatus);
+      setWorkspaceSettings(settingsResult.settings);
+      setEnvironmentOutboundPause(settingsResult.environmentOutboundPause);
       setDraftEdits({});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
@@ -685,6 +694,13 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Action failed");
     }
   };
+
+  const updateSafetySettings = (payload: Partial<WorkspaceSettings>) =>
+    mutate(async () => {
+      const result = await ledgerApi.updateWorkspaceSettings(payload);
+      setWorkspaceSettings(result.settings);
+      setEnvironmentOutboundPause(result.environmentOutboundPause);
+    });
 
   const createCampaign = async () => {
     setError("");
@@ -1110,6 +1126,26 @@ export default function Home() {
     }
   };
 
+  const downloadSupportBundle = async () => {
+    setWorkspaceStatus("");
+    try {
+      const bundle = await ledgerApi.supportBundle();
+      downloadText(`maro-support-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(bundle, null, 2), "application/json;charset=utf-8");
+      setWorkspaceStatus("Sanitized support bundle exported.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to export support bundle");
+    }
+  };
+
+  const checkWorkspaceIntegrity = async () => {
+    try {
+      const result = await ledgerApi.workspaceIntegrity();
+      setWorkspaceStatus(result.valid ? `Integrity check passed at ${formatDate(result.checkedAt)}.` : result.error || "Integrity check failed.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Integrity check failed");
+    }
+  };
+
   const previewWorkspaceRestore = async () => {
     setError("");
     setWorkspaceStatus("");
@@ -1188,6 +1224,31 @@ export default function Home() {
           <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
             <AlertTriangle className="h-4 w-4" />
             ngrok was explicitly opened publicly without `NGROK_BASIC_AUTH`. Protect the tunnel before sharing sensitive mentor data.
+          </div>
+        ) : null}
+        {workspaceSettings && !workspaceSettings.firstRunCompleted ? (
+          <section className="mb-4 flex flex-col gap-3 border-y bg-sky-50 px-4 py-4 text-sm text-sky-950 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="font-medium">Workspace setup</div>
+              <div className="mt-1 text-xs text-sky-800">Local ledger ready. Manual send and approval gates are active.</div>
+            </div>
+            <Button className="rounded-md" onClick={() => void updateSafetySettings({ firstRunCompleted: true })}>
+              <Check className="h-4 w-4" />
+              Complete setup
+            </Button>
+          </section>
+        ) : null}
+        {workspaceSettings?.outboundPaused || environmentOutboundPause ? (
+          <div className="mb-4 flex flex-col gap-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <CirclePause className="h-4 w-4" />
+              Outbound handoffs and send confirmations are paused.
+            </div>
+            {!environmentOutboundPause ? (
+              <Button variant="outline" className="rounded-md border-red-300 bg-white" onClick={() => void updateSafetySettings({ outboundPaused: false })}>
+                <CirclePlay className="h-4 w-4" /> Resume
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
@@ -1874,6 +1935,11 @@ export default function Home() {
                                   {assessment.score}% fit
                                 </Badge>
                               ) : null}
+                              {mentor.doNotContact ? (
+                                <Badge variant="outline" className="rounded-md border-red-200 bg-red-50 text-red-700">
+                                  <Ban className="h-3 w-3" /> Do not contact
+                                </Badge>
+                              ) : null}
                             </div>
                             <div className="mt-1 text-sm text-muted-foreground">{mentor.headline}</div>
                             <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -1938,10 +2004,21 @@ export default function Home() {
                             </div>
                           </div>
                           <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              className={mentor.doNotContact ? "rounded-md" : "rounded-md border-red-200 text-red-700 hover:bg-red-50 hover:text-red-700"}
+                              onClick={() => void mutate(() => ledgerApi.updateMentor(mentor.id, {
+                                doNotContact: !mentor.doNotContact,
+                                doNotContactReason: mentor.doNotContact ? "" : "Operator marked do not contact",
+                              }))}
+                            >
+                              {mentor.doNotContact ? <CirclePlay className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                              {mentor.doNotContact ? "Allow contact" : "Do not contact"}
+                            </Button>
                             <Button variant="outline" className="rounded-md" onClick={() => setSelectedMentorId(mentor.id)}>
                               Inspect
                             </Button>
-                            <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.createDraft(activeCampaignId, mentor.id))}>
+                            <Button variant="outline" className="rounded-md" disabled={mentor.doNotContact} onClick={() => void mutate(() => ledgerApi.createDraft(activeCampaignId, mentor.id))}>
                               <FileText className="h-4 w-4" />
                               Draft
                             </Button>
@@ -2671,6 +2748,48 @@ export default function Home() {
                   <MiniStat label="Loading" value={loading ? "Yes" : "No"} />
                 </CardContent>
               </Card>
+              <Card className="rounded-md py-5">
+                <CardHeader className="px-5">
+                  <CardTitle className="text-lg">Outbound safety</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 px-5">
+                  <div className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                    <div>
+                      <div className="font-medium">Safety stop</div>
+                      <div className="text-xs text-muted-foreground">{workspaceSettings?.outboundPaused || environmentOutboundPause ? "Paused" : "Ready for approved manual handoffs"}</div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="rounded-md"
+                      disabled={environmentOutboundPause}
+                      onClick={() => void updateSafetySettings({ outboundPaused: !workspaceSettings?.outboundPaused })}
+                    >
+                      {workspaceSettings?.outboundPaused ? <CirclePlay className="h-4 w-4" /> : <CirclePause className="h-4 w-4" />}
+                      {workspaceSettings?.outboundPaused ? "Resume" : "Pause"}
+                    </Button>
+                  </div>
+                  <label className="grid gap-1 text-xs text-muted-foreground">
+                    <span>Identity cooldown (days)</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="365"
+                      value={workspaceSettings?.outreachCooldownDays ?? 30}
+                      onChange={(event) => setWorkspaceSettings((current) => current ? { ...current, outreachCooldownDays: Number(event.target.value) } : current)}
+                      onBlur={() => workspaceSettings && void updateSafetySettings({ outreachCooldownDays: workspaceSettings.outreachCooldownDays })}
+                      className="rounded-md"
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" className="rounded-md" onClick={() => void checkWorkspaceIntegrity()}>
+                      <ShieldCheck className="h-4 w-4" /> Check data
+                    </Button>
+                    <Button variant="outline" className="rounded-md" onClick={() => void downloadSupportBundle()}>
+                      <Download className="h-4 w-4" /> Support bundle
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
               <HaiIntegrationPanel
                 status={haiStatus}
                 campaignId={activeCampaignId}
@@ -3166,7 +3285,7 @@ function HaiIntegrationPanel({
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardTitle className="text-lg">HAI integration</CardTitle>
-            <div className="mt-1 text-xs text-muted-foreground">Read-only operating snapshot</div>
+            <div className="mt-1 text-xs text-muted-foreground">Read-only generic JSON feed</div>
           </div>
           <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 text-emerald-700">
             Manual only
@@ -3183,6 +3302,8 @@ function HaiIntegrationPanel({
               <MiniStat label="Actions" value={status.totals.nextActions} />
               <MiniStat label="Blockers" value={status.totals.blockers} />
               <MiniStat label="Final cost" value={formatCurrency(status.totals.finalCost)} />
+              <MiniStat label="Connector" value={status.connector.enabled ? "Enabled" : "Disabled"} />
+              <MiniStat label="Feed items" value={status.connector.itemCount} />
             </div>
             <div className="rounded-md border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
               {status.safety.notes}

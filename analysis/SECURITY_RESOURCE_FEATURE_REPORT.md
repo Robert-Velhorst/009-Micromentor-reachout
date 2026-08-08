@@ -1,7 +1,7 @@
 # MARO Security, Resource, and Feature Analysis
 
-Date: 2026-07-14
-Repository revision scanned: `codex/maro-operating-ledger-enhancements` working tree after the tool-wide audit
+Date: 2026-08-09
+Repository revision scanned: `codex/giant-goal-completion` working tree after the Giant Goal audit
 
 ## Scope
 
@@ -25,7 +25,7 @@ Repository revision scanned: `codex/maro-operating-ledger-enhancements` working 
 - DNS-rebinding risk: every request now passes a fail-closed Host allowlist. Local hosts, exact `MARO_ALLOWED_HOSTS`, and explicitly enabled ngrok domains are accepted; unknown hosts receive HTTP 421.
 - API parser and cache boundaries: mutation checks run before JSON parsing, JSON bodies are capped at 1 MB, API errors remain JSON, API responses use `no-store`, and only fingerprinted static assets receive immutable caching.
 - Production error disclosure: `ErrorBoundary` no longer shows stack traces outside development builds.
-- Dev log ingestion DoS and resource-churn risk: the Vite debug collector is now disabled unless `MARO_DEBUG_COLLECTOR=1` is set, and still caps request payloads at 256 KB before writing logs when explicitly enabled.
+- Dev log ingestion and resource-churn risk: the obsolete Vite debug collector and Vite-only runtime command were removed. Vite remains a build compiler only; normal development runs the built Express app through the guarded ngrok launcher.
 - Ngrok access control: development and installed launchers refuse to create unauthenticated public tunnels by default. `NGROK_BASIC_AUTH` enables the normal protected flow; `MARO_ALLOW_PUBLIC_TUNNEL=1` is required for an intentional public override.
 - Local ledger confidentiality: setting `MARO_LEDGER_PASSPHRASE` stores the ledger as an AES-256-GCM encrypted envelope instead of plaintext JSON.
 - Shoulder-surfing reduction: session privacy mode hides mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
@@ -37,6 +37,9 @@ Repository revision scanned: `codex/maro-operating-ledger-enhancements` working 
 - Scoring input bounds: skill, industry, and location lists are deduplicated and capped at 25 entries of 80 characters each before persistence or scoring.
 - Discovery handoff privacy: generated queries remain local derived state, source launch URLs contain no query parameters or fragments, and adding recommendations creates only audited planned records without external requests.
 - Failure transparency: failed manual send attempts are audit logged and remain retryable instead of being hidden, converted into sent state, or allowed to schedule follow-ups.
+- Outbound safety: durable do-not-contact state, identity cooldown, operator/environment pause, and uncertain-delivery resolution now fail closed at the server as well as in the UI.
+- API resilience: request IDs, conservative local rate limiting, and ten-minute server-side mutation replay prevent accidental duplicates and make failures traceable.
+- Deployment integrity: the broken static nginx image was replaced with a non-root Express container, persistent data volume, readiness healthcheck, read-only root filesystem, and dropped Linux capabilities.
 - Low-cognitive-load operations: dashboard next actions now open the relevant campaign tab directly and preserve mentor context where available, reducing manual navigation during review, follow-up, billing, and outcome work.
 - Project-linked integrity: campaign creation and updates now validate project IDs, and the command center exposes project creation plus campaign project assignment so outreach stays tied to the correct broader goal.
 - Installer dependency and removal risk: the Windows installer embeds the Node runtime and built app, so the end user does not need a separate Node/npm install; it also writes installed-version metadata and registers a current-user uninstall entry.
@@ -51,15 +54,17 @@ Repository revision scanned: `codex/maro-operating-ledger-enhancements` working 
 - Ledger durability: writes now use synchronized temporary files and atomic replacement. A rolling backup supports audited recovery from a corrupt primary file.
 - Restore referential integrity: backup preview now rejects duplicate IDs and orphaned links across projects, campaigns, mentors, messages, responses, follow-ups, resources, billing, invoices, and outcomes.
 - Workflow input integrity: response classifications and dates are validated, and response/follow-up message references must belong to the same campaign and mentor.
+- HAI least authority: the optional connector emits only read-only `hai.generic_json_feed.v1` next-action cards, omits message and response bodies, supports conditional reads, is disabled by default, and exposes no approval, send-confirmation, or provider-write authority.
+- Docker build efficiency: generated caches and private environment files are excluded from the context. The measured transfer fell from 342.91 MB to 3.52 KB without changing the runtime image.
 
 ## Resource Analysis
 
 - Initial production JS observed earlier in the work: about 303.66 KB minified, 95.20 KB gzip.
-- Current production JS: 318.70 KB minified, 89.29 KB gzip.
-- Current production CSS: 39.59 KB minified, 7.48 KB gzip, down from 109.78 KB and 17.46 KB gzip.
-- Final served public payload directory before the release rebuild: 370,955 bytes across four files.
-- Final installer: 34,659,840 bytes (33.1 MB), dominated by the embedded Node runtime.
-- Runtime optimizations applied: removed unused app providers and the inactive frontend, deferred mentor search input, debounced localStorage writes, removed 59,633,295 bytes of unreachable images, made development debug logging opt-in, and bundled only the current server/runtime payload.
+- Current production JS: 324.76 KB minified, 90.55 KB gzip.
+- Current production CSS: 39.84 KB minified, 7.56 KB gzip, down from 109.78 KB and 17.46 KB gzip.
+- Final served public payload directory: 377,717 bytes across four files.
+- Final installer: 34,665,984 bytes (33.1 MB), dominated by the embedded Node runtime.
+- Runtime optimizations applied: removed unused app providers, inactive frontend, development debug collector, and Vite-only server path; deferred mentor search input, debounced localStorage writes, removed 59,633,295 bytes of unreachable images, cached ledger reads, and bundled only the current server/runtime payload.
 - Structured mentor scoring remains event-driven: existing profiles are recalculated only when campaign scoring inputs change, with no polling or background scoring process.
 - Discovery plans are read-time derivations over the stored campaign and source ledger; applying them is idempotent and adds no dependency, timer, scraper, or background worker.
 - The manual-fill extension runs only while its popup is open and does not install content scripts, retain a handoff package, poll, queue messages, or run a background worker.
@@ -67,12 +72,14 @@ Repository revision scanned: `codex/maro-operating-ledger-enhancements` working 
 - Same-app mutation protection is a constant-time header check with no token storage, timers, polling, extra network round trips for the same-origin app, or work on read-only requests.
 - Initial UI refresh uses one aggregate dashboard request instead of seven ledger requests. Exact concurrent requests are coalesced, and runtime/ngrok status is probed only on initial load or explicit refresh.
 
-Current encrypted-ledger QA sample on this Windows machine:
+Current local browser-QA sample on this Windows machine:
 
-- Production Node working set: 16.86 MB; private memory: 64.43 MB; 12 threads.
-- Twenty-five `GET /api/dashboard` fetches averaged 28.56 ms with a 43.47 ms p95 for a 21,590-byte response.
+- Production Node RSS: 71.1 MB after 179 seconds of interactive QA.
+- Twenty `GET /api/dashboard` fetches measured 6.86 ms median, 9.65 ms p95, and one 78.74 ms maximum.
+- The QA ledger was 11.9 KB; production JavaScript was 317 KB minified.
 - Smoke coverage verifies repeated read-only summary requests do not change the encrypted ledger bytes.
 - These values are a development-machine snapshot rather than a cross-device performance guarantee; they are useful as a regression baseline for later paging or storage work.
+- Hardened Docker idle sample: 0.00% CPU, 17.84 MiB memory, and 11 processes after readiness, health, app-shell, and HAI feed requests.
 
 ## Validation
 
@@ -81,12 +88,12 @@ Current encrypted-ledger QA sample on this Windows machine:
 - `npm run check:release`: passed.
 - `npm audit`: passed with zero known vulnerabilities after lockfile and build-tool remediation.
 - API mutation security smoke: requests with a missing or incorrect `X-MARO-Request` marker returned HTTP 403, browser-reported cross-site mutations returned HTTP 403 even with the marker, no CORS access header was exposed, and normal marked mutations completed successfully.
-- Production browser QA: a campaign-title mutation persisted through reload, with no console errors, overlay, or horizontal overflow at desktop width or the in-app browser's effective 749 px minimum width.
+- Production browser QA: onboarding and pause/DNC mutations persisted, with no console errors, incoherent overlay, or horizontal page overflow at desktop width or the in-app browser's effective 520 px mobile viewport.
 - `node scripts/ngrok.mjs`: refuses to open a tunnel when neither `NGROK_BASIC_AUTH` nor the explicit public override is configured.
 - Safe installer run with `MARO_INSTALL_DIR`, `MARO_SKIP_SHORTCUTS=1`, `MARO_SKIP_REGISTRY=1`, and `MARO_SKIP_LAUNCH=1`: passed.
-- Final installer SHA-256 for this audit build: `0D6FF5D05440BCF24B701C4478FF7F5F508EB5B4C4E599E5F6D120E14137BAD9B`.
+- Final installer SHA-256 for this audit build: `5C5A197E5F173DD1BFF788675F371A64602810322FECA486216B45C3E544C615`.
 - Compute and publish a fresh SHA-256 checksum for each later release; the self-extracting executable is regenerated by the release gate.
-- Installer version `1.1.0` contains the generated manual-handoff extension, launcher, and uninstaller, and contains neither legacy automated-messaging archive.
+- Installer version `1.2.0` contains the generated manual-handoff extension, launcher, and uninstaller, and contains neither legacy automated-messaging archive.
 - Release smoke server: returned HTTP 200 for `/`, enforced restrictive CSP directives, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`, and verified the root app shell had no external asset URLs, Google Fonts references, or development debug-collector injection.
 
 ## Remaining Risks

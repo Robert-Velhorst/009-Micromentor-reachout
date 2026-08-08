@@ -9,7 +9,7 @@ type MentorStage = "new" | "matched" | "drafted" | "approved" | "contacted" | "r
 type DraftStatus = "draft" | "approved" | "rejected" | "sent";
 type MessageQualityStatus = "pass" | "warning" | "blocked";
 type ApprovalDecision = "approved" | "rejected";
-type SendStatus = "confirmed_sent" | "failed";
+type SendStatus = "confirmed_sent" | "failed" | "uncertain";
 type ResponseClassification = "interested" | "not_interested" | "more_info" | "unavailable" | "unknown";
 type FollowUpStatus = "scheduled" | "completed" | "cancelled";
 type ResourceSessionStatus = "active" | "ended";
@@ -35,6 +35,16 @@ type Operator = {
   id: string;
   name: string;
   createdAt: string;
+};
+
+type WorkspaceSettings = {
+  locale: "en" | "nl";
+  firstRunCompleted: boolean;
+  outboundPaused: boolean;
+  retentionDays: number;
+  outreachCooldownDays: number;
+  defaultTone: string;
+  defaultFollowUpAfterDays: number;
 };
 
 type OutreachProject = {
@@ -143,6 +153,9 @@ type MentorProfile = {
   rawProfileJson: Record<string, unknown>;
   stage: MentorStage;
   notes: string;
+  doNotContact: boolean;
+  doNotContactReason: string;
+  doNotContactAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -429,6 +442,13 @@ type HaiCampaignSnapshot = {
 type HaiIntegrationStatus = {
   service: "maro-ledger";
   generatedAt: string;
+  connector: {
+    schema: "hai.generic_json_feed.v1";
+    enabled: boolean;
+    readOnly: true;
+    feedPath: "/api/integrations/hai/feed";
+    itemCount: number;
+  };
   safety: {
     externalSending: "manual_only";
     approvalRequiredBeforeSend: true;
@@ -481,6 +501,7 @@ type AuditEvent = {
 
 type LedgerState = {
   schemaVersion: 1;
+  settings: WorkspaceSettings;
   operators: Operator[];
   projects: OutreachProject[];
   campaigns: OutreachCampaign[];
@@ -540,6 +561,16 @@ const LEDGER_ARRAY_KEYS = [
   "outreachOutcomes",
   "auditEvents",
 ] as const;
+
+const DEFAULT_WORKSPACE_SETTINGS: WorkspaceSettings = {
+  locale: "en",
+  firstRunCompleted: false,
+  outboundPaused: false,
+  retentionDays: 365,
+  outreachCooldownDays: 30,
+  defaultTone: "Warm, concise, and respectful",
+  defaultFollowUpAfterDays: 7,
+};
 let observedApiBytes = 0;
 let ledgerCache: {
   filePath: string;
@@ -1082,6 +1113,7 @@ function createSeedState(): LedgerState {
 
   return {
     schemaVersion: 1,
+    settings: { ...DEFAULT_WORKSPACE_SETTINGS },
     operators: [operator],
     projects: [project],
     campaigns: [campaign],
@@ -1118,8 +1150,18 @@ function createSeedState(): LedgerState {
 }
 
 function normalizeState(state: Partial<LedgerState>): LedgerState {
+  const rawSettings = state.settings || DEFAULT_WORKSPACE_SETTINGS;
   return {
     schemaVersion: 1,
+    settings: {
+      locale: rawSettings.locale === "nl" ? "nl" : "en",
+      firstRunCompleted: rawSettings.firstRunCompleted === true,
+      outboundPaused: rawSettings.outboundPaused === true,
+      retentionDays: Math.min(3650, Math.max(30, parsePositiveInteger(rawSettings.retentionDays, 365))),
+      outreachCooldownDays: Math.min(365, Math.max(0, parseNonNegativeInteger(rawSettings.outreachCooldownDays))),
+      defaultTone: String(rawSettings.defaultTone || DEFAULT_WORKSPACE_SETTINGS.defaultTone).slice(0, 160),
+      defaultFollowUpAfterDays: Math.min(90, Math.max(1, parsePositiveInteger(rawSettings.defaultFollowUpAfterDays, 7))),
+    },
     operators: state.operators || [],
     projects: state.projects || [],
     campaigns: (state.campaigns || []).map((campaign) => ({
@@ -1141,6 +1183,9 @@ function normalizeState(state: Partial<LedgerState>): LedgerState {
       industries: stringList(mentor.industries),
       location: String(mentor.location || ""),
       profileUrl: safeProfileUrl(mentor.profileUrl),
+      doNotContact: mentor.doNotContact === true,
+      doNotContactReason: String(mentor.doNotContactReason || ""),
+      doNotContactAt: mentor.doNotContactAt || null,
     })),
     matchAssessments: state.matchAssessments || [],
     messageDrafts: state.messageDrafts || [],
@@ -1282,6 +1327,8 @@ function workspaceSummary(state: LedgerState) {
     billingRecords: state.billingRecords.length,
     invoiceRecords: state.invoiceRecords.length,
     auditEvents: state.auditEvents.length,
+    doNotContact: state.mentorProfiles.filter((mentor) => mentor.doNotContact).length,
+    uncertainSendAttempts: state.messageSendAttempts.filter((attempt) => attempt.status === "uncertain").length,
   };
 }
 
@@ -2141,6 +2188,13 @@ function buildHaiIntegrationStatus(state: LedgerState, includeArchived = false):
   return {
     service: "maro-ledger",
     generatedAt: now(),
+    connector: {
+      schema: "hai.generic_json_feed.v1",
+      enabled: process.env.MARO_HAI_FEED_ENABLED === "1",
+      readOnly: true,
+      feedPath: "/api/integrations/hai/feed",
+      itemCount: campaigns.reduce((sum, campaign) => sum + campaign.nextActions.length, 0),
+    },
     safety: {
       externalSending: "manual_only",
       approvalRequiredBeforeSend: true,
@@ -2149,6 +2203,36 @@ function buildHaiIntegrationStatus(state: LedgerState, includeArchived = false):
     },
     campaigns,
     totals,
+  };
+}
+
+function buildHaiGenericFeed(state: LedgerState) {
+  const snapshot = buildHaiIntegrationStatus(state);
+  const items = snapshot.campaigns
+    .flatMap((campaign) => campaign.nextActions.map((action) => ({ campaign, action })))
+    .slice(0, 250)
+    .map(({ campaign, action }) => ({
+      externalId: `maro:${action.id}`,
+      threadId: `maro-campaign:${campaign.campaignId}`,
+      title: action.title,
+      content: `${action.description}\n\nRecommended action: ${action.recommendedAction}`.slice(0, 20_000),
+      itemType: "card",
+      provider: "generic_json_feed",
+      accountLabel: "maro-local",
+      projectKey: campaign.projectId,
+      receivedAt: action.dueAt || campaign.updatedAt,
+      metadata: {
+        campaignId: campaign.campaignId,
+        actionType: action.type,
+        priority: action.priority,
+        dueAt: action.dueAt,
+        readOnly: true,
+        externalSending: "manual_only",
+      },
+    }));
+  return {
+    cursor: state.auditEvents[0]?.id || `maro-empty-${state.schemaVersion}`,
+    items,
   };
 }
 
@@ -2560,7 +2644,18 @@ function calculateResourceCosts(startSnapshot: ResourceSnapshot, endSnapshot: Re
 }
 
 function jsonError(res: Response, status: number, message: string) {
-  res.status(status).json({ error: message });
+  const code = status === 400 ? "invalid_request"
+    : status === 403 ? "forbidden"
+      : status === 404 ? "not_found"
+        : status === 409 ? "conflict"
+          : status === 423 ? "outbound_paused"
+            : "internal_error";
+  res.status(status).json({
+    error: message,
+    code,
+    requestId: res.locals.requestId || null,
+    retryable: status >= 500,
+  });
 }
 
 function route(
@@ -2753,6 +2848,37 @@ function sentDraftForMentorPerson(state: LedgerState, draft: MessageDraft) {
   ) || null;
 }
 
+function outboundIsPaused(state: LedgerState) {
+  return state.settings.outboundPaused || process.env.MARO_OUTBOUND_PAUSED === "1";
+}
+
+function mentorDoNotContactReason(state: LedgerState, mentor: MentorProfile) {
+  const relatedIds = relatedMentorProfileIds(state, mentor);
+  const blockedProfile = state.mentorProfiles.find(
+    (profile) => relatedIds.has(profile.id) && profile.doNotContact
+  );
+  if (blockedProfile) {
+    return blockedProfile.doNotContactReason || "This mentor identity is marked do not contact";
+  }
+  return "";
+}
+
+function mentorContactBlock(state: LedgerState, mentor: MentorProfile) {
+  const doNotContactReason = mentorDoNotContactReason(state, mentor);
+  if (doNotContactReason) return doNotContactReason;
+  const relatedIds = relatedMentorProfileIds(state, mentor);
+
+  const cooldownMs = state.settings.outreachCooldownDays * 24 * 60 * 60 * 1000;
+  if (cooldownMs <= 0) return "";
+  const lastSend = state.messageSendAttempts
+    .filter((attempt) => relatedIds.has(attempt.mentorProfileId) && attempt.status === "confirmed_sent")
+    .sort((left, right) => Date.parse(right.finishedAt) - Date.parse(left.finishedAt))[0];
+  if (lastSend && Date.now() - Date.parse(lastSend.finishedAt) < cooldownMs) {
+    return `Outreach cooldown is active for this mentor identity (${state.settings.outreachCooldownDays} days)`;
+  }
+  return "";
+}
+
 function createMentorRecord(state: LedgerState, campaign: OutreachCampaign, body: Record<string, unknown>) {
   const name = String(body?.name || "").trim();
   if (!name) {
@@ -2802,6 +2928,9 @@ function createMentorRecord(state: LedgerState, campaign: OutreachCampaign, body
     rawProfileJson: { ...body, sourceRecordId: sourceRecord?.id || null, company },
     stage: parseMentorStage(body?.stage) || "matched",
     notes: String(body?.notes || ""),
+    doNotContact: body?.doNotContact === true,
+    doNotContactReason: body?.doNotContact === true ? String(body?.doNotContactReason || "Operator marked do not contact") : "",
+    doNotContactAt: body?.doNotContact === true ? createdAt : null,
     createdAt,
     updatedAt: createdAt,
   };
@@ -2921,6 +3050,8 @@ function createMessageDraftRecord(state: LedgerState, campaign: OutreachCampaign
   if (!mentor || mentor.campaignId !== campaign.id) {
     return { error: "Valid mentorProfileId is required" };
   }
+  const contactBlock = mentorContactBlock(state, mentor);
+  if (contactBlock) return { error: `Outreach blocked: ${contactBlock}`, status: 409 };
   const duplicateDraft = activeDraftForMentorPerson(state, campaign.id, mentor);
   if (duplicateDraft) {
     return {
@@ -2964,6 +3095,8 @@ function createFollowUpDraftRecord(state: LedgerState, followUp: FollowUpPlan, b
   if (!campaign) return { error: "Campaign not found", status: 404 };
   const mentor = state.mentorProfiles.find((item) => item.id === followUp.mentorProfileId && item.campaignId === campaign.id);
   if (!mentor) return { error: "Follow-up mentor not found", status: 404 };
+  const contactBlock = mentorDoNotContactReason(state, mentor);
+  if (contactBlock) return { error: `Follow-up blocked: ${contactBlock}`, status: 409 };
   const linkedDraft = followUp.messageDraftId ? state.messageDrafts.find((item) => item.id === followUp.messageDraftId) : null;
   if (linkedDraft && linkedDraft.generatedBy === "maro-follow-up-engine" && linkedDraft.status !== "rejected") {
     return { error: "Follow-up already has an active linked draft", status: 409 };
@@ -3004,6 +3137,113 @@ export function registerLedgerRoutes(app: Express) {
     pricingFormula: PRICING_FORMULA,
     timestamp: now(),
   })));
+
+  app.get("/api/readiness", route((_req, res, state) => {
+    const checks = {
+      ledgerReadable: !workspaceIntegrityError(state),
+      dataDirectoryWritable: true,
+      operatorPresent: state.operators.length > 0,
+      campaignPresent: state.campaigns.length > 0,
+    };
+    try {
+      fs.mkdirSync(path.dirname(dataPath()), { recursive: true });
+      fs.accessSync(path.dirname(dataPath()), fs.constants.R_OK | fs.constants.W_OK);
+    } catch {
+      checks.dataDirectoryWritable = false;
+    }
+    const ready = Object.values(checks).every(Boolean);
+    if (!ready) res.status(503);
+    return { ready, checks, timestamp: now() };
+  }, { persist: false }));
+
+  app.get("/api/diagnostics", route((_req, _res, state) => ({
+    generatedAt: now(),
+    uptimeSeconds: Math.round(process.uptime()),
+    process: {
+      node: process.version,
+      platform: process.platform,
+      architecture: process.arch,
+      rssMb: Number((process.memoryUsage().rss / 1024 / 1024).toFixed(1)),
+    },
+    storage: storageStatus(),
+    safety: {
+      manualSendOnly: true,
+      outboundPaused: outboundIsPaused(state),
+      doNotContactCount: state.mentorProfiles.filter((mentor) => mentor.doNotContact).length,
+      uncertainSendAttempts: state.messageSendAttempts.filter((attempt) => attempt.status === "uncertain").length,
+    },
+    counts: workspaceSummary(state),
+  }), { persist: false }));
+
+  app.get("/api/workspace/settings", route((_req, _res, state) => ({
+    settings: state.settings,
+    environmentOutboundPause: process.env.MARO_OUTBOUND_PAUSED === "1",
+  }), { persist: false }));
+
+  app.patch("/api/workspace/settings", route((req, res, state) => {
+    const before = { ...state.settings };
+    if (req.body?.locale !== undefined) {
+      if (!['en', 'nl'].includes(String(req.body.locale))) return jsonError(res, 400, "Locale must be en or nl");
+      state.settings.locale = String(req.body.locale) as WorkspaceSettings["locale"];
+    }
+    if (typeof req.body?.firstRunCompleted === "boolean") state.settings.firstRunCompleted = req.body.firstRunCompleted;
+    if (typeof req.body?.outboundPaused === "boolean") state.settings.outboundPaused = req.body.outboundPaused;
+    if (req.body?.retentionDays !== undefined) {
+      const value = Number(req.body.retentionDays);
+      if (!Number.isInteger(value) || value < 30 || value > 3650) return jsonError(res, 400, "Retention days must be between 30 and 3650");
+      state.settings.retentionDays = value;
+    }
+    if (req.body?.outreachCooldownDays !== undefined) {
+      const value = Number(req.body.outreachCooldownDays);
+      if (!Number.isInteger(value) || value < 0 || value > 365) return jsonError(res, 400, "Outreach cooldown days must be between 0 and 365");
+      state.settings.outreachCooldownDays = value;
+    }
+    if (typeof req.body?.defaultTone === "string") state.settings.defaultTone = req.body.defaultTone.trim().slice(0, 160) || DEFAULT_WORKSPACE_SETTINGS.defaultTone;
+    if (req.body?.defaultFollowUpAfterDays !== undefined) {
+      const value = Number(req.body.defaultFollowUpAfterDays);
+      if (!Number.isInteger(value) || value < 1 || value > 90) return jsonError(res, 400, "Default follow-up days must be between 1 and 90");
+      state.settings.defaultFollowUpAfterDays = value;
+    }
+    audit(state, "updated_workspace_settings", "workspace", "local-ledger", state.settings, { beforeState: before, riskLevel: "high" });
+    return { settings: state.settings, environmentOutboundPause: process.env.MARO_OUTBOUND_PAUSED === "1" };
+  }));
+
+  app.get("/api/workspace/integrity", route((_req, res, state) => {
+    const error = workspaceIntegrityError(state);
+    if (error) res.status(409);
+    return { valid: !error, error: error || null, checkedAt: now(), summary: workspaceSummary(state) };
+  }, { persist: false }));
+
+  app.post("/api/workspace/support-bundle", route((_req, _res, state) => {
+    audit(state, "exported_sanitized_support_bundle", "workspace", "local-ledger", workspaceSummary(state), { riskLevel: "medium" });
+    return {
+      kind: "maro-sanitized-support-bundle",
+      version: 1,
+      generatedAt: now(),
+      storage: storageStatus(),
+      settings: { ...state.settings, defaultTone: "[operator preference omitted]" },
+      summary: workspaceSummary(state),
+      integrity: { valid: !workspaceIntegrityError(state), error: workspaceIntegrityError(state) || null },
+      recentAudit: state.auditEvents.slice(0, 100).map(({ action, entityType, riskLevel, createdAt }) => ({ action, entityType, riskLevel, createdAt })),
+    };
+  }));
+
+  app.post("/api/workspace/retention", route((req, res, state) => {
+    const retentionDays = Number(req.body?.retentionDays ?? state.settings.retentionDays);
+    if (!Number.isInteger(retentionDays) || retentionDays < 30 || retentionDays > 3650) {
+      return jsonError(res, 400, "Retention days must be between 30 and 3650");
+    }
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const removable = state.auditEvents.filter((event) => event.riskLevel === "low" && Date.parse(event.createdAt) < cutoff);
+    if (req.body?.confirm !== true) {
+      return { preview: true, retentionDays, removableLowRiskAuditEvents: removable.length, preservedSafetyRecords: true };
+    }
+    const removableIds = new Set(removable.map((event) => event.id));
+    state.auditEvents = state.auditEvents.filter((event) => !removableIds.has(event.id));
+    state.settings.retentionDays = retentionDays;
+    audit(state, "applied_retention_policy", "workspace", "local-ledger", { retentionDays, removed: removable.length }, { riskLevel: "high" });
+    return { applied: true, retentionDays, removedLowRiskAuditEvents: removable.length, preservedSafetyRecords: true };
+  }));
 
   app.post("/api/workspace/backup", route((_req, _res, state) => {
     audit(state, "exported_workspace_backup", "workspace", "local-ledger", workspaceSummary(state), { riskLevel: "medium" });
@@ -3095,6 +3335,47 @@ export function registerLedgerRoutes(app: Express) {
     const includeArchived = req.query.includeArchived === "true";
     return buildHaiIntegrationStatus(state, includeArchived);
   }));
+
+  app.get("/api/integrations/hai/manifest", route((_req, _res, state) => {
+    const status = buildHaiIntegrationStatus(state);
+    return {
+      kind: "maro-hai-connector",
+      version: 1,
+      name: "MARO outreach action feed",
+      schema: status.connector.schema,
+      enabled: status.connector.enabled,
+      readOnly: true,
+      feedPath: status.connector.feedPath,
+      provider: "generic_json_feed",
+      itemTypes: ["card"],
+      authority: {
+        canReadActions: true,
+        canApproveDrafts: false,
+        canConfirmSends: false,
+        canMutateProviders: false,
+      },
+      setup: [
+        "Set MARO_HAI_FEED_ENABLED=1 and restart MARO.",
+        "Register this local URL as an enabled generic_json_feed in the owner-scoped HAI workspace.",
+        "Keep MARO local or protect any ngrok exposure with Basic Auth; the feed contains operator action context.",
+      ],
+      itemCount: status.connector.itemCount,
+    };
+  }, { persist: false }));
+
+  app.get("/api/integrations/hai/feed", route((req, res, state) => {
+    if (process.env.MARO_HAI_FEED_ENABLED !== "1") {
+      return jsonError(res, 503, "HAI feed is disabled; set MARO_HAI_FEED_ENABLED=1 and restart MARO");
+    }
+    const feed = buildHaiGenericFeed(state);
+    const etag = `\"${feed.cursor}\"`;
+    res.setHeader("ETag", etag);
+    if (req.get("If-None-Match") === etag) {
+      res.status(304).end();
+      return;
+    }
+    return feed;
+  }, { persist: false }));
 
   app.get("/api/projects", route((_req, _res, state) => ({ projects: state.projects })));
 
@@ -3453,6 +3734,22 @@ export function registerLedgerRoutes(app: Express) {
     if (typeof req.body?.availability === "string") mentor.availability = req.body.availability;
     if (typeof req.body?.contactMethod === "string") mentor.contactMethod = req.body.contactMethod;
     if (typeof req.body?.notes === "string") mentor.notes = req.body.notes;
+    if (typeof req.body?.doNotContact === "boolean") {
+      mentor.doNotContact = req.body.doNotContact;
+      mentor.doNotContactReason = req.body.doNotContact
+        ? String(req.body?.doNotContactReason || mentor.doNotContactReason || "Operator marked do not contact").slice(0, 500)
+        : "";
+      mentor.doNotContactAt = req.body.doNotContact ? now() : null;
+      if (req.body.doNotContact) {
+        mentor.stage = "closed";
+        for (const followUp of state.followUpPlans) {
+          if (followUp.mentorProfileId === mentor.id && followUp.status === "scheduled") {
+            followUp.status = "cancelled";
+            followUp.updatedAt = now();
+          }
+        }
+      }
+    }
     if (Array.isArray(req.body?.skills) || typeof req.body?.skills === "string") mentor.skills = stringList(req.body.skills);
     if (Array.isArray(req.body?.industries) || typeof req.body?.industries === "string") mentor.industries = stringList(req.body.industries);
     if (["new", "matched", "drafted", "approved", "contacted", "responded", "follow_up", "closed"].includes(String(req.body?.stage))) {
@@ -3562,6 +3859,10 @@ export function registerLedgerRoutes(app: Express) {
     const draft = requireMessage(state, routeId(req));
     if (!draft) return jsonError(res, 404, "Message draft not found");
     if (draft.status === "sent") return jsonError(res, 409, "Sent messages cannot be re-approved");
+    const mentor = state.mentorProfiles.find((item) => item.id === draft.mentorProfileId);
+    if (!mentor) return jsonError(res, 404, "Mentor profile not found");
+    const contactBlock = mentorContactBlock(state, mentor);
+    if (contactBlock) return jsonError(res, 409, `Approval blocked: ${contactBlock}`);
     const qualityReview = upsertMessageQualityReview(state, draft);
     if (qualityReview?.status === "blocked") {
       return jsonError(res, 409, `Message quality blocked approval: ${qualityReview.warningsJson.join(" ")}`);
@@ -3580,7 +3881,6 @@ export function registerLedgerRoutes(app: Express) {
       createdAt: decidedAt,
     };
     state.messageApprovals.unshift(approval);
-    const mentor = state.mentorProfiles.find((item) => item.id === draft.mentorProfileId);
     if (mentor) {
       mentor.stage = "approved";
       mentor.updatedAt = decidedAt;
@@ -3625,6 +3925,9 @@ export function registerLedgerRoutes(app: Express) {
     }
     const mentor = state.mentorProfiles.find((item) => item.id === draft.mentorProfileId);
     if (!mentor) return jsonError(res, 404, "Mentor profile not found");
+    if (outboundIsPaused(state)) return jsonError(res, 423, "Outbound handoffs are paused by the operator");
+    const contactBlock = mentorContactBlock(state, mentor);
+    if (contactBlock) return jsonError(res, 409, `External handoff blocked: ${contactBlock}`);
     const generatedAt = now();
     const handoff: ManualHandoffPackage = {
       kind: "maro-manual-handoff",
@@ -3663,7 +3966,11 @@ export function registerLedgerRoutes(app: Express) {
     if (!campaign) return jsonError(res, 404, "Campaign not found");
     const createdAt = now();
     const priorAttempts = state.messageSendAttempts.filter((item) => item.messageDraftId === draft.id);
-    const attemptStatus: SendStatus = req.body?.status === "failed" ? "failed" : "confirmed_sent";
+    const attemptStatus: SendStatus = req.body?.status === "failed"
+      ? "failed"
+      : req.body?.status === "uncertain"
+        ? "uncertain"
+        : "confirmed_sent";
     if (attemptStatus === "failed") {
       const errorMessage = String(req.body?.errorMessage || "").trim();
       if (!errorMessage) return jsonError(res, 400, "Failure reason is required");
@@ -3685,6 +3992,32 @@ export function registerLedgerRoutes(app: Express) {
       recalcCampaign(state, draft.campaignId);
       audit(state, "recorded_failed_send_attempt", "messageDraft", draft.id, { attempt, draft }, { riskLevel: "medium" });
       return { draft, attempt };
+    }
+    const mentor = state.mentorProfiles.find((item) => item.id === draft.mentorProfileId);
+    if (!mentor) return jsonError(res, 404, "Mentor profile not found");
+    if (outboundIsPaused(state)) return jsonError(res, 423, "Outbound send confirmation is paused by the operator");
+    const contactBlock = mentorContactBlock(state, mentor);
+    if (contactBlock) return jsonError(res, 409, `Send confirmation blocked: ${contactBlock}`);
+    if (attemptStatus === "uncertain") {
+      const explanation = String(req.body?.errorMessage || req.body?.deliveryEvidence || "").trim();
+      if (!explanation) return jsonError(res, 400, "Uncertain send details are required");
+      const attempt: MessageSendAttempt = {
+        id: randomUUID(),
+        messageDraftId: draft.id,
+        mentorProfileId: draft.mentorProfileId,
+        campaignId: draft.campaignId,
+        status: "uncertain",
+        channel: String(req.body?.channel || "manual"),
+        startedAt: createdAt,
+        finishedAt: createdAt,
+        errorMessage: explanation,
+        deliveryEvidence: "",
+        retryCount: priorAttempts.length,
+        createdAt,
+      };
+      state.messageSendAttempts.unshift(attempt);
+      audit(state, "recorded_uncertain_send_attempt", "messageSendAttempt", attempt.id, attempt, { riskLevel: "high" });
+      return { draft, attempt, requiresResolution: true };
     }
     const evidence = String(req.body?.deliveryEvidence || "").trim();
     if (!evidence) return jsonError(res, 400, "Manual delivery evidence is required");
@@ -3708,7 +4041,6 @@ export function registerLedgerRoutes(app: Express) {
       createdAt,
     };
     state.messageSendAttempts.unshift(attempt);
-    const mentor = state.mentorProfiles.find((item) => item.id === draft.mentorProfileId);
     if (mentor) {
       mentor.stage = "contacted";
       mentor.updatedAt = createdAt;
@@ -3728,6 +4060,49 @@ export function registerLedgerRoutes(app: Express) {
     recalcCampaign(state, draft.campaignId);
     audit(state, "confirmed_manual_send", "messageDraft", draft.id, { attempt, followUp }, { riskLevel: "high" });
     return { draft, attempt, followUp };
+  }));
+
+  app.post("/api/send-attempts/:id/resolve", route((req, res, state) => {
+    const attempt = state.messageSendAttempts.find((item) => item.id === routeId(req));
+    if (!attempt) return jsonError(res, 404, "Send attempt not found");
+    if (attempt.status !== "uncertain") return jsonError(res, 409, "Only uncertain send attempts can be resolved");
+    const resolution = String(req.body?.resolution || "");
+    if (!['confirmed_sent', 'failed'].includes(resolution)) {
+      return jsonError(res, 400, "Resolution must be confirmed_sent or failed");
+    }
+    const draft = requireMessage(state, attempt.messageDraftId);
+    const mentor = state.mentorProfiles.find((item) => item.id === attempt.mentorProfileId);
+    const campaign = requireCampaign(state, attempt.campaignId);
+    if (!draft || !mentor || !campaign) return jsonError(res, 409, "Send attempt references are incomplete");
+    const before = { ...attempt };
+    if (resolution === "failed") {
+      attempt.status = "failed";
+      attempt.errorMessage = String(req.body?.note || attempt.errorMessage || "Operator resolved as failed");
+      attempt.finishedAt = now();
+      audit(state, "resolved_uncertain_send_as_failed", "messageSendAttempt", attempt.id, attempt, { beforeState: before, riskLevel: "high" });
+      return { attempt, draft };
+    }
+    if (outboundIsPaused(state)) return jsonError(res, 423, "Outbound send confirmation is paused by the operator");
+    if (mentorContactBlock(state, mentor)) return jsonError(res, 409, "Send resolution is blocked for this mentor");
+    const evidence = String(req.body?.deliveryEvidence || "").trim();
+    if (!evidence) return jsonError(res, 400, "Manual delivery evidence is required");
+    attempt.status = "confirmed_sent";
+    attempt.deliveryEvidence = evidence;
+    attempt.errorMessage = null;
+    attempt.finishedAt = now();
+    draft.status = "sent";
+    draft.updatedAt = attempt.finishedAt;
+    mentor.stage = "contacted";
+    mentor.updatedAt = attempt.finishedAt;
+    const followUp: FollowUpPlan = {
+      id: randomUUID(), campaignId: campaign.id, mentorProfileId: mentor.id, messageDraftId: draft.id,
+      dueAt: addDays(new Date(attempt.finishedAt), campaignFollowUpAfterDays(campaign)), status: "scheduled",
+      suggestedMessage: buildFollowUpSuggestion(campaign, mentor), createdAt: attempt.finishedAt, updatedAt: attempt.finishedAt,
+    };
+    state.followUpPlans.unshift(followUp);
+    recalcCampaign(state, campaign.id);
+    audit(state, "resolved_uncertain_send_as_confirmed", "messageSendAttempt", attempt.id, { attempt, followUp }, { beforeState: before, riskLevel: "high" });
+    return { attempt, draft, followUp };
   }));
 
   app.post("/api/responses", route((req, res, state) => {
@@ -3755,6 +4130,11 @@ export function registerLedgerRoutes(app: Express) {
       createdAt: now(),
     };
     state.mentorResponses.unshift(response);
+    if (classification === "not_interested") {
+      mentor.doNotContact = true;
+      mentor.doNotContactReason = "Mentor response classified as not interested";
+      mentor.doNotContactAt = response.createdAt;
+    }
     mentor.stage = responseCancelsFollowUps(classification) ? "closed" : "responded";
     mentor.updatedAt = response.createdAt;
     for (const followUp of state.followUpPlans) {
@@ -3855,6 +4235,8 @@ export function registerLedgerRoutes(app: Express) {
     }
     const dueAt = req.body?.dueAt ? parseIsoDate(req.body.dueAt) : addDays(new Date(), campaignFollowUpAfterDays(campaign));
     if (!dueAt) return jsonError(res, 400, "dueAt must be a valid date");
+    const contactBlock = mentorDoNotContactReason(state, mentor);
+    if (contactBlock) return jsonError(res, 409, `Follow-up blocked: ${contactBlock}`);
     const createdAt = now();
     const followUp: FollowUpPlan = {
       id: randomUUID(),

@@ -1,8 +1,28 @@
-version: '3'
 services:
-  mentor-messenger-magic:
+  maro:
     build:
       context: .
+    image: maro:local
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      MARO_DATA_DIR: /app/data
+      MARO_LEDGER_PASSPHRASE: ${MARO_LEDGER_PASSPHRASE:-}
+      MARO_OUTBOUND_PAUSED: ${MARO_OUTBOUND_PAUSED:-0}
+      MARO_HAI_FEED_ENABLED: ${MARO_HAI_FEED_ENABLED:-0}
+    volumes:
+      - maro-data:/app/data
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  maro-data:

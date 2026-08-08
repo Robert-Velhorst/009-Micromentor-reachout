@@ -1,5 +1,6 @@
 import express, { type ErrorRequestHandler, type Request } from "express";
 import { createServer } from "http";
+import { createHash, randomUUID } from "node:crypto";
 import path from "path";
 import { registerLedgerRoutes } from "./ledger";
 
@@ -7,6 +8,8 @@ const serverDir = path.dirname(path.resolve(process.argv[1] || "."));
 const appVersion = process.env.MARO_APP_VERSION || process.env.MARO_BUILD_VERSION || "development";
 const localHosts = new Set(["127.0.0.1", "localhost", "::1"]);
 const ngrokHostSuffixes = [".ngrok.app", ".ngrok-free.app", ".ngrok.io"];
+const requestBuckets = new Map<string, { windowStartedAt: number; count: number }>();
+const idempotencyCache = new Map<string, { expiresAt: number; status: number; body: unknown; bodyHash: string }>();
 
 function hostAlias(host: string) {
   return host === "localhost" ? "127.0.0.1" : host;
@@ -90,6 +93,9 @@ async function startServer() {
 
   app.disable("x-powered-by");
   app.use((_req, res, next) => {
+    const requestId = randomUUID();
+    res.locals.requestId = requestId;
+    res.setHeader("X-Request-Id", requestId);
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Frame-Options", "DENY");
@@ -122,6 +128,25 @@ async function startServer() {
     next();
   });
 
+  app.use("/api", (req, res, next) => {
+    const key = req.socket.remoteAddress || "local";
+    const current = Date.now();
+    const bucket = requestBuckets.get(key);
+    const active = bucket && current - bucket.windowStartedAt < 60_000
+      ? bucket
+      : { windowStartedAt: current, count: 0 };
+    active.count += 1;
+    requestBuckets.set(key, active);
+    res.setHeader("RateLimit-Limit", "300");
+    res.setHeader("RateLimit-Remaining", String(Math.max(0, 300 - active.count)));
+    if (active.count > 300) {
+      res.setHeader("Retry-After", "60");
+      res.status(429).json({ error: "API rate limit exceeded", code: "rate_limited", requestId: res.locals.requestId, retryable: true });
+      return;
+    }
+    next();
+  });
+
   const mutationMethods = new Set(["POST", "PATCH", "PUT", "DELETE"]);
   app.use("/api", (req, res, next) => {
     if (!mutationMethods.has(req.method.toUpperCase())) {
@@ -148,6 +173,41 @@ async function startServer() {
   });
   app.use(express.json({ limit: "1mb", type: "application/json" }));
 
+  app.use("/api", (req, res, next) => {
+    if (!mutationMethods.has(req.method.toUpperCase())) return next();
+    const suppliedKey = String(req.get("Idempotency-Key") || "").trim();
+    if (!suppliedKey) return next();
+    if (!/^[A-Za-z0-9._:-]{8,128}$/.test(suppliedKey)) {
+      res.status(400).json({ error: "Invalid Idempotency-Key", code: "invalid_idempotency_key", requestId: res.locals.requestId, retryable: false });
+      return;
+    }
+    const bodyHash = createHash("sha256").update(JSON.stringify(req.body || null)).digest("hex");
+    const cacheKey = `${req.method}:${req.path}:${suppliedKey}`;
+    const cached = idempotencyCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      if (cached.bodyHash !== bodyHash) {
+        res.status(409).json({ error: "Idempotency-Key was already used with different content", code: "idempotency_conflict", requestId: res.locals.requestId, retryable: false });
+        return;
+      }
+      res.setHeader("X-Idempotent-Replay", "1");
+      res.status(cached.status).json(cached.body);
+      return;
+    }
+    const originalJson = res.json.bind(res);
+    res.json = ((body: unknown) => {
+      if (res.statusCode < 500) {
+        idempotencyCache.set(cacheKey, { expiresAt: Date.now() + 10 * 60_000, status: res.statusCode, body, bodyHash });
+        if (idempotencyCache.size > 1000) {
+          idempotencyCache.forEach((value, key) => {
+            if (value.expiresAt <= Date.now()) idempotencyCache.delete(key);
+          });
+        }
+      }
+      return originalJson(body);
+    }) as typeof res.json;
+    next();
+  });
+
   registerLedgerRoutes(app);
 
   app.get("/api/runtime/status", async (_req, res) => {
@@ -172,7 +232,7 @@ async function startServer() {
   });
 
   app.use("/api", (_req, res) => {
-    res.status(404).json({ error: "API route not found" });
+    res.status(404).json({ error: "API route not found", code: "not_found", requestId: res.locals.requestId, retryable: false });
   });
 
   const apiErrorHandler: ErrorRequestHandler = (error, req, res, next) => {
@@ -188,7 +248,7 @@ async function startServer() {
         ? "Request body must be valid JSON"
         : "Internal API error";
     if (status >= 500) console.error(error);
-    res.status(status).json({ error: message });
+    res.status(status).json({ error: message, code: status === 413 ? "payload_too_large" : status === 400 ? "invalid_json" : "internal_error", requestId: res.locals.requestId, retryable: status >= 500 });
   };
   app.use(apiErrorHandler);
 

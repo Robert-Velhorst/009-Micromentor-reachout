@@ -1,0 +1,14 @@
+.git
+.github
+.manus-logs
+.npm-cache
+artifacts
+data
+dist
+node_modules
+tmp
+.env
+.env.*
+!.env.example
+*.log
+*.zip

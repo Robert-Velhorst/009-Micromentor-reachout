@@ -1,11 +1,10 @@
 {
   "name": "mentor-messenger-landing",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "license": "MIT",
   "scripts": {
     "dev": "npm run tunnel",
-    "dev:vite": "vite --host 127.0.0.1",
     "build": "node scripts/build.mjs",
     "build:extension": "node scripts/build-extension.mjs",
     "installer:win": "npm run build && node scripts/build-windows-installer.mjs",
@@ -14,6 +13,9 @@
     "preview": "npm run tunnel",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "check:api": "npm run build && node scripts/check-ledger-api.mjs",
+    "test": "npm run check:api",
+    "doctor": "node scripts/doctor.mjs",
+    "audit:security": "npm audit --audit-level=low",
     "check:release": "node scripts/check-release.mjs",
     "format": "prettier --write ."
   },
@@ -31,7 +33,7 @@
     "wouter": "^3.3.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.18",
+    "@tailwindcss/vite": "4.1.18",
     "@types/express": "^4.17.21",
     "@types/node": "^20.14.10",
     "@types/react": "^18.3.3",
@@ -39,7 +41,7 @@
     "@vitejs/plugin-react": "^4.3.1",
     "esbuild": "^0.28.1",
     "prettier": "^3.3.3",
-    "tailwindcss": "^4.0.0",
+    "tailwindcss": "4.1.18",
     "typescript": "^5.5.3",
     "vite": "^6.4.3"
   }
