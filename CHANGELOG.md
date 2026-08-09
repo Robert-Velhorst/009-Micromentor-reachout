@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1 - 2026-08-09
+
+- Moved Windows workspace data outside the replaceable application directory and added conflict-preserving legacy migration.
+- Added automatic AES-256-GCM ledger encryption backed by a per-user Windows DPAPI-protected key.
+- Made Windows upgrades atomic, preserved workspace data on uninstall, and added ownership-checked process lifecycle helpers.
+- Replaced deprecated ngrok Basic Auth flags with Traffic Policy and isolated MARO tunnel discovery across Agent API ports.
+- Required encrypted persistence for the default Docker Compose production path.
+
 ## 1.2.0 - 2026-08-08
 
 - Added durable do-not-contact controls, cooldown enforcement, and an operator-controlled outbound safety stop.

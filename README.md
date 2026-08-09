@@ -42,7 +42,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Use session privacy mode to hide mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
 - Open the stored source profile and copy an approved snapshot from the message queue for manual MicroMentor handoff; MARO never auto-sends.
 - Download a least-privilege browser extension that fills one short-lived approved package into the matching active MicroMentor profile without storing content or pressing send.
-- Keep work local by default in a JSON ledger under `data/`, with optional encryption at rest.
+- Keep work local by default in an atomic ledger, with automatic encrypted Windows storage and required Compose encryption.
 - Render with local system font stacks so normal app use does not depend on external webfont requests.
 
 ## Local Ledger API
@@ -116,6 +116,8 @@ The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to 
 
 Set `MARO_LEDGER_PASSPHRASE` to encrypt the local ledger file at rest with AES-256-GCM. Existing plaintext ledger files are migrated to an encrypted envelope on the next API read/write when this passphrase is present. Keep the passphrase somewhere safe; MARO cannot recover encrypted ledger data without it. Workspace backups remain portable JSON exports and should be handled as sensitive files.
 
+The Windows installer generates this passphrase automatically, protects it with Windows DPAPI for the current user, and stores workspace data outside the replaceable application directory. Docker Compose requires an explicit passphrase and refuses to start without one.
+
 Resource sessions are process-level local measurements. MARO records Node CPU time, RSS memory over session duration, local ledger file size, and observed API payload bytes. It does not use random simulated usage as billing evidence.
 
 Invoice reports are persisted local ledger snapshots generated from stored billing records. They are audit logged and are not external charges, payment requests, or platform billing actions.
@@ -157,7 +159,7 @@ Run the default ngrok flow:
 npm run dev
 ```
 
-This builds the production app, starts the local Node server on `127.0.0.1:3000`, then opens a basic-auth protected ngrok tunnel to that local server. Set `NGROK_BASIC_AUTH` first; MARO refuses to create an unprotected tunnel by default.
+This builds the production app, starts the local Node server on `127.0.0.1:3000`, then opens an ngrok endpoint protected by a Traffic Policy Basic Auth action. Set `NGROK_BASIC_AUTH` first; MARO refuses to create an unprotected tunnel by default.
 
 Vite is used only as the frontend compiler. The running application is always the Express API plus its built frontend; the default development path is the guarded ngrok launcher.
 
@@ -173,6 +175,7 @@ The production server binds to `127.0.0.1` by default. Set `PORT` or `HOST` if y
 ## Docker
 
 ```sh
+set MARO_LEDGER_PASSPHRASE=use-a-long-unique-passphrase
 docker compose up --build
 ```
 
@@ -202,6 +205,8 @@ npm run dev
 
 The command center reads `GET /api/runtime/status` to show the app version, local URL, detected ngrok tunnel URL, basic-auth status, and explicit public-tunnel opt-in. If an explicitly allowed public tunnel is active without `NGROK_BASIC_AUTH`, MARO shows a first-viewport warning before you share the tunnel URL.
 
+Set `MARO_NGROK_URL=https://your-dedicated-endpoint.example` when the account has other ngrok endpoints online. MARO validates the HTTPS origin, adds its exact hostname to the server allowlist, discovers its own endpoint across local Agent API ports `4040`-`4050`, and never reuses another tool's tunnel.
+
 ## Windows Installer
 
 Build a Windows 11 installer:
@@ -216,9 +221,9 @@ The generated installer is written to:
 artifacts/MARO-Windows11-Setup.exe
 ```
 
-The installer embeds the built app and a Node runtime, installs MARO into `%LOCALAPPDATA%\MARO`, writes installed-version metadata, creates launch and uninstall shortcuts, registers an Add/Remove Programs uninstall entry for the current Windows user, starts the local server, and opens the browser. When ngrok is available on PATH, the launcher opens a tunnel only when `NGROK_BASIC_AUTH` is set or `MARO_ALLOW_PUBLIC_TUNNEL=1` explicitly permits public access.
+The installer embeds the built app and a Node runtime, installs MARO into `%LOCALAPPDATA%\MARO`, and stores durable workspace data separately in `%LOCALAPPDATA%\MARO-Data`. It generates a random ledger key protected by Windows DPAPI, migrates legacy data without overwriting conflicts, swaps application versions atomically, reuses only its own recorded server process, chooses another loopback port when necessary, and opens the browser. When ngrok is available on PATH, the launcher opens a Traffic Policy-protected endpoint only when `NGROK_BASIC_AUTH` is set, or when `MARO_ALLOW_PUBLIC_TUNNEL=1` explicitly permits public access.
 
-To remove an installed copy, use Windows Settings > Apps > Installed apps, or run the Start Menu shortcut named `Uninstall MARO`. Close MARO server and ngrok windows before uninstalling.
+To remove an installed copy, use Windows Settings > Apps > Installed apps, or run the Start Menu shortcut named `Uninstall MARO`. The uninstaller validates and stops only processes recorded by this installation, removes application files, and retains `%LOCALAPPDATA%\MARO-Data` so accidental uninstall does not erase outreach history.
 
 ## Checks
 
@@ -229,6 +234,6 @@ npm run audit:security
 npm run check:release
 ```
 
-`npm run check:release` runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, production surface checks for CSP/security headers and external asset regressions, and the Windows installer build on Windows hosts.
+`npm run check:release` runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, production surface checks, and the Windows installer build on Windows hosts. Its installer acceptance migrates a seeded legacy ledger, launches the installed runtime with DPAPI-backed encryption, stops its owned process, reinstalls, and proves that the ledger and protected key remain byte-identical across upgrade.
 
 The current audit, critical path, acceptance matrix, security model, runbook, action audits, phase completion matrix, and final verification are under `docs/`.

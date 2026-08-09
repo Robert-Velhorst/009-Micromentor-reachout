@@ -26,8 +26,8 @@ Repository revision scanned: `codex/giant-goal-completion` working tree after th
 - API parser and cache boundaries: mutation checks run before JSON parsing, JSON bodies are capped at 1 MB, API errors remain JSON, API responses use `no-store`, and only fingerprinted static assets receive immutable caching.
 - Production error disclosure: `ErrorBoundary` no longer shows stack traces outside development builds.
 - Dev log ingestion and resource-churn risk: the obsolete Vite debug collector and Vite-only runtime command were removed. Vite remains a build compiler only; normal development runs the built Express app through the guarded ngrok launcher.
-- Ngrok access control: development and installed launchers refuse to create unauthenticated public tunnels by default. `NGROK_BASIC_AUTH` enables the normal protected flow; `MARO_ALLOW_PUBLIC_TUNNEL=1` is required for an intentional public override.
-- Local ledger confidentiality: setting `MARO_LEDGER_PASSPHRASE` stores the ledger as an AES-256-GCM encrypted envelope instead of plaintext JSON.
+- Ngrok access control: development and installed launchers refuse unauthenticated public tunnels by default. `NGROK_BASIC_AUTH` is enforced with current Traffic Policy rather than a deprecated command-line credential; a dedicated HTTPS endpoint is exactly allowlisted and matched across Agent API ports 4040-4050.
+- Local ledger confidentiality: setting `MARO_LEDGER_PASSPHRASE` stores the ledger as an AES-256-GCM encrypted envelope. Windows installation generates a DPAPI-protected per-user key automatically, and Docker Compose refuses to start without a passphrase.
 - Shoulder-surfing reduction: session privacy mode hides mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
 - Manual handoff safety: review queues can open the stored mentor profile URL, but external copy/fill uses only a short-lived package built from the latest approved snapshot. Editing an approved draft invalidates approval before any handoff or send confirmation can proceed.
 - Legacy extension exposure: removed two public ZIP archives that contained automated send/queue code, broad permissions, a placeholder remote API, and a no-op rate limiter. The replacement extension has no send capability, background worker, storage, persistent host access, or network client.
@@ -42,9 +42,9 @@ Repository revision scanned: `codex/giant-goal-completion` working tree after th
 - Deployment integrity: the broken static nginx image was replaced with a non-root Express container, persistent data volume, readiness healthcheck, read-only root filesystem, and dropped Linux capabilities.
 - Low-cognitive-load operations: dashboard next actions now open the relevant campaign tab directly and preserve mentor context where available, reducing manual navigation during review, follow-up, billing, and outcome work.
 - Project-linked integrity: campaign creation and updates now validate project IDs, and the command center exposes project creation plus campaign project assignment so outreach stays tied to the correct broader goal.
-- Installer dependency and removal risk: the Windows installer embeds the Node runtime and built app, so the end user does not need a separate Node/npm install; it also writes installed-version metadata and registers a current-user uninstall entry.
+- Installer dependency, upgrade, and removal risk: the Windows installer embeds Node, separates durable data from replaceable binaries, migrates legacy data without overwriting conflicts, installs atomically, protects its random ledger key with DPAPI, validates process ownership before stop/uninstall, and retains workspace data on uninstall.
 - Static surface drift: removed the inactive parallel `src/` frontend and unused UI modules; both client and server TypeScript contracts now pass.
-- Release regression risk: added `npm run check:release` to run TypeScript checks, the production encrypted-ledger API smoke test, production surface checks, and the Windows installer build on Windows hosts.
+- Release regression risk: `npm run check:release` now covers TypeScript, encrypted API/adversarial smoke, production surfaces, a seeded legacy-data migration, installed encrypted runtime launch/stop, and byte-identical ledger/key preservation across reinstall.
 - External font privacy: removed Google Fonts preconnect/stylesheet requests and tightened CSP font/style directives back to self-only sources plus inline styles required by the bundled UI.
 - Production surface regression risk: the encrypted-ledger smoke test now fails if the root app shell reintroduces external production asset URLs, Google Fonts references, development debug-collector injection, missing browser hardening headers, or weakened CSP directives.
 - Workspace restore integrity: restore validation now requires message-quality and invoice-record arrays, preventing accepted backups from silently dropping review or billing-report history.
@@ -90,10 +90,12 @@ Current local browser-QA sample on this Windows machine:
 - API mutation security smoke: requests with a missing or incorrect `X-MARO-Request` marker returned HTTP 403, browser-reported cross-site mutations returned HTTP 403 even with the marker, no CORS access header was exposed, and normal marked mutations completed successfully.
 - Production browser QA: onboarding and pause/DNC mutations persisted, with no console errors, incoherent overlay, or horizontal page overflow at desktop width or the in-app browser's effective 520 px mobile viewport.
 - `node scripts/ngrok.mjs`: refuses to open a tunnel when neither `NGROK_BASIC_AUTH` nor the explicit public override is configured.
-- Safe installer run with `MARO_INSTALL_DIR`, `MARO_SKIP_SHORTCUTS=1`, `MARO_SKIP_REGISTRY=1`, and `MARO_SKIP_LAUNCH=1`: passed.
-- Final installer SHA-256 for this audit build: `23D3EAF433F8E879481C85E9724363EE09E26E373F4804AEFA3F7AC5B1459751`.
+- Live ngrok acceptance: a dedicated HTTPS endpoint on alternate inspector port 4042 returned 401 without credentials and 200 for authenticated UI, runtime, HAI manifest, and HAI feed requests; the endpoint was stopped after the bounded test.
+- Isolated Windows installer migration, DPAPI encryption, owned-process shutdown, and upgrade preservation: passed.
+- Final installer size: 34,673,152 bytes (33.07 MiB).
+- Final installer SHA-256 for this audit build: `7789018043281F74F0B12A38A1F9BA3DCD0C92C05540DF7B2E34D9DD6B856142`.
 - Compute and publish a fresh SHA-256 checksum for each later release; the self-extracting executable is regenerated by the release gate.
-- Installer version `1.2.0` contains the generated manual-handoff extension, launcher, and uninstaller, and contains neither legacy automated-messaging archive.
+- Installer version `1.2.1` contains the generated manual-handoff extension, launcher, stop helper, and uninstaller, and contains neither legacy automated-messaging archive.
 - Release smoke server: returned HTTP 200 for `/`, enforced restrictive CSP directives, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`, and verified the root app shell had no external asset URLs, Google Fonts references, or development debug-collector injection.
 
 ## Remaining Risks

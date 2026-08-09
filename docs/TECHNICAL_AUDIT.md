@@ -19,6 +19,7 @@ MARO is a local-first, single-operator outreach ledger. It helps an operator def
 | Severity | Finding | Resolution |
 | --- | --- | --- |
 | Critical | Docker copied the build into nginx, omitted the Express API, and copied the wrong frontend directory level. | Replaced it with a non-root Node runtime serving `dist/index.cjs` and `dist/public`; added a data volume, readiness healthcheck, dropped capabilities, and loopback-only Compose exposure. |
+| Critical | Windows upgrades deleted the install directory while the default workspace lived beneath it. | Separated durable data, added conflict-preserving legacy migration and atomic app replacement, and proved ledger/key bytes survive reinstall. |
 | High | A transitive `nanoid` advisory was present. | Refreshed the lockfile; `npm audit --audit-level=low` reports zero vulnerabilities. |
 | High | No durable do-not-contact state or emergency outbound stop. | Added identity-aware do-not-contact enforcement, follow-up cancellation, UI controls, workspace pause, and environment-enforced pause. |
 | High | Ambiguous delivery could only be called sent or failed. | Added `uncertain` send attempts and explicit confirmed/failed resolution. |
@@ -26,6 +27,7 @@ MARO is a local-first, single-operator outreach ledger. It helps an operator def
 | Medium | Diagnostics, retention, support export, integrity, and startup checks were incomplete. | Added readiness, diagnostics, settings, integrity, sanitized support bundle, retention preview/apply, and `npm run doctor`. |
 | Medium | No CI. | Added Linux verification/Docker and Windows installer jobs. |
 | Medium | HAI integration status was descriptive rather than consumable. | Added an opt-in, read-only `hai.generic_json_feed.v1` manifest/feed with stable action cards, conditional reads, and no provider-write authority. |
+| Medium | ngrok used a deprecated Basic Auth flag and assumed inspector port 4040, which could identify another tool's tunnel. | Moved Basic Auth into Traffic Policy, added dedicated endpoint support, exact Host allowlisting, current Agent API discovery across ports 4040-4050, and target matching. |
 | Low | Local npm cache inflated Docker context transfer to 342.91 MB. | Excluded generated caches and private environment files; the final changed-source transfer measured 806.21 KB and a cached no-change pass measured 3.52 KB. |
 
 ## Architecture Decisions
@@ -34,6 +36,7 @@ MARO is a local-first, single-operator outreach ledger. It helps an operator def
 - Keep sending manual. The extension only transfers approved content; it cannot click Send.
 - Keep all persistence under one local workspace boundary. App-level multi-user auth and RBAC are N/A until a shared service exists.
 - Preserve Vite only as the frontend compiler. `npm run dev`, preview, installed runtime, and Docker all run Express/ngrok rather than a Vite development server.
+- Treat application files as replaceable and Windows workspace data/key material as durable per-user state outside the installation directory.
 
 ## Remaining External Gates
 

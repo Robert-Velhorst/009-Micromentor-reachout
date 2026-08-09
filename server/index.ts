@@ -58,32 +58,36 @@ function tunnelTargetsServer(addr: string | undefined, host: string, port: numbe
 }
 
 async function detectTunnelStatus(host: string, port: number) {
-  try {
-    const response = await fetch("http://127.0.0.1:4040/api/tunnels", {
-      signal: AbortSignal.timeout(750),
-    });
-    if (!response.ok) {
-      throw new Error(`ngrok API returned ${response.status}`);
+  for (let inspectorPort = 4040; inspectorPort <= 4050; inspectorPort += 1) {
+    try {
+      const inspectorUrl = `http://127.0.0.1:${inspectorPort}`;
+      const response = await fetch(`${inspectorUrl}/api/endpoints`, {
+        signal: AbortSignal.timeout(300),
+      });
+      if (!response.ok) continue;
+      const data = await response.json() as {
+        endpoints?: Array<{ url?: string; upstream?: { url?: string } }>;
+      };
+      const endpoint = (data.endpoints || []).find((item) => tunnelTargetsServer(item.upstream?.url, host, port));
+      if (endpoint?.url) {
+        return {
+          active: true,
+          publicUrl: endpoint.url,
+          inspectorUrl,
+          target: endpoint.upstream?.url ?? null,
+        };
+      }
+    } catch {
+      // ngrok chooses another local inspector port when an earlier one is occupied.
     }
-    const data = await response.json() as {
-      tunnels?: Array<{ proto?: string; public_url?: string; config?: { addr?: string } }>;
-    };
-    const matchingTunnels = (data.tunnels || []).filter((item) => tunnelTargetsServer(item.config?.addr, host, port));
-    const tunnel = matchingTunnels.find((item) => item.proto === "https") ?? matchingTunnels[0] ?? null;
-    return {
-      active: Boolean(tunnel?.public_url),
-      publicUrl: tunnel?.public_url ?? null,
-      inspectorUrl: "http://127.0.0.1:4040",
-      target: tunnel?.config?.addr ?? null,
-    };
-  } catch {
-    return {
-      active: false,
-      publicUrl: null,
-      inspectorUrl: null,
-      target: null,
-    };
   }
+
+  return {
+    active: false,
+    publicUrl: null,
+    inspectorUrl: null,
+    target: null,
+  };
 }
 
 async function startServer() {

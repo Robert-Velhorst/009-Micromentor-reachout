@@ -15,6 +15,7 @@
 | Privacy | API responses are no-store; support bundle omits names, message bodies, and local paths. | `npm test` |
 | Recovery | Atomic write, encrypted storage, rolling backup, restore validation, and corruption recovery work. | `npm test` |
 | Deployment | Docker runs Express as non-root with persistent data and readiness healthcheck. | `docker build`, Compose smoke |
-| Windows | Installer contains runtime, app, extension, launcher, metadata, and uninstaller. | `npm run check:release` |
+| Windows | Installer migrates legacy data, generates a DPAPI-protected key, runs encrypted, stops only its owned process, and preserves ledger/key bytes across upgrade. | `npm run check:release` |
+| Cloud | Dedicated ngrok HTTPS endpoint rejects unauthenticated access and serves the UI plus read-only HAI feed with valid Basic Auth. | bounded live ngrok acceptance in `FINAL_VERIFICATION_REPORT.md` |
 
 Manual browser evidence must cover desktop and mobile layout, onboarding completion, pause/resume, do-not-contact, tab navigation, console errors, and network failures. Results are recorded in `FINAL_VERIFICATION_REPORT.md`.

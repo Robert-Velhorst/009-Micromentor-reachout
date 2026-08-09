@@ -8,7 +8,7 @@ npm.cmd run doctor
 npm.cmd run dev
 ```
 
-`npm run dev` builds the production UI/API and starts the guarded ngrok launcher. A public tunnel starts only with `NGROK_BASIC_AUTH` or explicit `MARO_ALLOW_PUBLIC_TUNNEL=1`. For local-only use run `npm run build` and `npm start`.
+`npm run dev` builds the production UI/API and starts the guarded ngrok launcher. A public tunnel starts only with `NGROK_BASIC_AUTH` or explicit `MARO_ALLOW_PUBLIC_TUNNEL=1`. Basic Auth is applied through ngrok Traffic Policy, not a deprecated command-line credential flag. For local-only use run `npm run build` and `npm start`.
 
 ## Preflight
 
@@ -50,3 +50,7 @@ npm.cmd run installer:win
 ```
 
 Run `artifacts\MARO-Windows11-Setup.exe`. The installer is currently unsigned; verify its SHA-256 from the release output before distribution.
+
+The installed app keeps replaceable binaries under `%LOCALAPPDATA%\MARO` and durable encrypted data under `%LOCALAPPDATA%\MARO-Data`. Its per-user ledger key is DPAPI protected. Upgrade migrates a legacy `MARO\data` workspace, preserves conflicts as `.legacy-*` files, and retains data on uninstall. Do not delete `MARO-Data` unless a verified workspace backup exists and permanent removal is intentional.
+
+For a dedicated cloud endpoint, set both `NGROK_BASIC_AUTH` and `MARO_NGROK_URL` before launching. MARO validates the HTTPS origin and finds its endpoint across Agent API ports `4040`-`4050`, so another local ngrok tool can continue running.

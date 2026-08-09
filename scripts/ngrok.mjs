@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -10,6 +13,9 @@ const host = "127.0.0.1";
 const ngrokCommand = "ngrok";
 const basicAuth = process.env.NGROK_BASIC_AUTH;
 const allowPublicTunnel = process.env.MARO_ALLOW_PUBLIC_TUNNEL === "1";
+const configuredEndpointUrl = process.env.MARO_NGROK_URL;
+let policyPath = null;
+let ngrokExitCode = null;
 
 function run(command, args, options = {}) {
   return spawn(command, args, {
@@ -47,23 +53,83 @@ function waitForServer() {
   });
 }
 
-async function waitForTunnelUrl() {
+function tunnelTargetsLocalServer(value) {
+  try {
+    const target = new URL(value);
+    const targetHost = target.hostname === "localhost" ? "127.0.0.1" : target.hostname;
+    return targetHost === host && Number(target.port || 80) === port;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForTunnel() {
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    try {
-      const response = await fetch("http://127.0.0.1:4040/api/tunnels");
-      const data = await response.json();
-      const tunnel = data.tunnels?.find((item) => item.proto === "https") ?? data.tunnels?.[0];
-      if (tunnel?.public_url) {
-        return tunnel.public_url;
+    if (ngrokExitCode !== null) return null;
+    for (let inspectorPort = 4040; inspectorPort <= 4050; inspectorPort += 1) {
+      try {
+        const inspectorUrl = `http://127.0.0.1:${inspectorPort}`;
+        const response = await fetch(`${inspectorUrl}/api/endpoints`);
+        if (!response.ok) continue;
+        const data = await response.json();
+        const endpoint = (data.endpoints || []).find((item) => tunnelTargetsLocalServer(item.upstream?.url));
+        if (endpoint?.url) {
+          return { publicUrl: endpoint.url, inspectorUrl };
+        }
+      } catch {
+        // ngrok chooses the next available local inspector port.
       }
-    } catch {
-      // ngrok exposes the local tunnel API after startup.
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   return null;
+}
+
+function validatedBasicAuth(value) {
+  if (!value) return null;
+  if (/\r|\n/.test(value)) throw new Error("NGROK_BASIC_AUTH cannot contain line breaks.");
+  const separator = value.indexOf(":");
+  const username = separator > 0 ? value.slice(0, separator) : "";
+  const password = separator > 0 ? value.slice(separator + 1) : "";
+  if (!username || password.length < 8 || password.length > 128) {
+    throw new Error("NGROK_BASIC_AUTH must use user:password with an 8-128 character password.");
+  }
+  return value;
+}
+
+function validatedEndpointUrl(value) {
+  if (!value) return null;
+  const endpoint = new URL(value);
+  if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.pathname !== "/" || endpoint.search || endpoint.hash) {
+    throw new Error("MARO_NGROK_URL must be an HTTPS origin without credentials, a path, query, or fragment.");
+  }
+  return endpoint;
+}
+
+function createTrafficPolicy(credentials) {
+  const destination = path.join(os.tmpdir(), `maro-ngrok-policy-${process.pid}-${randomUUID()}.json`);
+  const policy = {
+    on_http_request: [
+      {
+        actions: [
+          {
+            type: "basic-auth",
+            config: { credentials: [credentials], enforce: true, realm: "MARO" },
+          },
+        ],
+      },
+    ],
+  };
+  fs.writeFileSync(destination, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
+  return destination;
+}
+
+function removeTrafficPolicy() {
+  if (!policyPath) return;
+  try { fs.rmSync(policyPath, { force: true }); } catch {}
+  policyPath = null;
 }
 
 async function ensureNgrokAvailable() {
@@ -86,6 +152,21 @@ if (!basicAuth && !allowPublicTunnel) {
   process.exit(1);
 }
 
+if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+  console.error("PORT must be an integer between 1 and 65535.");
+  process.exit(1);
+}
+
+let protectedCredentials = null;
+let endpoint = null;
+try {
+  protectedCredentials = validatedBasicAuth(basicAuth);
+  endpoint = validatedEndpointUrl(configuredEndpointUrl);
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
+
 const available = await ensureNgrokAvailable();
 if (!available) {
   console.error("ngrok is not installed or is not available on PATH.");
@@ -95,7 +176,12 @@ if (!available) {
 
 const server = run(process.execPath, ["dist/index.cjs"], {
   stdio: ["ignore", "pipe", "pipe"],
-  env: { NODE_ENV: "production", HOST: host, PORT: String(port) },
+  env: {
+    NODE_ENV: "production",
+    HOST: host,
+    PORT: String(port),
+    MARO_ALLOWED_HOSTS: [process.env.MARO_ALLOWED_HOSTS, endpoint?.hostname].filter(Boolean).join(","),
+  },
 });
 
 server.stdout.on("data", (chunk) => process.stdout.write(chunk));
@@ -104,11 +190,16 @@ server.stderr.on("data", (chunk) => process.stderr.write(chunk));
 await waitForServer();
 
 const ngrokArgs = ["http", `http://${host}:${port}`];
-if (basicAuth) {
-  ngrokArgs.push("--basic-auth", basicAuth);
+if (endpoint) {
+  ngrokArgs.push("--url", endpoint.origin);
+}
+if (protectedCredentials) {
+  policyPath = createTrafficPolicy(protectedCredentials);
+  ngrokArgs.push("--traffic-policy-file", policyPath);
 } else {
   console.warn("Warning: MARO_ALLOW_PUBLIC_TUNNEL=1 explicitly allows this tunnel to be public without basic auth.");
 }
+ngrokArgs.push("--name", `maro-${port}-${process.pid}`);
 
 const ngrok = run(ngrokCommand, ngrokArgs, {
   stdio: ["ignore", "pipe", "pipe"],
@@ -116,18 +207,6 @@ const ngrok = run(ngrokCommand, ngrokArgs, {
 
 ngrok.stdout.on("data", (chunk) => process.stdout.write(chunk));
 ngrok.stderr.on("data", (chunk) => process.stderr.write(chunk));
-
-const tunnelUrl = await waitForTunnelUrl();
-if (tunnelUrl) {
-  console.log(`ngrok tunnel ready: ${tunnelUrl}`);
-} else {
-  console.log("ngrok started. Open http://127.0.0.1:4040 to inspect the tunnel URL.");
-}
-
-function shutdown() {
-  ngrok.kill();
-  server.kill();
-}
 
 server.on("exit", (code) => {
   if (code !== 0 && code !== null) {
@@ -137,11 +216,31 @@ server.on("exit", (code) => {
 });
 
 ngrok.on("exit", (code) => {
+  ngrokExitCode = code;
+  removeTrafficPolicy();
   if (code !== 0 && code !== null) {
     console.error(`ngrok exited with ${code}.`);
   }
   server.kill();
 });
+
+const tunnel = await waitForTunnel();
+removeTrafficPolicy();
+if (tunnel) {
+  console.log(`ngrok tunnel ready: ${tunnel.publicUrl}`);
+  console.log(`ngrok inspector: ${tunnel.inspectorUrl}`);
+} else {
+  console.error("ngrok did not expose a tunnel for this MARO server. Check the ngrok output above.");
+  ngrok.kill();
+  server.kill();
+  process.exit(1);
+}
+
+function shutdown() {
+  removeTrafficPolicy();
+  ngrok.kill();
+  server.kill();
+}
 
 process.on("SIGINT", () => {
   shutdown();

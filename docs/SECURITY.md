@@ -11,16 +11,17 @@ MARO is a single-user local application. The local operating-system account and 
 - Request IDs, no-store API responses, one-megabyte JSON limit, and local rate limiting.
 - Ten-minute mutation idempotency keyed by method, path, key, and request-body hash.
 - CSP, frame denial, no-sniff, no-referrer, and restrictive Permissions Policy.
-- Atomic mode-0600 writes, rolling recovery backup, optional AES-256-GCM encryption with scrypt.
+- Atomic mode-0600 writes, rolling recovery backup, and AES-256-GCM encryption with scrypt. Windows installation is encrypted automatically with a DPAPI-protected per-user key; Compose requires a passphrase.
 - Backup referential-integrity validation and spreadsheet-formula neutralization in CSV exports.
 - Approval snapshots, manual delivery evidence, do-not-contact, cooldown, duplicate-send guard, safety stop, and uncertain-delivery resolution.
 - Sanitized diagnostics and support bundle that omit record bodies, identities, credentials, and file paths.
 - Disabled-by-default HAI feed that is read-only, bounded to 250 action cards, and grants no approval, send, or provider mutation authority.
 - Non-root, read-only Docker runtime with all Linux capabilities dropped.
+- ngrok Traffic Policy Basic Auth, exact custom-endpoint Host allowlisting, and target-aware Agent API discovery across alternate inspector ports.
 
 ## Secrets
 
-Never commit `MARO_LEDGER_PASSPHRASE`, `NGROK_AUTHTOKEN`, or `NGROK_BASIC_AUTH`. Set them in the process environment or launcher environment. A lost encrypted-ledger passphrase cannot be recovered. Rotate an ngrok credential in the ngrok account, update the environment, and restart MARO.
+Never commit `MARO_LEDGER_PASSPHRASE`, `NGROK_AUTHTOKEN`, or `NGROK_BASIC_AUTH`. Set them in the process environment or launcher environment. The Windows installer creates its ledger key with the operating-system random generator and stores only its DPAPI ciphertext under `%LOCALAPPDATA%\\MARO-Data`. A lost key or passphrase cannot be recovered. Rotate an ngrok credential in the ngrok account, update the environment, and restart MARO.
 
 ## Reporting
 
