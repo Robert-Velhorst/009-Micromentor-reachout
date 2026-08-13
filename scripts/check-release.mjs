@@ -101,6 +101,20 @@ async function terminateProcess(pid) {
   throw new Error(`Process ${pid} did not stop`);
 }
 
+async function waitForProcessExit(pid, timeoutMs = 15000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if (error?.code === "ESRCH") return;
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Process ${pid} remained alive after the installed stop helper returned`);
+}
+
 console.log("\n[release-check] Secure ngrok policy");
 const tunnelLauncherSource = fs.readFileSync(path.join(process.cwd(), "scripts", "ngrok.mjs"), "utf8");
 const installerSource = fs.readFileSync(path.join(process.cwd(), "scripts", "build-windows-installer.mjs"), "utf8");
@@ -128,6 +142,7 @@ assertSourceIncludes(tunnelLauncherSource, "--traffic-policy-file", "ngrok launc
 assertSourceIncludes(tunnelLauncherSource, "inspectorPort <= 4050", "ngrok launcher no longer discovers alternate inspector ports");
 assertSourceIncludes(tunnelLauncherSource, "MARO_NGROK_URL", "ngrok launcher no longer supports a dedicated endpoint");
 assertSourceIncludes(tunnelLauncherSource, "/api/endpoints", "ngrok launcher no longer uses the current Agent API endpoint");
+assertSourceIncludes(tunnelLauncherSource, "MARO_ALLOWED_HOSTS_FILE", "ngrok launcher no longer publishes its exact dynamic Host allowlist");
 assertSourceExcludes(tunnelLauncherSource, '"--basic-auth"', "ngrok launcher uses the deprecated Basic Auth command-line flag");
 assertSourceExcludes(tunnelLauncherSource, "/api/tunnels", "ngrok launcher uses the deprecated tunnel-list endpoint");
 assertSourceIncludes(
@@ -143,6 +158,11 @@ assertSourceIncludes(
 assertSourceIncludes(installerSource, "ProtectedData.Protect", "Windows installer no longer creates a DPAPI-protected ledger key");
 assertSourceIncludes(installerSource, "MigrateLegacyData", "Windows installer no longer migrates legacy workspace data");
 assertSourceIncludes(installerSource, "InstallPayloadAtomically", "Windows installer no longer replaces application files atomically");
+assertSourceIncludes(installerSource, "MoveDirectoryWithRetry", "Windows installer no longer tolerates transient application-directory locks");
+assertSourceIncludes(installerSource, "StopExistingRuntime", "Windows installer no longer stops a running owned runtime before upgrade");
+assertSourceIncludes(installerSource, "Get-Process -Id $ownedProcessId", "Windows stop helper no longer waits for the owned process to exit");
+assertSourceIncludes(installerSource, "$desiredRuntimeConfig", "Windows launcher no longer restarts after security-relevant runtime configuration changes");
+assertSourceIncludes(installerSource, "MARO.allowed-hosts.json", "Windows launcher no longer publishes its exact dynamic Host allowlist");
 assertSourceIncludes(installerSource, '"--traffic-policy-file"', "Windows launcher no longer uses Traffic Policy Basic Auth");
 assertSourceIncludes(installerSource, "MARO_NGROK_URL", "Windows launcher no longer supports a dedicated endpoint");
 assertSourceIncludes(installerSource, "/api/endpoints", "Windows launcher no longer uses the current Agent API endpoint");
@@ -150,6 +170,8 @@ assertSourceExcludes(installerSource, '"--basic-auth=', "Windows launcher expose
 assertSourceExcludes(installerSource, "/api/tunnels", "Windows launcher uses the deprecated tunnel-list endpoint");
 assertSourceIncludes(serverSource, "/api/endpoints", "Runtime status no longer uses the current ngrok Agent API endpoint");
 assertSourceExcludes(serverSource, "/api/tunnels", "Runtime status uses the deprecated ngrok tunnel-list endpoint");
+assertSourceIncludes(serverSource, "MARO_ALLOWED_HOSTS_FILE", "Server no longer loads the launcher-managed exact Host allowlist");
+assertSourceExcludes(serverSource, "ngrokHostSuffixes", "Server still broadly trusts every ngrok hostname while tunnel mode is enabled");
 assertSourceIncludes(
   serverSource,
   'req.get("X-MARO-Request") !== "1"',
@@ -291,6 +313,31 @@ if (process.platform === "win32") {
     if (!Number.isInteger(installedServerPid) || installedServerPid <= 0) {
       throw new Error("Installed launcher did not record its server process ID");
     }
+    const originalServerPid = installedServerPid;
+    await run(
+      "Windows installed runtime configuration restart",
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(installRoot, "MARO.ps1")],
+      {
+        env: {
+          ...process.env,
+          PORT: String(installedPort),
+          MARO_SKIP_BROWSER: "1",
+          MARO_SKIP_NGROK: "1",
+          MARO_HAI_FEED_ENABLED: "1",
+        },
+      }
+    );
+    const haiManifest = await waitForJson(
+      `http://127.0.0.1:${installedPort}/api/integrations/hai/manifest`,
+      (value) => value?.enabled === true && value?.readOnly === true
+    );
+    installedServerPid = Number(fs.readFileSync(path.join(dataRoot, "MARO.server.pid"), "utf8").trim());
+    if (installedServerPid === originalServerPid || haiManifest.schema !== "hai.generic_json_feed.v1") {
+      throw new Error("Installed launcher did not restart with the changed HAI runtime configuration");
+    }
+    await waitForProcessExit(originalServerPid);
+
     await run(
       "Windows installed runtime stop",
       "powershell.exe",
@@ -307,6 +354,7 @@ if (process.platform === "win32") {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     if (!stopped) throw new Error("Installed stop helper did not terminate the owned MARO server");
+    await waitForProcessExit(installedServerPid);
     installedServerPid = 0;
 
     const encryptedLedgerHash = createHash("sha256").update(fs.readFileSync(migratedLedgerPath)).digest("hex");
@@ -317,6 +365,39 @@ if (process.platform === "win32") {
     }
     if (createHash("sha256").update(fs.readFileSync(protectedKeyPath)).digest("hex") !== protectedKeyHash) {
       throw new Error("Installer upgrade replaced the existing DPAPI ledger key");
+    }
+
+    await run(
+      "Windows installed runtime relaunch before in-use upgrade",
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(installRoot, "MARO.ps1")],
+      {
+        env: {
+          ...process.env,
+          PORT: String(installedPort),
+          MARO_SKIP_BROWSER: "1",
+          MARO_SKIP_NGROK: "1",
+          MARO_HAI_FEED_ENABLED: "1",
+        },
+      }
+    );
+    await waitForJson(`http://127.0.0.1:${installedPort}/api/health`, (value) => value?.ok === true);
+    installedServerPid = Number(fs.readFileSync(path.join(dataRoot, "MARO.server.pid"), "utf8").trim());
+    const runningUpgradePid = installedServerPid;
+    await run("Windows installer in-use upgrade", installerPath, [], { env: installerEnvironment });
+    await waitForProcessExit(runningUpgradePid);
+    installedServerPid = 0;
+    try {
+      await fetch(`http://127.0.0.1:${installedPort}/api/health`);
+      throw new Error("Installer returned while the previous installed runtime was still reachable");
+    } catch (error) {
+      if (error?.message === "Installer returned while the previous installed runtime was still reachable") throw error;
+    }
+    if (createHash("sha256").update(fs.readFileSync(migratedLedgerPath)).digest("hex") !== encryptedLedgerHash) {
+      throw new Error("In-use installer upgrade changed or erased the encrypted workspace ledger");
+    }
+    if (createHash("sha256").update(fs.readFileSync(protectedKeyPath)).digest("hex") !== protectedKeyHash) {
+      throw new Error("In-use installer upgrade replaced the existing DPAPI ledger key");
     }
 
     const installerBytes = fs.readFileSync(installerPath);

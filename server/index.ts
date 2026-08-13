@@ -1,15 +1,21 @@
 import express, { type ErrorRequestHandler, type Request } from "express";
 import { createServer } from "http";
 import { createHash, randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "path";
 import { registerLedgerRoutes } from "./ledger";
 
 const serverDir = path.dirname(path.resolve(process.argv[1] || "."));
 const appVersion = process.env.MARO_APP_VERSION || process.env.MARO_BUILD_VERSION || "development";
 const localHosts = new Set(["127.0.0.1", "localhost", "::1"]);
-const ngrokHostSuffixes = [".ngrok.app", ".ngrok-free.app", ".ngrok.io"];
 const requestBuckets = new Map<string, { windowStartedAt: number; count: number }>();
 const idempotencyCache = new Map<string, { expiresAt: number; status: number; body: unknown; bodyHash: string }>();
+let allowedHostsFileCache = {
+  path: "",
+  checkedAt: 0,
+  modifiedAt: -1,
+  hosts: new Set<string>(),
+};
 
 function hostAlias(host: string) {
   return host === "localhost" ? "127.0.0.1" : host;
@@ -27,21 +33,44 @@ function requestHostname(value: string | undefined) {
 }
 
 function configuredAllowedHosts() {
-  return new Set(
+  const hosts = new Set(
     String(process.env.MARO_ALLOWED_HOSTS || "")
       .split(",")
       .map((host) => requestHostname(host))
       .filter(Boolean)
   );
+  const hostsFile = String(process.env.MARO_ALLOWED_HOSTS_FILE || "").trim();
+  if (!hostsFile) return hosts;
+
+  const now = Date.now();
+  if (allowedHostsFileCache.path !== hostsFile || now - allowedHostsFileCache.checkedAt >= 1000) {
+    allowedHostsFileCache.path = hostsFile;
+    allowedHostsFileCache.checkedAt = now;
+    try {
+      const modifiedAt = fs.statSync(hostsFile).mtimeMs;
+      if (modifiedAt !== allowedHostsFileCache.modifiedAt) {
+        const parsed = JSON.parse(fs.readFileSync(hostsFile, "utf8")) as { hosts?: unknown };
+        allowedHostsFileCache.modifiedAt = modifiedAt;
+        allowedHostsFileCache.hosts = new Set(
+          Array.isArray(parsed.hosts)
+            ? parsed.hosts.map((host) => requestHostname(String(host))).filter(Boolean)
+            : []
+        );
+      }
+    } catch {
+      allowedHostsFileCache.modifiedAt = -1;
+      allowedHostsFileCache.hosts = new Set();
+    }
+  }
+
+  allowedHostsFileCache.hosts.forEach((host) => hosts.add(host));
+  return hosts;
 }
 
 function hostIsAllowed(req: Request) {
   const hostname = requestHostname(req.get("host"));
   if (!hostname) return false;
-  if (localHosts.has(hostname) || configuredAllowedHosts().has(hostname)) return true;
-
-  const tunnelEnabled = Boolean(process.env.NGROK_BASIC_AUTH) || process.env.MARO_ALLOW_PUBLIC_TUNNEL === "1";
-  return tunnelEnabled && ngrokHostSuffixes.some((suffix) => hostname.endsWith(suffix));
+  return localHosts.has(hostname) || configuredAllowedHosts().has(hostname);
 }
 
 function tunnelTargetsServer(addr: string | undefined, host: string, port: number) {

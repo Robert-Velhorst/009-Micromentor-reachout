@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.2 - 2026-08-14
+
+- Made Windows upgrades wait for the owned MARO processes to fully exit before application files are replaced.
+- Added bounded retries for transient Windows application-directory locks while preserving atomic rollback and durable workspace data.
+- Extended the release gate to prove the installed server process is gone before upgrade preservation is tested.
+- Made normal in-use upgrades stop the ownership-verified runtime and restart stale server configuration when HAI, tunnel, Host, pause, or version settings change.
+- Replaced broad ngrok-suffix Host trust with an exact launcher-managed endpoint allowlist for both dedicated and dynamically assigned URLs.
+
 ## 1.2.1 - 2026-08-09
 
 - Moved Windows workspace data outside the replaceable application directory and added conflict-preserving legacy migration.

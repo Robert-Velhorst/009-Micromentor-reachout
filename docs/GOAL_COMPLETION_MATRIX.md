@@ -116,7 +116,7 @@ Status meanings: **Complete** is implemented and verified in-repository; **Parti
 | 109 | Exception-based workflow dashboard | Complete | Blockers and next actions prioritized |
 | 110 | Safe retries and recovery strategy | Complete | Idempotency, failed/uncertain states, backup recovery |
 | 111 | Ambiguous external action resolution | Complete | Explicit uncertain status and resolution endpoint |
-| 112 | Versioning and changelog discipline | Complete | Version 1.2.0 and changelog |
+| 112 | Versioning and changelog discipline | Complete | Version 1.2.2 and changelog |
 | 113 | Regression baseline | Complete | Type, API, browser, Docker, installer, audit gates |
 | 114 | Maintenance and refactoring review | Complete | Scoped additions; existing architecture preserved |
 | 115 | Final human-operator readiness test | Complete | Critical path and browser evidence in final report |

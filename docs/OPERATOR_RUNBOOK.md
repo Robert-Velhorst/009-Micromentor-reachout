@@ -53,4 +53,6 @@ Run `artifacts\MARO-Windows11-Setup.exe`. The installer is currently unsigned; v
 
 The installed app keeps replaceable binaries under `%LOCALAPPDATA%\MARO` and durable encrypted data under `%LOCALAPPDATA%\MARO-Data`. Its per-user ledger key is DPAPI protected. Upgrade migrates a legacy `MARO\data` workspace, preserves conflicts as `.legacy-*` files, and retains data on uninstall. Do not delete `MARO-Data` unless a verified workspace backup exists and permanent removal is intentional.
 
-For a dedicated cloud endpoint, set both `NGROK_BASIC_AUTH` and `MARO_NGROK_URL` before launching. MARO validates the HTTPS origin and finds its endpoint across Agent API ports `4040`-`4050`, so another local ngrok tool can continue running.
+The installer can upgrade MARO while it is open: it runs the ownership-checked stop helper, waits for full process exit, rotates application files atomically, and leaves workspace data untouched. Rerunning the launcher after HAI, tunnel, Host, pause, or version settings change restarts only MARO's recorded server so the new environment takes effect.
+
+For a dedicated cloud endpoint, set both `NGROK_BASIC_AUTH` and `MARO_NGROK_URL` before launching. MARO validates the HTTPS origin, finds only its own target across Agent API ports `4040`-`4050`, and publishes that exact hostname to the server; another local ngrok tool can continue running and unrelated ngrok hostnames remain blocked.

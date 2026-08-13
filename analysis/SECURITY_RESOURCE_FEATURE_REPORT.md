@@ -22,11 +22,11 @@ Repository revision scanned: `codex/giant-goal-completion` working tree after th
 - Public bind risk: the server previously inherited a broad host stance. Fixed by defaulting production/server runs to `127.0.0.1`; ngrok now targets `http://127.0.0.1:<port>` explicitly.
 - Missing browser hardening headers: added `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`, and a restrictive CSP.
 - Cross-site local API mutation risk: every mutating `/api` request now requires the non-simple `X-MARO-Request: 1` marker, cross-site browser fetch metadata is rejected, and no CORS access is granted. Normal same-origin reads remain marker-free.
-- DNS-rebinding risk: every request now passes a fail-closed Host allowlist. Local hosts, exact `MARO_ALLOWED_HOSTS`, and explicitly enabled ngrok domains are accepted; unknown hosts receive HTTP 421.
+- DNS-rebinding risk: every request now passes a fail-closed Host allowlist. Local hosts, exact `MARO_ALLOWED_HOSTS`, and only the launcher's exact current ngrok endpoint are accepted; another ngrok Host receives HTTP 421 even when tunnel authentication is configured.
 - API parser and cache boundaries: mutation checks run before JSON parsing, JSON bodies are capped at 1 MB, API errors remain JSON, API responses use `no-store`, and only fingerprinted static assets receive immutable caching.
 - Production error disclosure: `ErrorBoundary` no longer shows stack traces outside development builds.
 - Dev log ingestion and resource-churn risk: the obsolete Vite debug collector and Vite-only runtime command were removed. Vite remains a build compiler only; normal development runs the built Express app through the guarded ngrok launcher.
-- Ngrok access control: development and installed launchers refuse unauthenticated public tunnels by default. `NGROK_BASIC_AUTH` is enforced with current Traffic Policy rather than a deprecated command-line credential; a dedicated HTTPS endpoint is exactly allowlisted and matched across Agent API ports 4040-4050.
+- Ngrok access control: development and installed launchers refuse unauthenticated public tunnels by default. `NGROK_BASIC_AUTH` is enforced with current Traffic Policy rather than a deprecated command-line credential; the endpoint is target-matched across Agent API ports 4040-4050 and published through a short-lived exact Host file instead of trusting a domain suffix.
 - Local ledger confidentiality: setting `MARO_LEDGER_PASSPHRASE` stores the ledger as an AES-256-GCM encrypted envelope. Windows installation generates a DPAPI-protected per-user key automatically, and Docker Compose refuses to start without a passphrase.
 - Shoulder-surfing reduction: session privacy mode hides mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
 - Manual handoff safety: review queues can open the stored mentor profile URL, but external copy/fill uses only a short-lived package built from the latest approved snapshot. Editing an approved draft invalidates approval before any handoff or send confirmation can proceed.
@@ -42,9 +42,9 @@ Repository revision scanned: `codex/giant-goal-completion` working tree after th
 - Deployment integrity: the broken static nginx image was replaced with a non-root Express container, persistent data volume, readiness healthcheck, read-only root filesystem, and dropped Linux capabilities.
 - Low-cognitive-load operations: dashboard next actions now open the relevant campaign tab directly and preserve mentor context where available, reducing manual navigation during review, follow-up, billing, and outcome work.
 - Project-linked integrity: campaign creation and updates now validate project IDs, and the command center exposes project creation plus campaign project assignment so outreach stays tied to the correct broader goal.
-- Installer dependency, upgrade, and removal risk: the Windows installer embeds Node, separates durable data from replaceable binaries, migrates legacy data without overwriting conflicts, installs atomically, protects its random ledger key with DPAPI, validates process ownership before stop/uninstall, and retains workspace data on uninstall.
+- Installer dependency, upgrade, and removal risk: the Windows installer embeds Node, separates durable data from replaceable binaries, migrates legacy data without overwriting conflicts, installs atomically, protects its random ledger key with DPAPI, validates process ownership and full exit before stop/upgrade/uninstall, retries transient directory locks, and retains workspace data on uninstall.
 - Static surface drift: removed the inactive parallel `src/` frontend and unused UI modules; both client and server TypeScript contracts now pass.
-- Release regression risk: `npm run check:release` now covers TypeScript, encrypted API/adversarial smoke, production surfaces, a seeded legacy-data migration, installed encrypted runtime launch/stop, and byte-identical ledger/key preservation across reinstall.
+- Release regression risk: `npm run check:release` now covers TypeScript, encrypted API/adversarial smoke, production surfaces, a seeded legacy-data migration, configuration-triggered restart, installed encrypted runtime launch/stop, in-use upgrade, and byte-identical ledger/key preservation.
 - External font privacy: removed Google Fonts preconnect/stylesheet requests and tightened CSP font/style directives back to self-only sources plus inline styles required by the bundled UI.
 - Production surface regression risk: the encrypted-ledger smoke test now fails if the root app shell reintroduces external production asset URLs, Google Fonts references, development debug-collector injection, missing browser hardening headers, or weakened CSP directives.
 - Workspace restore integrity: restore validation now requires message-quality and invoice-record arrays, preventing accepted backups from silently dropping review or billing-report history.
@@ -63,7 +63,7 @@ Repository revision scanned: `codex/giant-goal-completion` working tree after th
 - Current production JS: 324.76 KB minified, 90.55 KB gzip.
 - Current production CSS: 39.84 KB minified, 7.56 KB gzip, down from 109.78 KB and 17.46 KB gzip.
 - Final served public payload directory: 377,717 bytes across four files.
-- Final installer: 34,665,984 bytes (33.1 MB), dominated by the embedded Node runtime.
+- Current installer remains about 33.1 MB, dominated by the embedded Node runtime; the exact frozen byte count is recorded in the final verification report.
 - Runtime optimizations applied: removed unused app providers, inactive frontend, development debug collector, and Vite-only server path; deferred mentor search input, debounced localStorage writes, removed 59,633,295 bytes of unreachable images, cached ledger reads, and bundled only the current server/runtime payload.
 - Structured mentor scoring remains event-driven: existing profiles are recalculated only when campaign scoring inputs change, with no polling or background scoring process.
 - Discovery plans are read-time derivations over the stored campaign and source ledger; applying them is idempotent and adds no dependency, timer, scraper, or background worker.
@@ -72,14 +72,14 @@ Repository revision scanned: `codex/giant-goal-completion` working tree after th
 - Same-app mutation protection is a constant-time header check with no token storage, timers, polling, extra network round trips for the same-origin app, or work on read-only requests.
 - Initial UI refresh uses one aggregate dashboard request instead of seven ledger requests. Exact concurrent requests are coalesced, and runtime/ngrok status is probed only on initial load or explicit refresh.
 
-Current local browser-QA sample on this Windows machine:
+Current packaged-runtime sample on this Windows machine:
 
-- Production Node RSS: 71.1 MB after 179 seconds of interactive QA.
-- Twenty `GET /api/dashboard` fetches measured 6.86 ms median, 9.65 ms p95, and one 78.74 ms maximum.
-- The QA ledger was 11.9 KB; production JavaScript was 317 KB minified.
+- Production Node working set: 51.54 MiB; private memory: 32.06 MiB; 12 threads.
+- Fifty `GET /api/dashboard` requests measured 31.28 ms median and 51.44 ms p95 through Windows PowerShell HTTP overhead.
+- The encrypted QA ledger was 4,523 bytes and the dashboard response was 18,051 bytes.
 - Smoke coverage verifies repeated read-only summary requests do not change the encrypted ledger bytes.
 - These values are a development-machine snapshot rather than a cross-device performance guarantee; they are useful as a regression baseline for later paging or storage work.
-- Hardened Docker idle sample: 0.00% CPU, 17.84 MiB memory, and 11 processes after readiness, health, app-shell, and HAI feed requests.
+- Hardened Docker idle sample: 0.05% CPU, 19.5 MiB memory, and 11 processes after readiness, health, app-shell, and HAI feed requests.
 
 ## Validation
 
@@ -90,12 +90,11 @@ Current local browser-QA sample on this Windows machine:
 - API mutation security smoke: requests with a missing or incorrect `X-MARO-Request` marker returned HTTP 403, browser-reported cross-site mutations returned HTTP 403 even with the marker, no CORS access header was exposed, and normal marked mutations completed successfully.
 - Production browser QA: onboarding and pause/DNC mutations persisted, with no console errors, incoherent overlay, or horizontal page overflow at desktop width or the in-app browser's effective 520 px mobile viewport.
 - `node scripts/ngrok.mjs`: refuses to open a tunnel when neither `NGROK_BASIC_AUTH` nor the explicit public override is configured.
-- Live ngrok acceptance: a dedicated HTTPS endpoint on alternate inspector port 4042 returned 401 without credentials and 200 for authenticated UI, runtime, HAI manifest, and HAI feed requests; the endpoint was stopped after the bounded test.
-- Isolated Windows installer migration, DPAPI encryption, owned-process shutdown, and upgrade preservation: passed.
-- Final installer size: 34,673,152 bytes (33.07 MiB).
-- Final installer SHA-256 for this audit build: `7789018043281F74F0B12A38A1F9BA3DCD0C92C05540DF7B2E34D9DD6B856142`.
+- Live ngrok acceptance: a dedicated HTTPS endpoint on alternate inspector port 4042 returned 401 without credentials and 200 for authenticated UI and read-only HAI requests; its exact Host returned 200, another ngrok Host returned 421, and teardown removed the endpoint, listener, allowlist, and policy file.
+- Isolated Windows installer migration, DPAPI encryption, configuration restart, owned-process shutdown, stopped and in-use upgrade preservation: passed.
+- Final installer size: 34,676,224 bytes (33.07 MiB); SHA-256: `3A538D668310D6489511DF0DF2839EF9E17D6C4B7B36B46E0AE01026F661A70A`.
 - Compute and publish a fresh SHA-256 checksum for each later release; the self-extracting executable is regenerated by the release gate.
-- Installer version `1.2.1` contains the generated manual-handoff extension, launcher, stop helper, and uninstaller, and contains neither legacy automated-messaging archive.
+- Installer version `1.2.2` contains the generated manual-handoff extension, launcher, stop helper, and uninstaller, and contains neither legacy automated-messaging archive.
 - Release smoke server: returned HTTP 200 for `/`, enforced restrictive CSP directives, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`, and verified the root app shell had no external asset URLs, Google Fonts references, or development debug-collector injection.
 
 ## Remaining Risks

@@ -16,6 +16,7 @@ const allowPublicTunnel = process.env.MARO_ALLOW_PUBLIC_TUNNEL === "1";
 const configuredEndpointUrl = process.env.MARO_NGROK_URL;
 let policyPath = null;
 let ngrokExitCode = null;
+const allowedHostsPath = path.join(os.tmpdir(), `maro-allowed-hosts-${process.pid}-${randomUUID()}.json`);
 
 function run(command, args, options = {}) {
   return spawn(command, args, {
@@ -132,6 +133,18 @@ function removeTrafficPolicy() {
   policyPath = null;
 }
 
+function writeAllowedHosts(hosts) {
+  const normalized = [...new Set(hosts.filter(Boolean).map((hostValue) => String(hostValue).toLowerCase()))];
+  const temporary = `${allowedHostsPath}.tmp-${randomUUID()}`;
+  fs.writeFileSync(temporary, JSON.stringify({ hosts: normalized }), { encoding: "utf8", mode: 0o600, flag: "wx" });
+  fs.rmSync(allowedHostsPath, { force: true });
+  fs.renameSync(temporary, allowedHostsPath);
+}
+
+function removeAllowedHosts() {
+  try { fs.rmSync(allowedHostsPath, { force: true }); } catch {}
+}
+
 async function ensureNgrokAvailable() {
   return new Promise((resolve) => {
     const child = spawn(ngrokCommand, ["version"], {
@@ -174,6 +187,8 @@ if (!available) {
   process.exit(1);
 }
 
+writeAllowedHosts(endpoint ? [endpoint.hostname] : []);
+
 const server = run(process.execPath, ["dist/index.cjs"], {
   stdio: ["ignore", "pipe", "pipe"],
   env: {
@@ -181,6 +196,7 @@ const server = run(process.execPath, ["dist/index.cjs"], {
     HOST: host,
     PORT: String(port),
     MARO_ALLOWED_HOSTS: [process.env.MARO_ALLOWED_HOSTS, endpoint?.hostname].filter(Boolean).join(","),
+    MARO_ALLOWED_HOSTS_FILE: allowedHostsPath,
   },
 });
 
@@ -212,12 +228,14 @@ server.on("exit", (code) => {
   if (code !== 0 && code !== null) {
     console.error(`Local server exited with ${code}.`);
   }
+  removeAllowedHosts();
   ngrok.kill();
 });
 
 ngrok.on("exit", (code) => {
   ngrokExitCode = code;
   removeTrafficPolicy();
+  removeAllowedHosts();
   if (code !== 0 && code !== null) {
     console.error(`ngrok exited with ${code}.`);
   }
@@ -227,6 +245,7 @@ ngrok.on("exit", (code) => {
 const tunnel = await waitForTunnel();
 removeTrafficPolicy();
 if (tunnel) {
+  writeAllowedHosts([new URL(tunnel.publicUrl).hostname]);
   console.log(`ngrok tunnel ready: ${tunnel.publicUrl}`);
   console.log(`ngrok inspector: ${tunnel.inspectorUrl}`);
 } else {
@@ -238,9 +257,12 @@ if (tunnel) {
 
 function shutdown() {
   removeTrafficPolicy();
+  removeAllowedHosts();
   ngrok.kill();
   server.kill();
 }
+
+process.on("exit", removeAllowedHosts);
 
 process.on("SIGINT", () => {
   shutdown();

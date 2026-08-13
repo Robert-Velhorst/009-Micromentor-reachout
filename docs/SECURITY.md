@@ -17,7 +17,7 @@ MARO is a single-user local application. The local operating-system account and 
 - Sanitized diagnostics and support bundle that omit record bodies, identities, credentials, and file paths.
 - Disabled-by-default HAI feed that is read-only, bounded to 250 action cards, and grants no approval, send, or provider mutation authority.
 - Non-root, read-only Docker runtime with all Linux capabilities dropped.
-- ngrok Traffic Policy Basic Auth, exact custom-endpoint Host allowlisting, and target-aware Agent API discovery across alternate inspector ports.
+- ngrok Traffic Policy Basic Auth, exact launcher-managed endpoint Host allowlisting, and target-aware Agent API discovery across alternate inspector ports. Broad ngrok domain suffixes are never trusted.
 
 ## Secrets
 

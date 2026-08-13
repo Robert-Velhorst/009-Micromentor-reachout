@@ -1,6 +1,6 @@
 # Technical Audit
 
-Date: 2026-08-09
+Date: 2026-08-14
 
 ## Product Boundary
 
@@ -20,6 +20,8 @@ MARO is a local-first, single-operator outreach ledger. It helps an operator def
 | --- | --- | --- |
 | Critical | Docker copied the build into nginx, omitted the Express API, and copied the wrong frontend directory level. | Replaced it with a non-root Node runtime serving `dist/index.cjs` and `dist/public`; added a data volume, readiness healthcheck, dropped capabilities, and loopback-only Compose exposure. |
 | Critical | Windows upgrades deleted the install directory while the default workspace lived beneath it. | Separated durable data, added conflict-preserving legacy migration and atomic app replacement, and proved ledger/key bytes survive reinstall. |
+| High | A stopped Windows runtime could briefly retain application-directory handles, causing an intermittent access-denied upgrade failure. | The ownership-checked stop helper now proves process exit, directory rotation retries only transient I/O/access errors, and rollback leaves durable workspace data unchanged. |
+| High | Enabling tunnel mode also trusted every ngrok domain suffix, weakening exact Host protection against DNS rebinding. | Removed suffix trust; each launcher now publishes only its actual endpoint hostname through an exact local allowlist, with `200`/`421` regression and live acceptance coverage. |
 | High | A transitive `nanoid` advisory was present. | Refreshed the lockfile; `npm audit --audit-level=low` reports zero vulnerabilities. |
 | High | No durable do-not-contact state or emergency outbound stop. | Added identity-aware do-not-contact enforcement, follow-up cancellation, UI controls, workspace pause, and environment-enforced pause. |
 | High | Ambiguous delivery could only be called sent or failed. | Added `uncertain` send attempts and explicit confirmed/failed resolution. |
@@ -37,6 +39,7 @@ MARO is a local-first, single-operator outreach ledger. It helps an operator def
 - Keep all persistence under one local workspace boundary. App-level multi-user auth and RBAC are N/A until a shared service exists.
 - Preserve Vite only as the frontend compiler. `npm run dev`, preview, installed runtime, and Docker all run Express/ngrok rather than a Vite development server.
 - Treat application files as replaceable and Windows workspace data/key material as durable per-user state outside the installation directory.
+- Restart an owned Windows runtime when its non-secret security configuration changes, and let upgrades stop only the process identity recorded by MARO.
 
 ## Remaining External Gates
 

@@ -1,5 +1,15 @@
 # Codex Worklog
 
+## 2026-08-14 Completion Re-Audit
+
+1. Reconciled the clean completion branch with the remote and reran the current Windows release gate.
+2. Reproduced an intermittent application-directory access-denied failure during installed-runtime upgrade preservation.
+3. Made owned-process shutdown wait for actual exit and added bounded transient-lock retries around atomic directory rotation and rollback.
+4. Extended release coverage to reject a stop helper that returns while the installed server process remains alive.
+5. Added ownership-checked in-use upgrades and configuration-aware restarts so HAI, tunnel, Host, pause, and version changes cannot reuse a stale server environment.
+6. Removed broad ngrok suffix trust, added exact launcher-managed Host files, and proved the real endpoint returns `200` while another ngrok Host returns `421`.
+7. Repeated live installed-ngrok acceptance with Basic Auth (`401` without credentials), encrypted persistence, read-only HAI, exact target discovery, and complete teardown.
+
 ## 2026-08-08
 
 1. Rendered and visually checked all 124 prompt pages; extracted and mapped phases 000-115.

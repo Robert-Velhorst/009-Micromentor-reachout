@@ -139,6 +139,8 @@ try {
 }
 
 $env:MARO_DATA_DIR = $dataDir
+$allowedHostsFile = Join-Path $dataDir "MARO.allowed-hosts.json"
+$env:MARO_ALLOWED_HOSTS_FILE = $allowedHostsFile
 $env:HOST = "127.0.0.1"
 $env:NODE_ENV = "production"
 $env:MARO_APP_VERSION = "${appVersion}"
@@ -158,6 +160,15 @@ function Get-MaroHealth([int]$candidatePort) {
     if ($health.service -eq "maro-ledger") { return $health }
   } catch {}
   return $null
+}
+
+function Set-MaroAllowedHostsFile([string[]]$hosts) {
+  $normalized = @($hosts | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() } | Select-Object -Unique)
+  $temporary = $allowedHostsFile + ".tmp-" + [guid]::NewGuid().ToString("N")
+  $json = @{ hosts = $normalized } | ConvertTo-Json -Depth 3
+  [IO.File]::WriteAllText($temporary, $json, [Text.UTF8Encoding]::new($false))
+  Remove-Item -LiteralPath $allowedHostsFile -Force -ErrorAction SilentlyContinue
+  Move-Item -LiteralPath $temporary -Destination $allowedHostsFile -Force
 }
 
 function Test-PortAvailable([int]$candidatePort) {
@@ -182,7 +193,16 @@ if ($env:PORT -and [int]::TryParse($env:PORT, [ref]$preferredPort) -and $preferr
 
 $serverStatePath = Join-Path $dataDir "MARO.server.json"
 $expectedNode = [IO.Path]::GetFullPath((Join-Path $appDir "runtime\\node.exe"))
+$desiredRuntimeConfig = @{
+  AppVersion = [string]$env:MARO_APP_VERSION
+  AllowedHosts = [string]$env:MARO_ALLOWED_HOSTS
+  BasicAuthConfigured = [bool]$env:NGROK_BASIC_AUTH
+  PublicTunnelAllowed = ($env:MARO_ALLOW_PUBLIC_TUNNEL -eq "1")
+  HaiFeedEnabled = ($env:MARO_HAI_FEED_ENABLED -eq "1")
+  OutboundPaused = ($env:MARO_OUTBOUND_PAUSED -eq "1")
+}
 $health = $null
+$runtimeRestartRequested = $false
 if (Test-Path -LiteralPath $serverStatePath) {
   try {
     $state = Get-Content -LiteralPath $serverStatePath -Raw | ConvertFrom-Json
@@ -191,9 +211,27 @@ if (Test-Path -LiteralPath $serverStatePath) {
     if ($recordedNode -eq $expectedNode -and $recordedProcess.CommandLine -like "*dist\\index.cjs*") {
       $recordedPort = [int]$state.Port
       $health = Get-MaroHealth $recordedPort
-      if ($health) { $port = $recordedPort }
+      if ($health) {
+        $runtimeConfigMatches =
+          ([string]$state.AppVersion -eq $desiredRuntimeConfig.AppVersion) -and
+          ([string]$state.AllowedHosts -eq $desiredRuntimeConfig.AllowedHosts) -and
+          ([bool]$state.BasicAuthConfigured -eq $desiredRuntimeConfig.BasicAuthConfigured) -and
+          ([bool]$state.PublicTunnelAllowed -eq $desiredRuntimeConfig.PublicTunnelAllowed) -and
+          ([bool]$state.HaiFeedEnabled -eq $desiredRuntimeConfig.HaiFeedEnabled) -and
+          ([bool]$state.OutboundPaused -eq $desiredRuntimeConfig.OutboundPaused)
+        if ($runtimeConfigMatches) {
+          $port = $recordedPort
+        } else {
+          $runtimeRestartRequested = $true
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $appDir "Stop-MARO.ps1")
+          if ($LASTEXITCODE -ne 0) { throw "MARO could not restart after its runtime configuration changed." }
+          $health = $null
+        }
+      }
     }
-  } catch {}
+  } catch {
+    if ($runtimeRestartRequested) { throw }
+  }
   if (-not $health) { Remove-Item -LiteralPath $serverStatePath -Force -ErrorAction SilentlyContinue }
 }
 
@@ -204,8 +242,11 @@ if (-not $health -and -not (Test-PortAvailable $port)) {
 
 $env:PORT = [string]$port
 $appUrl = "http://127.0.0.1:$port/"
+$initialTunnelHosts = @()
+if ($ngrokEndpoint) { $initialTunnelHosts = @($ngrokEndpoint.Host) }
 
 if (-not $health) {
+  Set-MaroAllowedHostsFile $initialTunnelHosts
   $serverEntry = '"' + (Join-Path $appDir "dist\\index.cjs") + '"'
   $serverStdout = Join-Path $dataDir "server-startup.stdout.log"
   $serverStderr = Join-Path $dataDir "server-startup.stderr.log"
@@ -227,12 +268,30 @@ if (-not $health) {
     Port = $port
     Executable = $expectedNode
     AppDirectory = $appDir
+    AppVersion = $desiredRuntimeConfig.AppVersion
+    AllowedHosts = $desiredRuntimeConfig.AllowedHosts
+    BasicAuthConfigured = $desiredRuntimeConfig.BasicAuthConfigured
+    PublicTunnelAllowed = $desiredRuntimeConfig.PublicTunnelAllowed
+    HaiFeedEnabled = $desiredRuntimeConfig.HaiFeedEnabled
+    OutboundPaused = $desiredRuntimeConfig.OutboundPaused
   } | ConvertTo-Json | Set-Content -LiteralPath $serverStatePath -Encoding UTF8
 }
 
 function Find-MaroTunnel([int]$targetPort) {
   $target = "http://127.0.0.1:$targetPort"
   foreach ($inspectorPort in 4040..4050) {
+    $client = [Net.Sockets.TcpClient]::new()
+    $connection = $null
+    try {
+      $connection = $client.BeginConnect("127.0.0.1", $inspectorPort, $null, $null)
+      if (-not $connection.AsyncWaitHandle.WaitOne(75)) { continue }
+      $client.EndConnect($connection)
+    } catch {
+      continue
+    } finally {
+      if ($connection) { $connection.AsyncWaitHandle.Close() }
+      $client.Dispose()
+    }
     try {
       $result = Invoke-RestMethod -Uri "http://127.0.0.1:$inspectorPort/api/endpoints" -TimeoutSec 1
       $match = $result.endpoints | Where-Object { $_.upstream.url -eq $target } | Select-Object -First 1
@@ -244,8 +303,9 @@ function Find-MaroTunnel([int]$targetPort) {
 
 $ngrok = Get-Command ngrok -ErrorAction SilentlyContinue
 if ($env:MARO_SKIP_NGROK -ne "1" -and $ngrok -and ($env:NGROK_BASIC_AUTH -or $env:MARO_ALLOW_PUBLIC_TUNNEL -eq "1")) {
-  $existingTunnel = Find-MaroTunnel $port
-  if (-not $existingTunnel) {
+  $activeTunnel = Find-MaroTunnel $port
+  $startedNgrokProcess = $null
+  if (-not $activeTunnel) {
     $ngrokArguments = @("http", "http://127.0.0.1:$port", "--name", "maro-$port")
     if ($ngrokEndpoint) { $ngrokArguments += @("--url", $ngrokEndpoint.AbsoluteUri.TrimEnd("/")) }
     $policyPath = $null
@@ -276,13 +336,27 @@ if ($env:MARO_SKIP_NGROK -ne "1" -and $ngrok -and ($env:NGROK_BASIC_AUTH -or $en
     Remove-Item -LiteralPath $ngrokStdout, $ngrokStderr -Force -ErrorAction SilentlyContinue
     try {
       $ngrokProcess = Start-Process -FilePath $ngrok.Source -ArgumentList $ngrokArguments -WorkingDirectory $appDir -WindowStyle Hidden -RedirectStandardOutput $ngrokStdout -RedirectStandardError $ngrokStderr -PassThru
-      Start-Sleep -Seconds 1
+      $startedNgrokProcess = $ngrokProcess
+      for ($attempt = 0; $attempt -lt 40; $attempt += 1) {
+        Start-Sleep -Milliseconds 250
+        if ($ngrokProcess.HasExited) { break }
+        $activeTunnel = Find-MaroTunnel $port
+        if ($activeTunnel) { break }
+      }
     } finally {
       if ($policyPath) { Remove-Item -LiteralPath $policyPath -Force -ErrorAction SilentlyContinue }
     }
-    if ($ngrokProcess.HasExited) {
-      Write-Warning "ngrok could not open a MARO endpoint. The local app remains available; review $ngrokStderr."
-    } else {
+  }
+
+  if ($activeTunnel) {
+    try {
+      $activeTunnelHost = ([Uri]$activeTunnel.url).Host
+      Set-MaroAllowedHostsFile @($activeTunnelHost)
+    } catch {
+      if ($startedNgrokProcess) { Stop-Process -Id $startedNgrokProcess.Id -Force -ErrorAction SilentlyContinue }
+      throw "ngrok returned an invalid public endpoint URL. The local app remains available."
+    }
+    if ($startedNgrokProcess) {
       $ngrokDetails = Get-CimInstance Win32_Process -Filter "ProcessId = $($ngrokProcess.Id)"
       @{
         Pid = $ngrokProcess.Id
@@ -290,6 +364,12 @@ if ($env:MARO_SKIP_NGROK -ne "1" -and $ngrok -and ($env:NGROK_BASIC_AUTH -or $en
         Target = "http://127.0.0.1:$port"
       } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dataDir "MARO.ngrok.json") -Encoding UTF8
     }
+  } else {
+    if ($startedNgrokProcess -and -not $startedNgrokProcess.HasExited) {
+      Stop-Process -Id $startedNgrokProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+    Set-MaroAllowedHostsFile $initialTunnelHosts
+    Write-Warning "ngrok could not open a MARO endpoint. The local app remains available; review $ngrokStderr."
   }
 }
 
@@ -317,24 +397,37 @@ $dataDir = (Get-Content -LiteralPath $dataPathFile -Raw).Trim()
 
 function Stop-RecordedProcess([string]$statePath, [string]$requiredMarker) {
   if (-not (Test-Path -LiteralPath $statePath)) { return }
+  $ownedProcessId = $null
   try {
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($state.Pid)" -ErrorAction Stop
     $actualExecutable = [IO.Path]::GetFullPath($process.ExecutablePath)
     $expectedExecutable = [IO.Path]::GetFullPath([string]$state.Executable)
     if ($actualExecutable -eq $expectedExecutable -and $process.CommandLine -like "*$requiredMarker*") {
-      Stop-Process -Id ([int]$state.Pid) -Force
+      $ownedProcessId = [int]$state.Pid
+      Stop-Process -Id $ownedProcessId -Force -ErrorAction Stop
+      for ($attempt = 0; $attempt -lt 100; $attempt += 1) {
+        if (-not (Get-Process -Id $ownedProcessId -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 100
+      }
+      if (Get-Process -Id $ownedProcessId -ErrorAction SilentlyContinue) {
+        throw "MARO could not stop its owned process $ownedProcessId. Close it before upgrading or uninstalling."
+      }
     }
   } catch {
+    if ($ownedProcessId) { throw }
     # A stale process record is safe to discard; executable and command-line checks prevent PID-reuse mistakes.
   } finally {
-    Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
+    if (-not $ownedProcessId -or -not (Get-Process -Id $ownedProcessId -ErrorAction SilentlyContinue)) {
+      Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
+    }
   }
 }
 
 Stop-RecordedProcess (Join-Path $dataDir "MARO.ngrok.json") "http://127.0.0.1:"
 Stop-RecordedProcess (Join-Path $dataDir "MARO.server.json") "dist\\index.cjs"
 Remove-Item -LiteralPath (Join-Path $dataDir "MARO.server.pid") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $dataDir "MARO.allowed-hosts.json") -Force -ErrorAction SilentlyContinue
 `
 );
 
@@ -419,6 +512,7 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using Microsoft.Win32;
 
 [assembly: AssemblyTitle("MARO Windows 11 Setup")]
@@ -459,6 +553,7 @@ namespace MAROInstaller
                 try
                 {
                     ExtractEmbeddedPayload(tempZip);
+                    StopExistingRuntime(installDir);
                     MigrateLegacyData(Path.Combine(installDir, "data"), dataDir);
                     EnsureProtectedLedgerKey(dataDir);
                     InstallPayloadAtomically(tempZip, installDir, dataDir);
@@ -538,6 +633,41 @@ namespace MAROInstaller
                 using (FileStream output = File.Create(destination))
                 {
                     input.CopyTo(output);
+                }
+            }
+        }
+
+        private static void StopExistingRuntime(string installDir)
+        {
+            string installMarker = Path.Combine(installDir, "MARO.install.json");
+            string stopScript = Path.Combine(installDir, "Stop-MARO.ps1");
+            if (!File.Exists(installMarker) || !File.Exists(stopScript))
+            {
+                return;
+            }
+
+            ProcessStartInfo start = new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = "-NoProfile -ExecutionPolicy Bypass -File \\\"" + stopScript + "\\\"",
+                WorkingDirectory = installDir,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using (Process process = Process.Start(start))
+            {
+                if (process == null)
+                {
+                    throw new InvalidOperationException("MARO could not start its existing runtime stop helper.");
+                }
+                if (!process.WaitForExit(30000))
+                {
+                    try { process.Kill(); } catch {}
+                    throw new IOException("MARO's existing runtime did not stop within 30 seconds. Close MARO and retry the installer.");
+                }
+                if (process.ExitCode != 0)
+                {
+                    throw new IOException("MARO's existing runtime could not be stopped safely. Close MARO and retry the installer.");
                 }
             }
         }
@@ -676,11 +806,11 @@ namespace MAROInstaller
             {
                 if (Directory.Exists(installDir))
                 {
-                    Directory.Move(installDir, previous);
+                    MoveDirectoryWithRetry(installDir, previous);
                     previousMoved = true;
                 }
 
-                Directory.Move(staging, installDir);
+                MoveDirectoryWithRetry(staging, installDir);
                 if (previousMoved)
                 {
                     TryDeleteDirectory(previous);
@@ -691,22 +821,56 @@ namespace MAROInstaller
                 TryDeleteDirectory(staging);
                 if (previousMoved && !Directory.Exists(installDir) && Directory.Exists(previous))
                 {
-                    Directory.Move(previous, installDir);
+                    MoveDirectoryWithRetry(previous, installDir);
                 }
                 throw;
             }
         }
 
+        private static void MoveDirectoryWithRetry(string source, string destination)
+        {
+            Exception lastError = null;
+            for (int attempt = 0; attempt < 40; attempt++)
+            {
+                try
+                {
+                    Directory.Move(source, destination);
+                    return;
+                }
+                catch (IOException ex)
+                {
+                    lastError = ex;
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    lastError = ex;
+                }
+
+                if (attempt < 39) Thread.Sleep(250);
+            }
+
+            throw new IOException(
+                "MARO could not replace its application files after waiting for Windows to release them. " +
+                "Close MARO and retry the installer; workspace data was not changed.",
+                lastError
+            );
+        }
+
         private static void TryDeleteDirectory(string directory)
         {
-            try
+            for (int attempt = 0; attempt < 20; attempt++)
             {
-                if (Directory.Exists(directory)) Directory.Delete(directory, true);
+                try
+                {
+                    if (Directory.Exists(directory)) Directory.Delete(directory, true);
+                    return;
+                }
+                catch (IOException) {}
+                catch (UnauthorizedAccessException) {}
+
+                if (attempt < 19) Thread.Sleep(250);
             }
-            catch
-            {
-                // A running previous version may keep old binaries locked; user data is stored elsewhere.
-            }
+            // A scanner may retain old binaries; user data is stored elsewhere and the next install can retry cleanup.
         }
 
         private static void RegisterUninstallEntry(string installDir, string dataDir)

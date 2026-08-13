@@ -110,7 +110,7 @@ The Express server now exposes operational API routes before serving the fronten
 
 All `POST`, `PATCH`, `PUT`, and `DELETE` requests under `/api` must include `X-MARO-Request: 1`. The app adds this marker automatically. Combined with the server's no-CORS policy, `Sec-Fetch-Site` check, and request-host allowlist, it prevents cross-site pages, form posts, and DNS-rebinding hosts from reading or changing the local ledger. Trusted local integrations must add the header explicitly.
 
-MARO accepts `localhost`, `127.0.0.1`, and IPv6 loopback hosts by default. Protected ngrok hosts are accepted only while tunnel mode is configured. Set `MARO_ALLOWED_HOSTS` to a comma-separated list of exact additional hosts when placing MARO behind a trusted local reverse proxy.
+MARO accepts `localhost`, `127.0.0.1`, and IPv6 loopback hosts by default. The launchers publish only the exact ngrok endpoint they created through a local, short-lived allowlist file; another `*.ngrok.app` Host is rejected even while tunnel authentication is configured. Set `MARO_ALLOWED_HOSTS` to a comma-separated list of exact additional hosts when placing MARO behind a trusted local reverse proxy.
 
 The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to store it elsewhere. Runtime ledger data is ignored by git. Writes use a flushed temporary file plus atomic replacement and retain `maro-ledger.json.backup` as the previous valid state. If the primary file becomes unreadable, MARO restores the rolling backup and records a high-risk recovery audit event.
 

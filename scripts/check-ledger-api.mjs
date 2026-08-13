@@ -9,6 +9,7 @@ const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const dataDir = path.join(root, "artifacts", "smoke-ledger-data");
 const ledgerFile = path.join(dataDir, "maro-ledger.json");
+const allowedHostsFile = path.join(dataDir, "maro-allowed-hosts.json");
 const port = Number(process.env.MARO_SMOKE_PORT || 3197);
 const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -99,6 +100,7 @@ async function expectFailure(pathname, options, status) {
 
 fs.rmSync(dataDir, { recursive: true, force: true });
 fs.mkdirSync(dataDir, { recursive: true });
+fs.writeFileSync(allowedHostsFile, JSON.stringify({ hosts: ["maro-approved.ngrok.app"] }), "utf8");
 
 const server = spawn(process.execPath, ["dist/index.cjs"], {
   cwd: root,
@@ -110,6 +112,8 @@ const server = spawn(process.execPath, ["dist/index.cjs"], {
     MARO_DATA_DIR: dataDir,
     MARO_LEDGER_PASSPHRASE: "smoke-test-ledger-passphrase",
     MARO_HAI_FEED_ENABLED: "1",
+    MARO_ALLOWED_HOSTS_FILE: allowedHostsFile,
+    NGROK_BASIC_AUTH: "smoke-user:smoke-password",
   },
   shell: false,
   stdio: ["ignore", "pipe", "pipe"],
@@ -132,6 +136,12 @@ try {
   const blockedHost = await fetchWithHost("/api/health", "attacker.example");
   assert(blockedHost.status === 421, "Unexpected request host was not blocked");
   assert(JSON.parse(blockedHost.body).error === "Request host is not allowed", "Unexpected request host returned the wrong error");
+
+  const blockedNgrokHost = await fetchWithHost("/api/health", "attacker.ngrok.app");
+  assert(blockedNgrokHost.status === 421, "Unowned ngrok Host was accepted while tunnel authentication was configured");
+
+  const approvedNgrokHost = await fetchWithHost("/api/health", "maro-approved.ngrok.app");
+  assert(approvedNgrokHost.status === 200, "Exact launcher-managed ngrok Host was not accepted");
 
   const ipv6LocalHost = await fetchWithHost("/api/health", `[::1]:${port}`);
   assert(ipv6LocalHost.status === 200, "IPv6 localhost Host value was not accepted");
@@ -190,7 +200,7 @@ try {
   assert(runtime.version === packageJson.version, "Runtime status did not report the package app version");
   assert(runtime.localUrl === baseUrl, "Runtime status did not report the smoke local URL");
   assert(runtime.tunnel.active === false, "Runtime status should not report an active tunnel during smoke test");
-  assert(runtime.auth.basicAuthConfigured === false, "Runtime status unexpectedly reported basic auth in smoke test");
+  assert(runtime.auth.basicAuthConfigured === true, "Runtime status did not report the smoke tunnel-auth configuration");
   assert(runtime.auth.publicTunnelExplicitlyAllowed === false, "Runtime status unexpectedly reported public tunnel opt-in in smoke test");
 
   const initialDashboard = await api("/api/dashboard");

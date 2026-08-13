@@ -7,7 +7,7 @@ Scope: active React command center, Express API, local ledger persistence, ngrok
 
 | Area | Finding | Resolution |
 | --- | --- | --- |
-| Network boundary | Same-origin mutation checks could be bypassed through an attacker-controlled Host value after DNS rebinding. | Added a fail-closed Host allowlist for localhost, exact configured hosts, and explicitly enabled ngrok domains; invalid hosts receive HTTP 421. |
+| Network boundary | Same-origin mutation checks could be bypassed through an attacker-controlled Host value after DNS rebinding. | Added a fail-closed Host allowlist for localhost, exact configured hosts, and the launcher's exact current ngrok endpoint; invalid or unrelated ngrok hosts receive HTTP 421. |
 | Persistence | Direct file replacement could leave a corrupt ledger after an interrupted write. | Added synchronized temporary writes, atomic replacement, a rolling backup, automatic audited recovery, and temporary-file cleanup. |
 | Restore safety | Backup shape checks did not prove references or IDs were internally consistent. | Added unique-ID and cross-record referential-integrity validation before restore. |
 | API semantics | Audited exports used GET while modifying audit state, and API/parser failures could fall through inconsistently. | Moved audited exports to guarded POST routes, standardized API JSON errors, added JSON limits, no-store API caching, and JSON 404 responses. |
