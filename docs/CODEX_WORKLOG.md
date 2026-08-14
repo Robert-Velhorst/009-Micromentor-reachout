@@ -9,6 +9,7 @@
 5. Added ownership-checked in-use upgrades and configuration-aware restarts so HAI, tunnel, Host, pause, and version changes cannot reuse a stale server environment.
 6. Removed broad ngrok suffix trust, added exact launcher-managed Host files, and proved the real endpoint returns `200` while another ngrok Host returns `421`.
 7. Repeated live installed-ngrok acceptance with Basic Auth (`401` without credentials), encrypted persistence, read-only HAI, exact target discovery, and complete teardown.
+8. Recovered fresh in-app Browser acceptance on the final bundle: desktop/mobile direct rendering, no horizontal overflow, clean console, working tab navigation, and a reversible privacy-control interaction all passed.
 
 ## 2026-08-08
 

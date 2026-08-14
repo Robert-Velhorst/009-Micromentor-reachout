@@ -18,4 +18,4 @@
 | Windows | Installer migrates legacy data, generates a DPAPI-protected key, runs encrypted, restarts changed runtime configuration, stops only its owned process, upgrades while open, and preserves ledger/key bytes. | `npm run check:release` |
 | Cloud | Dedicated ngrok HTTPS endpoint rejects unauthenticated access, serves the UI plus read-only HAI feed with valid Basic Auth, accepts only its exact Host, and rejects another ngrok Host. | `npm test` plus bounded live ngrok acceptance in `FINAL_VERIFICATION_REPORT.md` |
 
-Manual browser evidence must cover desktop and mobile layout, onboarding completion, pause/resume, do-not-contact, tab navigation, console errors, and network failures. Results are recorded in `FINAL_VERIFICATION_REPORT.md`.
+Manual browser evidence must cover desktop and mobile layout, onboarding completion, pause/resume, do-not-contact, tab navigation, reversible privacy controls, console errors, and network failures. Current and retained results are recorded in `FINAL_VERIFICATION_REPORT.md`.
