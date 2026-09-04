@@ -521,7 +521,7 @@ The React client and API are served from the same origin.
 ### Request rules
 
 - All API responses use `Cache-Control: no-store`.
-- JSON bodies are limited to 1 MB.
+- Ordinary JSON request bodies are limited to 1 MiB. Only POST requests to workspace restore and restore preview accept up to 16 MiB, including the JSON wrapper and escaping. Larger backups require a separate, tested recovery solution; do not assume every export fits this limit.
 - Each remote address is limited to 300 API requests per 60-second window.
 - All `POST`, `PATCH`, `PUT`, and `DELETE` requests require `X-MARO-Request: 1`.
 - Cross-site browser mutations are rejected.
@@ -670,6 +670,7 @@ Reset supports queue, mentor, and complete-workspace scopes and requires explici
 | `npm run doctor` | Validate runtime, lockfile, data directory, encryption, tunnel, and safety configuration |
 | `npm run check` | Type-check client and Node build code |
 | `npm run check:api` | Build and run the encrypted API smoke workflow |
+| `npm run check:operational` | Build and test 1,000 synthetic profiles, request-size guards, backup recovery, and forced restart; write server measurements to `artifacts/operational-check.json` |
 | `npm test` | Run the production API suite and manual-handoff extension checks |
 | `npm run audit:security` | Run `npm audit --audit-level=low` |
 | `npm run check:release` | Run the complete local release gate, including Windows installation acceptance on Windows |

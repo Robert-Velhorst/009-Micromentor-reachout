@@ -3263,7 +3263,7 @@ export function registerLedgerRoutes(app: Express) {
       valid: true,
       summary: workspaceSummary(validation.state),
     };
-  }));
+  }, { persist: false }));
 
   app.post("/api/workspace/restore", route((req, res, state) => {
     if (req.body?.confirm !== true) return jsonError(res, 400, "Restore requires confirm=true");

@@ -204,6 +204,11 @@ async function startServer() {
     res.setHeader("Cache-Control", "no-store");
     next();
   });
+  // Portable backups include the whole ledger, not a single edited record.
+  app.post(
+    ["/api/workspace/restore", "/api/workspace/restore/preview"],
+    express.json({ limit: "16mb", type: "application/json" })
+  );
   app.use(express.json({ limit: "1mb", type: "application/json" }));
 
   app.use("/api", (req, res, next) => {

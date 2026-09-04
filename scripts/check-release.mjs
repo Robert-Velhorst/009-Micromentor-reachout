@@ -245,6 +245,7 @@ await runNpm("Dependency security audit", ["run", "audit:security"]);
 await runNpm("TypeScript contract check", ["run", "check"]);
 await runNpm("Manual handoff extension checks", ["run", "check:extension"]);
 await runNpm("Build plus encrypted ledger API smoke test", ["run", "check:api"]);
+await run("Large workspace and recovery checks", process.execPath, ["scripts/check-operational.mjs"]);
 
 if (process.platform === "win32") {
   await run("Windows installer build", process.execPath, ["scripts/build-windows-installer.mjs"]);

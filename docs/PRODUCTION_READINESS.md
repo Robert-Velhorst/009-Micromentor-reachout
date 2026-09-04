@@ -7,7 +7,8 @@ published as a signed release.
 ## Verified on the current candidate
 
 The full `npm run check:release` passed locally on Windows 11 Pro x64, using
-Node.js 22.23.2. The local output is `artifacts/release-check-2026-09-05.log`.
+Node.js 22.23.2. The latest local output is
+`artifacts/release-check-operational-2026-09-05.log`.
 
 | Requirement | Evidence |
 | --- | --- |
@@ -20,6 +21,8 @@ Node.js 22.23.2. The local output is `artifacts/release-check-2026-09-05.log`.
 | Installed startup | Encrypted runtime started with development tools removed from PATH |
 | Upgrade | Stopped and in-use upgrades preserved encrypted ledger and DPAPI key bytes |
 | Portable recovery | Exported synthetic data restored into a second installation with its own freshly generated key; campaign/project relationship and persistence after restart verified |
+| Larger workspace | 1,000 synthetic profiles imported through the API, exported, restored with exact profile-field comparison, and retained after forced process termination |
+| Recovery boundaries | Restore preview leaves both encrypted files byte-identical; oversized requests rejected; corrupt primary recovers from rotating backup with integrity and audit checks |
 | Process cleanup | Test runtimes stopped and temporary installations cleaned up |
 
 The initial recovery attempt correctly rejected the old migration test fixture:
@@ -37,7 +40,7 @@ Node 22 remains within its maintenance support period according to the
 - File: `artifacts/MARO-Windows11-Setup.exe`
 - Candidate version: 1.2.3
 - Size: 33,661,952 bytes
-- SHA-256: `4933910A93CADE7DC5DF3721B32E34756C771C87DC8FB232E6D368E1F9074A52`
+- SHA-256: `DF295C76BA857A9786794C3C9FF664170BA2E25321CBC7B05CDCFBFE5227A7E5`
 - Signature: unsigned. No code-signing certificate was found in the current user's Windows certificate store.
 
 This hash identifies the local binary, not a future CI rebuild. Installer builds
@@ -64,10 +67,10 @@ repository security assessment or proof that every advisory was reachable in MAR
 | --- | --- |
 | Installed extension | Pending. The 2026-09-04 live test exercised the fill function directly, not the popup or `chrome.scripting`. Browser security policy now blocks agent access to `chrome://extensions`; the operator must load the trusted unpacked extension manually. A complete approval-to-fill test is still required. |
 | Clean Windows 11 and another user account | Pending. Two isolated installations and fresh keys were tested under the same existing Windows account. The restricted PATH test is not a clean-OS test. Windows Sandbox was not available as a command on this host. |
-| GitHub checks | CI is configured to run the full Windows release gate, including portable recovery. Completion of a run on the submitted revision must be checked separately. |
+| GitHub checks | Prior revision `dfe13c7` passed Linux and Windows in [run 33928007382](https://github.com/Robert-Velhorst/009-Micromentor-reachout/actions/runs/33928007382). New larger-workspace changes require their own successful submitted-revision run. |
 | Signed distribution | Pending publisher signing setup and verification on a clean Windows device. No certificate was purchased and no store submission was made. |
 | Extension distribution | Unpacked development installation is available. Ordinary user distribution still needs a supported browser-store release process. |
-| Operational pilot | Sustained usage, larger datasets, network failure and support/recovery exercises remain to be evaluated on the candidate; older performance figures are not a fresh benchmark. |
+| Operational pilot | The bounded 1,000-profile API/recovery exercise passes; see [operational evidence](OPERATIONAL_VALIDATION.md). Dashboard latency is still an optimization target. Sustained real usage, browser rendering, failures during an unacknowledged write, disk-full conditions, ngrok outages, and larger-than-tested datasets remain open. |
 | Dutch interface | Full translation remains open; storing a locale preference is not a complete Dutch UI. |
 
 ## Installed-extension acceptance procedure

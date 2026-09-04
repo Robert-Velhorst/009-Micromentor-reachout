@@ -21,6 +21,13 @@ jobs:
       - run: npm run check
       - run: npm run audit:security
       - run: npm test
+      - run: node scripts/check-operational.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: operational-check-linux
+          path: artifacts/operational-check.json
+          if-no-files-found: ignore
       - run: docker build -t maro:ci .
 
   windows-installer:
@@ -34,6 +41,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:release
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: operational-check-windows
+          path: artifacts/operational-check.json
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         with:
           name: MARO-Windows11-Setup

@@ -2,6 +2,9 @@
 
 ## 1.2.3 - Unreleased
 
+- Allow portable restore requests up to 16 MiB without raising the ordinary 1 MiB API limit.
+- Keep restore preview read-only, preserving the encrypted ledger and its rotating backup.
+- Add isolated 1,000-profile import, recovery, crash-restart, and resource measurements to Linux CI and the Windows release gate.
 - Match current MicroMentor profile and request routes while rejecting unsupported destinations.
 - Guide operators to activate the Flutter message editor and retain manual-copy fallback.
 - Recheck handoff expiry on click, after tab lookup, and inside the target page; stop on destination changes before touching a field.
