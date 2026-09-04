@@ -306,8 +306,8 @@ if (process.platform === "win32") {
     ], { env: installedEnvironment });
 
     const installedDataPath = fs.readFileSync(path.join(installRoot, "MARO.data-path.txt"), "utf8").trim();
-    if (path.resolve(installedDataPath) !== path.resolve(dataRoot)) {
-      throw new Error("Installed launcher does not point at the isolated workspace data directory");
+    if (fs.realpathSync.native(installedDataPath) !== fs.realpathSync.native(dataRoot)) {
+      throw new Error(`Installed launcher data directory differs: ${installedDataPath} versus ${dataRoot}`);
     }
     const migratedLedgerPath = path.join(dataRoot, "maro-ledger.json");
     if (fs.readFileSync(migratedLedgerPath, "utf8") !== legacyLedger) {
