@@ -19,8 +19,8 @@ The application runs as one React and Express process backed by an atomic local 
 | Public access | Optional ngrok HTTPS endpoint protected by Traffic Policy Basic Auth |
 | HAI integration | Disabled-by-default, read-only `generic_json_feed` |
 | Provider automation | None; MicroMentor discovery and sending are manual |
-| Current package version | `1.2.2` |
-| Supported development runtime | Node.js 20 or newer; CI and Docker use Node.js 22 |
+| Current package version | `1.2.3` |
+| Supported development runtime | Node.js 22 LTS; CI and Windows packaging use the exact version in `.node-version` |
 
 ## Who This Repository Is For
 
@@ -283,7 +283,7 @@ Uninstall removes the application but intentionally keeps `%LOCALAPPDATA%\MARO-D
 
 ### Requirements
 
-- Node.js 20 or newer
+- Node.js 22 LTS (use the exact version in `.node-version` for Windows packaging)
 - npm
 - Git
 - Windows 11, macOS, or Linux
@@ -475,12 +475,13 @@ It has no background worker, persistent host permission, storage, queue processo
 
 1. Approve the exact message in MARO.
 2. Choose **Copy for extension**.
-3. Open the matching MicroMentor profile.
-4. Open the extension and paste the package.
-5. Choose **Fill approved draft**.
-6. Review the populated fields and press Send manually.
+3. Open the matching MicroMentor profile and choose **Request Mentorship**.
+4. Click the **Customize your message** box once so MicroMentor activates its editor.
+5. Open the extension and paste the package.
+6. Choose **Fill approved draft**.
+7. Review the populated message and press Send manually.
 
-Handoff packages expire after ten minutes. If direct field filling is unavailable, the extension falls back to copying the approved subject and body for manual paste.
+Handoff packages expire after ten minutes. If the MicroMentor editor is not activated or direct field filling is unavailable, the extension falls back to copying the approved subject and body for manual paste. The extension never sends a request.
 
 ## Configuration Reference
 
@@ -669,7 +670,7 @@ Reset supports queue, mentor, and complete-workspace scopes and requires explici
 | `npm run doctor` | Validate runtime, lockfile, data directory, encryption, tunnel, and safety configuration |
 | `npm run check` | Type-check client and Node build code |
 | `npm run check:api` | Build and run the encrypted API smoke workflow |
-| `npm test` | Run the current production API test suite |
+| `npm test` | Run the production API suite and manual-handoff extension checks |
 | `npm run audit:security` | Run `npm audit --audit-level=low` |
 | `npm run check:release` | Run the complete local release gate, including Windows installation acceptance on Windows |
 | `npm run format` | Format the repository with Prettier |
@@ -708,23 +709,28 @@ The gate runs:
 2. `npm run doctor`;
 3. dependency vulnerability audit;
 4. both TypeScript checks;
-5. production build and encrypted API workflow;
-6. Windows installer build;
-7. isolated legacy migration;
-8. installed encrypted runtime launch;
-9. configuration-triggered restart;
-10. ownership-checked stop;
+5. manual-handoff extension checks, including popup expiry and target-page guards;
+6. production build and encrypted API workflow;
+7. Windows installer build using the exact x64 Node version in `.node-version`;
+8. isolated legacy migration and bundled-runtime identity check;
+9. installed encrypted runtime launch without development tools on PATH;
+10. configuration-triggered restart and ownership-checked stop;
 11. stopped and in-use upgrade preservation;
-12. final installer SHA-256 output.
+12. portable backup restore into a fresh installation with a new encryption key, followed by restart;
+13. final installer SHA-256 output.
 
 ### Continuous integration
 
 GitHub Actions runs on every push and pull request:
 
 - Ubuntu: clean install, doctor, typecheck, security audit, tests, and Docker build.
-- Windows: clean install, installer build, and `MARO-Windows11-Setup` artifact upload.
+- Windows: clean dependency install, the complete release gate above, and `MARO-Windows11-Setup` artifact upload after acceptance passes.
 
-The current final verification report records successful browser, Docker, ngrok, HAI, fresh-source, and Windows acceptance. See [`docs/FINAL_VERIFICATION_REPORT.md`](docs/FINAL_VERIFICATION_REPORT.md).
+The 1.2.3 candidate's checks and remaining acceptance work are recorded in
+[`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md). Historical browser,
+Docker, ngrok, HAI and Windows evidence for 1.2.2 remains in
+[`docs/FINAL_VERIFICATION_REPORT.md`](docs/FINAL_VERIFICATION_REPORT.md); it does not
+by itself verify the current candidate.
 
 ### Last measured resource baseline
 
@@ -834,6 +840,7 @@ Use the extension's copy fallback and paste manually when provider form structur
 | [`docs/UI_ACTION_AUDIT.md`](docs/UI_ACTION_AUDIT.md) | Mapping from user controls to real behavior |
 | [`docs/GOAL_COMPLETION_MATRIX.md`](docs/GOAL_COMPLETION_MATRIX.md) | Requirements traceability across phases 000 through 115 |
 | [`docs/FINAL_VERIFICATION_REPORT.md`](docs/FINAL_VERIFICATION_REPORT.md) | Final installer, browser, Docker, ngrok, HAI, and performance evidence |
+| [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) | Current candidate evidence and remaining production acceptance work |
 | [`CHANGELOG.md`](CHANGELOG.md) | Version-by-version changes |
 | [`analysis/ENHANCEMENT_BACKLOG.md`](analysis/ENHANCEMENT_BACKLOG.md) | Candidate future product improvements |
 

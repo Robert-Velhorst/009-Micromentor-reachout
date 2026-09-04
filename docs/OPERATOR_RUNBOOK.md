@@ -45,6 +45,10 @@ Open `http://127.0.0.1:8080`. Data is stored in the named `maro-data` volume.
 
 ## Windows Installer
 
+Build with the exact Node.js x64 version in `.node-version`. Other build runtimes
+are rejected before packaging so the installer cannot silently bundle an
+untested Node version. End users do not need to install Node themselves.
+
 ```powershell
 npm.cmd run installer:win
 ```
@@ -52,6 +56,15 @@ npm.cmd run installer:win
 Run `artifacts\MARO-Windows11-Setup.exe`. The installer is currently unsigned; verify its SHA-256 from the release output before distribution.
 
 The installed app keeps replaceable binaries under `%LOCALAPPDATA%\MARO` and durable encrypted data under `%LOCALAPPDATA%\MARO-Data`. Its per-user ledger key is DPAPI protected. Upgrade migrates a legacy `MARO\data` workspace, preserves conflicts as `.legacy-*` files, and retains data on uninstall. Do not delete `MARO-Data` unless a verified workspace backup exists and permanent removal is intentional.
+
+For transfer to another Windows account or computer, export a portable workspace
+backup through MARO while the original workspace is still accessible. Install MARO
+in the destination account, preview that exported backup, then confirm restore.
+Do not assume that copying the encrypted ledger and its DPAPI key file to another
+account will work. Exported JSON backups contain personal data; keep them in a
+protected location. The automated release test uses two separate installations
+and keys in one Windows account; a different-account test remains a separate
+acceptance step.
 
 The installer can upgrade MARO while it is open: it runs the ownership-checked stop helper, waits for full process exit, rotates application files atomically, and leaves workspace data untouched. Rerunning the launcher after HAI, tunnel, Host, pause, or version settings change restarts only MARO's recorded server so the new environment takes effect.
 

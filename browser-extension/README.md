@@ -11,7 +11,16 @@ This Manifest V3 extension fills one short-lived, approved MARO handoff package 
 ## Use
 
 1. Approve the exact message in MARO and choose **Copy for extension**.
-2. Open the matching mentor profile, open this extension, and paste the package.
-3. Choose **Fill approved draft**, review the populated fields, and send manually on MicroMentor.
+2. Open the matching mentor profile and choose **Request Mentorship**.
+3. Click the **Customize your message** box once so MicroMentor activates its editor, then open this extension and paste the package.
+4. Choose **Fill approved draft**, review the populated message, and send manually on MicroMentor.
 
-The package expires after ten minutes. If form filling is unavailable, the extension copies the approved subject and body for manual paste.
+The package expires after ten minutes. If the editor is not activated or the form structure changes, the extension copies the approved subject and body for manual paste. It never sends a request.
+
+## Verification status
+
+The fill function passed an approved, unsent test against MicroMentor's live
+Flutter editor on 2026-09-04. The in-app browser did not support extension
+installation, so the full installed-popup workflow remains unverified. See the
+[live check report](../docs/MICROMENTOR_LIVE_CHECK_2026-09-04.md) for the procedure,
+observed results, cleanup, and remaining acceptance check.

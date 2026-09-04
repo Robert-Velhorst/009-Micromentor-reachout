@@ -66,6 +66,11 @@ if (process.platform !== "win32") {
   throw new Error("The Windows installer can only be built on Windows.");
 }
 
+const releaseNodeVersion = fs.readFileSync(path.join(root, ".node-version"), "utf8").trim();
+if (process.versions.node !== releaseNodeVersion || process.arch !== "x64") {
+  throw new Error(`Build the Windows x64 installer with Node.js ${releaseNodeVersion} x64 from .node-version; got ${process.version} ${process.arch}.`);
+}
+
 if (!fs.existsSync(path.join(root, "dist", "index.cjs"))) {
   throw new Error("dist/index.cjs is missing. Run npm run build before building the installer.");
 }
@@ -462,6 +467,8 @@ writeText(
       name: "MARO",
       displayName: "MARO - Micromentor Reachout Console",
       version: appVersion,
+      nodeVersion: process.versions.node,
+      architecture: process.arch,
       publisher,
       installedBy: "MARO Windows installer",
     },

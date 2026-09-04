@@ -23,6 +23,7 @@ function run(label, command, args, options = {}) {
       windowsHide: true,
     });
 
+    child.once("error", reject);
     child.on("exit", (code) => {
       if (code === 0) {
         resolve();
@@ -72,6 +73,20 @@ async function waitForJson(url, predicate, timeoutMs = 15000) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(`Timed out waiting for ${url}`);
+}
+
+async function installedApi(port, pathname, body) {
+  const response = await fetch(`http://127.0.0.1:${port}${pathname}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { "Content-Type": "application/json", "X-MARO-Request": "1" },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    const failure = await response.json().catch(() => ({}));
+    throw new Error(`Installed API ${pathname} returned ${response.status}: ${failure.error || "unknown error"}`);
+  }
+  return response.json();
 }
 
 async function terminateProcess(pid) {
@@ -228,6 +243,7 @@ for (const filename of requiredDocs) {
 await runNpm("Doctor preflight", ["run", "doctor"]);
 await runNpm("Dependency security audit", ["run", "audit:security"]);
 await runNpm("TypeScript contract check", ["run", "check"]);
+await runNpm("Manual handoff extension checks", ["run", "check:extension"]);
 await runNpm("Build plus encrypted ledger API smoke test", ["run", "check:api"]);
 
 if (process.platform === "win32") {
@@ -236,7 +252,11 @@ if (process.platform === "win32") {
   const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "maro-installer-smoke-"));
   const installRoot = path.join(testRoot, "app");
   const dataRoot = path.join(testRoot, "workspace-data");
-  const legacyLedger = JSON.stringify({ schemaVersion: 1, migratedByReleaseSmoke: true });
+  const legacyLedger = JSON.stringify({
+    schemaVersion: 1,
+    migratedByReleaseSmoke: true,
+    operators: [{ id: "local-operator", name: "Installer test operator", createdAt: "2026-01-01T00:00:00.000Z" }],
+  });
   fs.mkdirSync(path.join(installRoot, "data"), { recursive: true });
   fs.writeFileSync(path.join(installRoot, "data", "maro-ledger.json"), legacyLedger, "utf8");
   const installerEnvironment = {
@@ -246,6 +266,12 @@ if (process.platform === "win32") {
     MARO_SKIP_SHORTCUTS: "1",
     MARO_SKIP_REGISTRY: "1",
     MARO_SKIP_LAUNCH: "1",
+  };
+  // Installed launch must not depend on Node/npm or other development tools on PATH.
+  const windowsRoot = process.env.SystemRoot || "C:\\Windows";
+  const installedEnvironment = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== "PATH")),
+    PATH: [windowsRoot, path.join(windowsRoot, "System32"), path.join(windowsRoot, "System32", "WindowsPowerShell", "v1.0")].join(path.delimiter),
   };
   let installedServerPid = 0;
   try {
@@ -270,6 +296,14 @@ if (process.platform === "win32") {
         throw new Error(`Installed payload is missing ${relativePath}`);
       }
     }
+    const installedManifest = JSON.parse(fs.readFileSync(path.join(installRoot, "MARO.install.json"), "utf8"));
+    const releaseNodeVersion = fs.readFileSync(path.join(process.cwd(), ".node-version"), "utf8").trim();
+    if (installedManifest.nodeVersion !== releaseNodeVersion || installedManifest.architecture !== "x64") {
+      throw new Error("Installer manifest does not identify the pinned x64 runtime");
+    }
+    await run("Installed bundled runtime executable", path.join(installRoot, "runtime", "node.exe"), [
+      "-e", `if(process.versions.node !== ${JSON.stringify(releaseNodeVersion)}) process.exit(1); console.log(process.version);`,
+    ], { env: installedEnvironment });
 
     const installedDataPath = fs.readFileSync(path.join(installRoot, "MARO.data-path.txt"), "utf8").trim();
     if (path.resolve(installedDataPath) !== path.resolve(dataRoot)) {
@@ -292,13 +326,14 @@ if (process.platform === "win32") {
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(installRoot, "MARO.ps1")],
       {
         env: {
-          ...process.env,
+          ...installedEnvironment,
           PORT: String(installedPort),
           MARO_SKIP_BROWSER: "1",
           MARO_SKIP_NGROK: "1",
         },
       }
     );
+    installedServerPid = Number(fs.readFileSync(path.join(dataRoot, "MARO.server.pid"), "utf8").trim());
     const health = await waitForJson(
       `http://127.0.0.1:${installedPort}/api/health`,
       (value) => value?.ok === true
@@ -308,6 +343,14 @@ if (process.platform === "win32") {
     if (!readiness.checks?.ledgerReadable || health.persistence !== "encrypted-json" || !health.storage?.encrypted) {
       throw new Error("Installed Windows runtime did not start with readable encrypted persistence");
     }
+    const recoveryProject = await installedApi(installedPort, "/api/projects", {
+      title: "Portable recovery test", description: "Disposable installer acceptance data",
+    });
+    const recoveryCampaign = await installedApi(installedPort, "/api/campaigns", {
+      projectId: recoveryProject.project.id, title: "Recovery acceptance campaign",
+      goal: "Verify portable backup across fresh installation keys.",
+    });
+    const portableBackup = await installedApi(installedPort, "/api/workspace/backup", {});
 
     installedServerPid = Number(fs.readFileSync(path.join(dataRoot, "MARO.server.pid"), "utf8").trim());
     if (!Number.isInteger(installedServerPid) || installedServerPid <= 0) {
@@ -320,7 +363,7 @@ if (process.platform === "win32") {
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(installRoot, "MARO.ps1")],
       {
         env: {
-          ...process.env,
+          ...installedEnvironment,
           PORT: String(installedPort),
           MARO_SKIP_BROWSER: "1",
           MARO_SKIP_NGROK: "1",
@@ -373,7 +416,7 @@ if (process.platform === "win32") {
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(installRoot, "MARO.ps1")],
       {
         env: {
-          ...process.env,
+          ...installedEnvironment,
           PORT: String(installedPort),
           MARO_SKIP_BROWSER: "1",
           MARO_SKIP_NGROK: "1",
@@ -399,6 +442,47 @@ if (process.platform === "win32") {
     if (createHash("sha256").update(fs.readFileSync(protectedKeyPath)).digest("hex") !== protectedKeyHash) {
       throw new Error("In-use installer upgrade replaced the existing DPAPI ledger key");
     }
+
+    const recoveryInstallRoot = path.join(testRoot, "recovery-app");
+    const recoveryDataRoot = path.join(testRoot, "recovery-data");
+    await run("Windows fresh installation for portable recovery", installerPath, [], {
+      env: { ...installerEnvironment, MARO_INSTALL_DIR: recoveryInstallRoot, MARO_USER_DATA_DIR: recoveryDataRoot },
+    });
+    const newKeyHash = createHash("sha256").update(fs.readFileSync(path.join(recoveryDataRoot, "ledger-key.dpapi"))).digest("hex");
+    if (newKeyHash === protectedKeyHash) throw new Error("Recovery installation did not generate an independent key");
+    const recoveryPort = await availablePort();
+    await run("Windows fresh recovery runtime launch", "powershell.exe", [
+      "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(recoveryInstallRoot, "MARO.ps1"),
+    ], { env: { ...installedEnvironment, PORT: String(recoveryPort), MARO_SKIP_BROWSER: "1", MARO_SKIP_NGROK: "1" } });
+    installedServerPid = Number(fs.readFileSync(path.join(recoveryDataRoot, "MARO.server.pid"), "utf8").trim());
+    await waitForJson(`http://127.0.0.1:${recoveryPort}/api/health`, (value) => value?.storage?.encrypted === true);
+    const preview = await installedApi(recoveryPort, "/api/workspace/restore/preview", { backupJson: JSON.stringify(portableBackup) });
+    if (!preview.valid) throw new Error("Fresh installation rejected a valid portable backup");
+    await installedApi(recoveryPort, "/api/workspace/restore", { backupJson: JSON.stringify(portableBackup), confirm: true });
+    const restoredCampaign = await installedApi(recoveryPort, `/api/campaigns/${recoveryCampaign.campaign.id}`);
+    if (restoredCampaign.campaign.title !== recoveryCampaign.campaign.title || restoredCampaign.campaign.projectId !== recoveryProject.project.id) {
+      throw new Error("Fresh installation did not restore campaign data and project relationship");
+    }
+    await run("Windows recovered runtime stop", "powershell.exe", [
+      "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(recoveryInstallRoot, "Stop-MARO.ps1"),
+    ]);
+    await waitForProcessExit(installedServerPid);
+    installedServerPid = 0;
+    await run("Windows recovered runtime restart", "powershell.exe", [
+      "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(recoveryInstallRoot, "MARO.ps1"),
+    ], { env: { ...installedEnvironment, PORT: String(recoveryPort), MARO_SKIP_BROWSER: "1", MARO_SKIP_NGROK: "1" } });
+    installedServerPid = Number(fs.readFileSync(path.join(recoveryDataRoot, "MARO.server.pid"), "utf8").trim());
+    await waitForJson(`http://127.0.0.1:${recoveryPort}/api/health`, (value) => value?.storage?.encrypted === true);
+    const persistedRecovery = await installedApi(recoveryPort, `/api/campaigns/${recoveryCampaign.campaign.id}`);
+    if (persistedRecovery.campaign.title !== recoveryCampaign.campaign.title) {
+      throw new Error("Restored data did not survive restart under the new encryption key");
+    }
+    await run("Windows recovered runtime final stop", "powershell.exe", [
+      "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(recoveryInstallRoot, "Stop-MARO.ps1"),
+    ]);
+    await waitForProcessExit(installedServerPid);
+    installedServerPid = 0;
+    console.log("[release-check] Portable backup restored and restarted with an independent Windows key.");
 
     const installerBytes = fs.readFileSync(installerPath);
     const installerHash = createHash("sha256").update(installerBytes).digest("hex").toUpperCase();

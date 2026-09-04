@@ -7,7 +7,7 @@ const root = process.cwd();
 const results = [];
 const check = (name, ok, detail, required = true) => results.push({ name, ok, detail, required });
 const major = Number(process.versions.node.split(".")[0]);
-check("Node.js", major >= 20, `${process.version} (20 or newer required)`);
+check("Node.js", major === 22, `${process.version} (Node.js 22 LTS required; Windows releases use .node-version)`);
 check("Lockfile", fs.existsSync(path.join(root, "package-lock.json")), "package-lock.json is required for reproducible installs");
 check("Dependencies", fs.existsSync(path.join(root, "node_modules")), "run npm ci when missing");
 check("Build output", fs.existsSync(path.join(root, "dist", "index.cjs")) && fs.existsSync(path.join(root, "dist", "public", "index.html")), "run npm run build when missing", false);

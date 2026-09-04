@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.3 - Unreleased
+
+- Match current MicroMentor profile and request routes while rejecting unsupported destinations.
+- Guide operators to activate the Flutter message editor and retain manual-copy fallback.
+- Recheck handoff expiry on click, after tab lookup, and inside the target page; stop on destination changes before touching a field.
+- Add popup lifecycle, expiry, recipient, and editor regression coverage to the release gate.
+- Run installed Windows acceptance in CI, including upgrades and portable recovery under a fresh encryption key.
+- Pin the Windows build runtime to Node.js 22.23.2 x64 and test installed launch without development tools on PATH.
+- Update Browserslist and its data dependencies; override qs to patched 6.16.0 pending an Express dependency update.
+
 ## 1.2.2 - 2026-08-14
 
 - Made Windows upgrades wait for the owned MARO processes to fully exit before application files are replaced.

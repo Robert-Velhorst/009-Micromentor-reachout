@@ -1,6 +1,6 @@
 {
   "name": "mentor-messenger-landing",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -13,7 +13,8 @@
     "preview": "npm run tunnel",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "check:api": "npm run build && node scripts/check-ledger-api.mjs",
-    "test": "npm run check:api",
+    "check:extension": "node scripts/check-manual-handoff-extension.mjs",
+    "test": "npm run check:api && npm run check:extension",
     "doctor": "node scripts/doctor.mjs",
     "audit:security": "npm audit --audit-level=low",
     "check:release": "node scripts/check-release.mjs",
@@ -31,6 +32,9 @@
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.4.0",
     "wouter": "^3.3.1"
+  },
+  "overrides": {
+    "qs": "6.16.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.18",

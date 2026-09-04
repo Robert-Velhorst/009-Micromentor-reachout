@@ -10,7 +10,7 @@ function microMentorUrl(value) {
   const parsed = new URL(value);
   const hostname = parsed.hostname.toLowerCase();
   if (
-    parsed.protocol !== "https:" ||
+    parsed.protocol !== "https:" || parsed.port || parsed.username || parsed.password ||
     (hostname !== "micromentor.org" && !hostname.endsWith(".micromentor.org"))
   ) {
     throw new Error("The package does not point to a MicroMentor profile.");
@@ -20,7 +20,20 @@ function microMentorUrl(value) {
 
 function comparableProfileUrl(value) {
   const parsed = microMentorUrl(value);
-  return `${parsed.hostname.toLowerCase()}${parsed.pathname.replace(/\/+$/, "") || "/"}`;
+  const hostname = parsed.hostname.toLowerCase();
+  const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+  const appProfileMatch =
+    hostname === "app.micromentor.org"
+      ? pathname.match(/^\/profile\/([A-Za-z0-9_-]+)$/) ||
+        pathname.match(/^\/profile\/invite\/([A-Za-z0-9_-]+)$/)
+      : null;
+  if (appProfileMatch) return `${hostname}/profile/${appProfileMatch[1]}`;
+  const classicProfileMatch =
+    hostname === "classic.micromentor.org"
+      ? pathname.match(/^\/mentors\/[^/]+$/)
+      : null;
+  if (classicProfileMatch) return `${hostname}${pathname}`;
+  throw new Error("The URL is not a supported MicroMentor mentor profile.");
 }
 
 function parseHandoff(value) {
@@ -88,7 +101,22 @@ function validateInput() {
   }
 }
 
-function fillApprovedDraft(subject, body) {
+function fillApprovedDraft(subject, body, guard) {
+  // The tab may navigate after the popup checked it. Verify again in the target.
+  const expiresAt = new Date(guard?.expiresAt).getTime();
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    return { filledBody: false, filledSubject: false, blockedReason: "This handoff package expired. Copy a fresh package from MARO." };
+  }
+  const currentUrl = new URL(window.location.href);
+  let currentPath = currentUrl.pathname.replace(/\/+$/, "") || "/";
+  if (currentUrl.hostname === "app.micromentor.org") {
+    currentPath = currentPath.replace(/^\/profile\/invite\//, "/profile/");
+  }
+  if (currentUrl.protocol !== "https:" || currentUrl.port || currentUrl.username || currentUrl.password ||
+      `${currentUrl.hostname}${currentPath}` !== guard?.profile) {
+    return { filledBody: false, filledSubject: false, blockedReason: "The page changed and no longer matches the approved mentor profile." };
+  }
+  const needsFocusedFlutterEditor = Boolean(document.querySelector("flt-glass-pane"));
   const visible = element => {
     const style = window.getComputedStyle(element);
     const rect = element.getBoundingClientRect();
@@ -174,19 +202,27 @@ function fillApprovedDraft(subject, body) {
       ? rankedBodies[0].element
       : null;
 
-  if (!bodyField) return { filledBody: false, filledSubject: false };
+  if (!bodyField) {
+    return {
+      filledBody: false,
+      filledSubject: false,
+      needsFocusedFlutterEditor,
+    };
+  }
   if (subject && subjectField?.score > 0)
     setValue(subjectField.element, subject);
   setValue(bodyField, body);
   return {
     filledBody: true,
     filledSubject: Boolean(subject && subjectField?.score > 0),
+    needsFocusedFlutterEditor: false,
   };
 }
 
 async function copyFallback() {
+  const handoff = parseHandoff(packageInput.value.trim());
   await navigator.clipboard.writeText(
-    `Subject: ${approvedHandoff.subject}\n\n${approvedHandoff.body}`
+    `Subject: ${handoff.subject}\n\n${handoff.body}`
   );
 }
 
@@ -198,12 +234,19 @@ clearButton.addEventListener("click", () => {
 });
 
 fillButton.addEventListener("click", async () => {
+  if (!approvedHandoff || fillButton.disabled) return;
+  validateInput();
   if (!approvedHandoff) return;
+  fillButton.disabled = true;
+  packageInput.disabled = true;
+  clearButton.disabled = true;
   try {
     const [tab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,
     });
+    // A popup can remain open beyond the package lifetime, including during lookup.
+    approvedHandoff = parseHandoff(packageInput.value.trim());
     if (!tab?.id || !tab.url)
       throw new Error("Open the mentor's MicroMentor profile first.");
     if (
@@ -217,12 +260,21 @@ fillButton.addEventListener("click", async () => {
     const [execution] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: fillApprovedDraft,
-      args: [approvedHandoff.subject, approvedHandoff.body],
+      args: [approvedHandoff.subject, approvedHandoff.body, {
+        profile: comparableProfileUrl(approvedHandoff.profileUrl),
+        expiresAt: approvedHandoff.expiresAt,
+      }],
     });
+    if (execution?.result?.blockedReason) {
+      setStatus(execution.result.blockedReason, true);
+      return;
+    }
     if (!execution?.result?.filledBody) {
       await copyFallback();
       setStatus(
-        "No message field was found. The approved message was copied for manual paste.",
+        execution?.result?.needsFocusedFlutterEditor
+          ? "MicroMentor needs its message box activated first. Close this popup, click \"Customize your message\", then reopen MARO and fill again. The approved message was copied for manual paste."
+          : "No message field was found. The approved message was copied for manual paste.",
         true
       );
       return;
@@ -233,6 +285,10 @@ fillButton.addEventListener("click", async () => {
         : "Message filled. Review it on MicroMentor before sending."
     );
   } catch (error) {
+    if (new Date(approvedHandoff?.expiresAt).getTime() <= Date.now()) {
+      validateInput();
+      return;
+    }
     try {
       await copyFallback();
       setStatus(
@@ -247,5 +303,9 @@ fillButton.addEventListener("click", async () => {
         true
       );
     }
+  } finally {
+    packageInput.disabled = false;
+    clearButton.disabled = false;
+    fillButton.disabled = !approvedHandoff;
   }
 });
