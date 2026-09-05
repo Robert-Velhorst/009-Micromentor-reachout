@@ -2,6 +2,8 @@
 
 ## 1.2.3 - Unreleased
 
+- Index mentor relationships within each recommendation calculation, avoiding repeated full-profile scans while retaining direct identity/URL matching and unchanged write guards.
+- Add recommendation behavior, indexed/direct lookup equivalence, and deterministic 1,000-profile complexity checks to normal tests and the release gate.
 - Allow portable restore requests up to 16 MiB without raising the ordinary 1 MiB API limit.
 - Keep restore preview read-only, preserving the encrypted ledger and its rotating backup.
 - Add isolated 1,000-profile import, recovery, crash-restart, and resource measurements to Linux CI and the Windows release gate.

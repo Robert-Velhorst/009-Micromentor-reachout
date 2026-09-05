@@ -671,7 +671,8 @@ Reset supports queue, mentor, and complete-workspace scopes and requires explici
 | `npm run check` | Type-check client and Node build code |
 | `npm run check:api` | Build and run the encrypted API smoke workflow |
 | `npm run check:operational` | Build and test 1,000 synthetic profiles, request-size guards, backup recovery, and forced restart; write server measurements to `artifacts/operational-check.json` |
-| `npm test` | Run the production API suite and manual-handoff extension checks |
+| `npm run check:recommendations` | Compare indexed/direct mentor relationships, verify recommendation rules, and guard against repeated full-profile scans |
+| `npm test` | Run the production API suite, manual-handoff extension checks, and recommendation checks |
 | `npm run audit:security` | Run `npm audit --audit-level=low` |
 | `npm run check:release` | Run the complete local release gate, including Windows installation acceptance on Windows |
 | `npm run format` | Format the repository with Prettier |

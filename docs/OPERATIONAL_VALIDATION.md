@@ -75,8 +75,8 @@ guarantee or a before/after speedup from these numbers.
 
 ## Still required
 
-The dashboard response and repeated per-profile relationship scans warrant
-profiling and targeted optimization with unchanged duplicate/contact safeguards.
+The dashboard response size and frontend rendering warrant further profiling
+and targeted optimization with unchanged duplicate/contact safeguards.
 No arbitrary latency threshold has been added to make CI look like a product
 acceptance test. The measurements establish a baseline, not acceptable UX.
 
@@ -88,3 +88,41 @@ not establish durability during every possible filesystem interruption.
 
 Backups whose wrapped requests exceed 16 MiB still need a separately designed
 and tested recovery path. This change does not imply unlimited workspace size.
+
+## Relationship-index follow-up
+
+The recommendation calculation repeatedly scanned every profile to find direct
+identity/URL matches for each mentor. A deterministic test reproduced 2,002,000
+profile-URL reads for 1,000 distinct profiles. A snapshot-local index now reduces
+that to 1,000 reads in the same test. It is rebuilt for each calculation, not
+cached globally. It matches identity OR normalized nonempty URL within the same
+campaign and deliberately does not merge transitive chains.
+
+`npm run check:recommendations` tests the actual TypeScript source through
+esbuild in a Node VM, without starting a server or touching operator data.
+The existing direct lookup is retained for write/contact guards and provides
+the comparison oracle for 180 cases covering campaign isolation, empty and
+normalized URLs, overlapping groups, canonical order, invalid/tied timestamps,
+and rejected/draft/approved/sent message states. The test also checks concrete
+recommendations and the deterministic profile-read budget. It is included in
+both `npm test` and `check:release`.
+
+The full local release gate passed again. The 2026-09-05 02:08 Amsterdam workload
+used bundle SHA-256
+`830a4511bbba0eb498578150cb02b8eed22b91f2e89b342a540f882f03a8b00d`.
+The earlier raw report was retained locally as
+`artifacts/operational-before-relationship-index.json` before the new run.
+
+| Local measurement | Before | After |
+| --- | --- | --- |
+| Dashboard median, 20 reads | 1,291 ms | 226 ms |
+| Dashboard nearest-rank p95 | 1,735 ms | 273 ms |
+| Server CPU time over the workload | 29.422 s | 8.656 s |
+| Server RSS at workload end | 111.7 MiB | 121.2 MiB |
+
+These are sequential observations on a shared host, not a controlled hardware
+benchmark. The deterministic test establishes reduced search work; the timing
+samples support a local latency improvement. They do not prove reduced memory
+use, a memory-leak fix, or a faster rendered browser experience. The response
+still contains the complete campaign data; no features or historical records
+were removed to obtain the improvement.

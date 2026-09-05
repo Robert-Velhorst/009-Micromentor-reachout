@@ -1874,6 +1874,7 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
     ? state.campaigns.filter((campaign) => campaign.id === campaignId)
     : state.campaigns.filter((campaign) => campaign.status !== "archived");
   const currentTime = Date.now();
+  const relatedProfiles = indexMentorRelationships(state.mentorProfiles);
 
   const pushAction = (action: Omit<NextActionRecommendation, "createdFrom">) => {
     actions.push({ ...action, createdFrom: "derived_from_ledger" });
@@ -2042,8 +2043,8 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
 
       if (terminalOutcome) continue;
 
-      const duplicateActiveDraft = activeDraftForMentorPerson(state, campaign.id, mentor);
-      const canonicalDuplicate = canonicalMentorProfileForPerson(state, mentor);
+      const duplicateActiveDraft = activeDraftForMentorPerson(state, campaign.id, mentor, relatedProfiles);
+      const canonicalDuplicate = canonicalMentorProfileForPerson(state, mentor, relatedProfiles);
       if (canonicalDuplicate && canonicalDuplicate.id !== mentor.id) {
         pushAction({
           id: `action:review-duplicate-profile:${mentor.id}`,
@@ -2796,7 +2797,38 @@ function duplicateMentorProfiles(state: LedgerState, campaignId: string, body: R
   });
 }
 
-function relatedMentorProfileIds(state: LedgerState, mentor: MentorProfile) {
+type MentorRelationshipLookup = (mentor: MentorProfile) => MentorProfile[];
+
+function indexMentorRelationships(profiles: MentorProfile[]): MentorRelationshipLookup {
+  const byIdentity = new Map<string, MentorProfile[]>();
+  const byUrl = new Map<string, MentorProfile[]>();
+  const positions = new Map(profiles.map((profile, index) => [profile, index]));
+  const urls = new Map<MentorProfile, string>();
+  const key = (campaignId: string, value: string) => JSON.stringify([campaignId, value]);
+  const add = (groups: Map<string, MentorProfile[]>, groupKey: string, profile: MentorProfile) => {
+    const group = groups.get(groupKey);
+    if (group) group.push(profile);
+    else groups.set(groupKey, [profile]);
+  };
+  for (const profile of profiles) {
+    add(byIdentity, key(profile.campaignId, profile.mentorIdentityId), profile);
+    const url = normalize(profile.profileUrl || "");
+    urls.set(profile, url);
+    if (url) add(byUrl, key(profile.campaignId, url), profile);
+  }
+
+  // Snapshot-scoped lookup: direct identity OR URL matches, never transitive groups.
+  return (mentor) => {
+    const identityMatches = byIdentity.get(key(mentor.campaignId, mentor.mentorIdentityId)) || [];
+    const url = urls.get(mentor) || "";
+    const urlMatches = url ? byUrl.get(key(mentor.campaignId, url)) || [] : [];
+    return Array.from(new Set([...identityMatches, ...urlMatches]))
+      .sort((left, right) => positions.get(left)! - positions.get(right)!);
+  };
+}
+
+function relatedMentorProfileIds(state: LedgerState, mentor: MentorProfile, lookup?: MentorRelationshipLookup) {
+  if (lookup) return new Set(lookup(mentor).map((item) => item.id));
   const profileUrl = normalize(mentor.profileUrl || "");
   return new Set(
     state.mentorProfiles
@@ -2810,23 +2842,22 @@ function relatedMentorProfileIds(state: LedgerState, mentor: MentorProfile) {
   );
 }
 
-function relatedMentorProfiles(state: LedgerState, mentor: MentorProfile) {
-  const relatedIds = relatedMentorProfileIds(state, mentor);
-  return state.mentorProfiles
-    .filter((item) => relatedIds.has(item.id))
-    .sort((left, right) => {
-      const createdDelta = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
-      return createdDelta !== 0 ? createdDelta : left.id.localeCompare(right.id);
-    });
+function relatedMentorProfiles(state: LedgerState, mentor: MentorProfile, lookup?: MentorRelationshipLookup) {
+  const relatedIds = lookup ? null : relatedMentorProfileIds(state, mentor);
+  const profiles = lookup ? lookup(mentor) : state.mentorProfiles.filter((item) => relatedIds!.has(item.id));
+  return profiles.sort((left, right) => {
+    const createdDelta = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+    return createdDelta !== 0 ? createdDelta : left.id.localeCompare(right.id);
+  });
 }
 
-function canonicalMentorProfileForPerson(state: LedgerState, mentor: MentorProfile) {
-  const relatedProfiles = relatedMentorProfiles(state, mentor);
+function canonicalMentorProfileForPerson(state: LedgerState, mentor: MentorProfile, lookup?: MentorRelationshipLookup) {
+  const relatedProfiles = relatedMentorProfiles(state, mentor, lookup);
   return relatedProfiles.length > 1 ? relatedProfiles[0] : null;
 }
 
-function activeDraftForMentorPerson(state: LedgerState, campaignId: string, mentor: MentorProfile) {
-  const relatedIds = relatedMentorProfileIds(state, mentor);
+function activeDraftForMentorPerson(state: LedgerState, campaignId: string, mentor: MentorProfile, lookup?: MentorRelationshipLookup) {
+  const relatedIds = relatedMentorProfileIds(state, mentor, lookup);
   return state.messageDrafts.find(
     (message) =>
       message.campaignId === campaignId &&
