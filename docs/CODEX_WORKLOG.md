@@ -1,5 +1,14 @@
 # Codex Worklog
 
+## 2026-09-06 Windows Tunnel Ownership
+
+1. Reproduced acceptance of an unrelated correctly targeted endpoint and termination from a stale process-creation record against the actual generated PowerShell functions.
+2. Added unique endpoint identity, HTTPS/target/domain checks, bounded inspector responses and workspace-keyed configuration fingerprints. Retained verified process handles through reuse and stop operations.
+3. Cleared generated Host authorization on both fresh startup and server reuse, including skipped tunnel discovery; explicit operator-trusted hosts remain separate.
+4. Added 22 packaged-function/fixture-cleanup scenarios and fresh/reused installed-runtime Host tests. Independent review caught the process-identity race, stale-host reuse and test-child cleanup issues; all three were addressed. A minor test-only timing observation remains: the Host polling window and each HTTP request have separate five-second bounds, so a final request can extend the total wait beyond five seconds.
+5. The full pinned-runtime Windows release gate passed in `artifacts/release-check-windows-ngrok-final-2026-09-06.log`, including installed startup, configuration restart, stopped/in-use upgrade, fresh-key recovery and final shutdown. The first attempt failed a cold HTTP fixture initialization check; isolated warm-up is now excluded from assertion counts and production deadlines were not relaxed.
+6. Updated README, operational evidence and the prioritized production acceptance checklist. No real ngrok agent/public tunnel, MicroMentor message, signed release or merge to main was performed.
+
 ## 2026-08-14 Completion Re-Audit
 
 1. Reconciled the clean completion branch with the remote and reran the current Windows release gate.

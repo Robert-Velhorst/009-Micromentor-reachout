@@ -1,15 +1,46 @@
 # Production readiness - 1.2.3 candidate
 
-Updated: 2026-09-05. Target: one operator on Windows 11, with manual MicroMentor
+Updated: 2026-09-06. Target: one operator on Windows 11, with manual MicroMentor
 discovery and final sending. This candidate is not declared production-ready or
 published as a signed release.
+
+## Release decision and next steps
+
+Passing automated tests is necessary but does not accept the real operator path.
+Complete these gates before declaring the candidate production-ready:
+
+1. **Complete the installed extension workflow.** The operator manually loads the
+   trusted extension because browser-tool policy blocks the extensions-management
+   page. Then verify approval, recipient checks, filling, expiry, editor changes
+   and cancellation on the actual platform without sending a message.
+2. **Accept Windows installation and recovery outside this account.** Test a clean
+   Windows 11 machine and another user account, including normal-user installation,
+   restart, in-use upgrade, portable backup restoration and data retention.
+3. **Accept the whole installed ngrok lifecycle.** Verify credentials, dedicated
+   endpoint ownership, reuse, credential rotation, outages, reconnection and forced
+   launcher termination. Close temporary-configuration I/O failure cases in both
+   launchers. Local fixtures cannot prove a real provider's behavior.
+4. **Complete the independent security and distribution gates.** Run the blocked
+   repository assessment in a supported managed-permission environment; triage and
+   verify findings. Arrange publisher signing and browser-store distribution with
+   explicit approval for costs, account changes and publication.
+5. **Run operator acceptance and a sustained pilot.** Complete Dutch labels and
+   responsive visual/accessibility checks. Verify the daily workflow, slow or lost
+   write acknowledgements, recovery and larger/message-heavy workspaces. Record
+   failures and response/resource measurements before setting support limits.
+
+Do not merge or publish automatically when a test run becomes green. Accept a
+specific source revision and installer hash, record residual risks and obtain the
+operator's release decision. The table below separates proof already obtained from
+work still awaiting acceptance.
 
 ## Verified on the current candidate
 
 The full `npm run check:release` passed locally on Windows 11 Pro x64, using
 Node.js 22.23.2. The latest local output is
-`artifacts/release-check-ngrok-lifecycle-2026-09-05.log`, including all 22 client
-connection scenarios and 17 source-launcher/runtime ngrok scenarios.
+`artifacts/release-check-windows-ngrok-final-2026-09-06.log`, including all 22 client
+connection scenarios, 17 source-launcher/runtime ngrok scenarios, 22 packaged
+Windows checks and fresh/reused installed-runtime Host authorization checks.
 
 | Requirement | Evidence |
 | --- | --- |
@@ -28,6 +59,8 @@ connection scenarios and 17 source-launcher/runtime ngrok scenarios.
 | Post-commit cache failure | An injected metadata error after successful replacement preserves HTTP 200 and the saved project; the next read reloads storage and replaying the same idempotency key does not duplicate the record |
 | Client connection resilience | 22 isolated real-HTTP scenarios pass: deadlines through body transfer, cancellation, request/timer cleanup, no automatic retry, uncertain write feedback, and slow successful responses. This is not rendered-browser or live-ngrok acceptance. |
 | Source ngrok lifecycle | 17 real-process/local-inspector cases pass: own-child readiness, bounded startup/discovery, endpoint and policy checks, pre-verification Host rejection, process-exit handling, cancellation and cleanup. Partial-response/GC regressions are included; no public tunnel was opened. |
+| Packaged Windows ngrok functions | 22 local-fixture cases pass: exact endpoint matching, body deadlines, keyed configuration changes, cross-process fingerprint stability, altered process identities, stale/valid stop records, retained handles and parent-controlled test cleanup. This is not whole-launcher or live provider acceptance. |
+| Installed Host authorization | Fresh startup rejects the configured unverified endpoint with HTTP 421. A reused server with a seeded stale host (first verified HTTP 200) keeps its PID but revokes both the old and new unverified domains. |
 | Recommendation indexing | 180 indexed/direct equivalence cases pass; distinct-profile URL reads drop from 2,002,000 to 1,000 in the 1,000-profile regression fixture; full API and release gates pass |
 | Mentor-list pagination | Page-boundary tests pass; live synthetic browser interactions verified 25 cards, page 40, search/source reset, empty results, retained notes/stage and heading focus. Desktop/mobile screenshot acceptance remains open. |
 | Process cleanup | Test runtimes stopped and temporary installations cleaned up |
@@ -46,9 +79,9 @@ Node 22 remains within its maintenance support period according to the
 
 - File: `artifacts/MARO-Windows11-Setup.exe`
 - Candidate version: 1.2.3
-- Size: 33,664,000 bytes
-- SHA-256: `36DA6C51248808E3E694AF63C753BF54E20FCF6099A5F840EDCE908192C7BD02`
-- Signature: unsigned. No code-signing certificate was found in the current user's Windows certificate store.
+- Size: 33,665,536 bytes
+- SHA-256: `9548EDC5D93F3BE9A0165A1497E67E14D1A60283265819F4A7B2A5829FD1AE8B`
+- Signature: unsigned (`NotSigned` checked on this artifact). Publisher signing and clean-machine trust acceptance remain open.
 
 This hash identifies the local binary, not a future CI rebuild. Installer builds
 are not claimed byte-for-byte deterministic. Verify the hash of each distributed
@@ -74,11 +107,11 @@ repository security assessment or proof that every advisory was reachable in MAR
 | --- | --- |
 | Installed extension | Pending. The 2026-09-04 live test exercised the fill function directly, not the popup or `chrome.scripting`. Browser security policy now blocks agent access to `chrome://extensions`; the operator must load the trusted unpacked extension manually. A complete approval-to-fill test is still required. |
 | Clean Windows 11 and another user account | Pending. Two isolated installations and fresh keys were tested under the same existing Windows account. The restricted PATH test is not a clean-OS test. Windows Sandbox was not available as a command on this host. |
-| GitHub checks | Revision `15e2f49` passed Linux and Windows, including client-connection checks, in [run 33992003169](https://github.com/Robert-Velhorst/009-Micromentor-reachout/actions/runs/33992003169). Subsequent ngrok-lifecycle changes require their own successful submitted-revision run. |
+| GitHub checks | Revision `71b82da` passed Linux and Windows, including source ngrok lifecycle checks, in [run 33993749112](https://github.com/Robert-Velhorst/009-Micromentor-reachout/actions/runs/33993749112). Subsequent Windows-launcher changes require their own successful submitted-revision run. |
 | Repository security assessment | A fresh repository-wide assessment remains open. On 2026-09-05, the Deep Scan plugin refused to start because it requires a managed filesystem permission profile; this session has unrestricted filesystem access. No scan findings or completion result were produced. Zero dependency advisories and passing adversarial API tests do not replace the broad assessment. |
 | Signed distribution | Pending publisher signing setup and verification on a clean Windows device. No certificate was purchased and no store submission was made. |
 | Extension distribution | Unpacked development installation is available. Ordinary user distribution still needs a supported browser-store release process. |
-| Installed ngrok path | The PowerShell launcher is separate from `scripts/ngrok.mjs`. Its live tunnel authentication, endpoint ownership/reuse and outage acceptance remain open. Source-launcher tests do not prove those guarantees; forced-parent termination and temporary-configuration filesystem failures also remain untested. |
+| Installed ngrok path | The PowerShell launcher is separate from `scripts/ngrok.mjs`. Packaged-function checks cover endpoint matching, keyed configuration fingerprints and retained process identity; the installed local runtime also has Host-boundary checks. The complete live startup/reuse/credential-rotation path, authentication, outages, forced-parent termination and temporary-configuration filesystem failures remain open. |
 | Operational pilot | The bounded 1,000-profile API/recovery, injected storage-error cases and client connection tests pass; see [operational evidence](OPERATIONAL_VALIDATION.md). Responsive visual acceptance, complete browser interaction coverage, response-size reduction, sustained real usage, end-to-end reconciliation after a lost write acknowledgement, hardware interruption, physically full volumes, live ngrok outages, and larger-than-tested datasets remain open. |
 | Dutch interface | Full translation remains open; storing a locale preference is not a complete Dutch UI. |
 

@@ -20,6 +20,7 @@
     "check:storage": "npm run build && node scripts/check-storage-failures.mjs",
     "check:client-requests": "node scripts/check-client-requests.mjs",
     "check:ngrok": "npm run build && node scripts/check-ngrok-launcher.mjs",
+    "check:windows-ngrok": "npm run installer:win && node scripts/check-windows-ngrok.mjs",
     "test": "npm run check:api && npm run check:extension && npm run check:recommendations && npm run check:mentor-pagination && npm run check:client-requests && node scripts/check-storage-failures.mjs && node scripts/check-ngrok-launcher.mjs",
     "doctor": "node scripts/doctor.mjs",
     "audit:security": "npm audit --audit-level=low",

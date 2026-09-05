@@ -80,10 +80,51 @@ agent startup, separate from local-server startup. The stop-signal test emits th
 launcher's SIGTERM event through a test-only IPC boundary for Windows portability;
 it is not proof of every native console or OS shutdown mechanism.
 
-The installed PowerShell launcher is separate and has not been changed or
-accepted by this suite. Live ngrok authentication/outage behavior, Windows
-endpoint ownership and reuse, forced parent termination, and filesystem errors
-during temporary configuration creation remain acceptance work.
+The installed PowerShell launcher is separate and is not accepted by the source
+launcher suite. Its focused checks are described below. Live ngrok authentication,
+outages, complete installed reuse/credential-rotation workflows, forced parent
+termination and temporary-configuration filesystem failures remain acceptance work.
+
+## Packaged Windows ngrok functions
+
+`npm run check:windows-ngrok` builds the Windows installer and runs twenty-two isolated
+scenarios against function definitions parsed from the generated `MARO.ps1` and
+`Stop-MARO.ps1`. Definitions run unchanged; only their input arguments and local
+inspector responses are fixtures. This does not execute the complete tunnel startup
+branch. Tests use owned loopback listeners and disposable Node processes, without
+calling a real ngrok executable or opening a public tunnel.
+
+The old lookup accepted a correctly targeted but unrelated endpoint; a red test
+reproduced this. Lookup now requires an exact endpoint name, loopback HTTP target
+and valid HTTPS origin, including a match with any configured domain. Header/body
+stalls and fallback are tested with a bounded wait. Inspector traffic-policy data
+is not returned by the lookup.
+
+The old stop helper also reproduced termination despite a stale creation-time
+record. Ownership now includes the executable, installation directory, creation
+time and exact quoted target/name. Tests recognize a real owned fixture process,
+reject altered identity fields, refuse a stale stop record and stop a verified
+process. Verified handles remain open through discovery and stopping, so a later
+PID lookup is not used to select a stop target. An exited-process case checks
+retained identity; an interrupted-PowerShell case verifies that the parent test
+runner closes its own fixture process without relying on PowerShell cleanup.
+Windows handles remain valid until closed, even after process exit, as documented
+by [Microsoft](https://learn.microsoft.com/en-us/windows/win32/procthread/process-handles-and-identifiers).
+Older records lacking the new identity are not trusted for reuse or
+termination; operators may need to inspect an older agent manually after upgrade.
+
+Reuse configuration is compared through a SHA-256 HMAC keyed by the protected
+workspace key, not by storing Basic Auth credentials in process metadata. Tests
+check stable fingerprints across fresh PowerShell processes and changes to the
+target, domain, credentials, public opt-in or workspace key. They do not establish
+real provider policy updates or successful reuse through the entire launcher.
+
+The Windows release gate additionally sends a real HTTP request with a configured
+but unverified Host to the isolated installed runtime and requires HTTP 421. It
+then seeds a stale generated host, verifies HTTP 200, reruns the launcher with a
+changed endpoint and skipped tunnel discovery, confirms the same server PID is
+reused, and requires HTTP 421 for both unverified domains. An explicit operator
+`MARO_ALLOWED_HOSTS` entry remains a separate trust decision.
 
 ## Workload and assertions
 

@@ -366,9 +366,19 @@ The source-checkout launcher used by `npm run dev`:
 - publishes the exact endpoint hostname only after verification; explicit operator-provided `MARO_ALLOWED_HOSTS` entries remain separately trusted;
 - closes its owned children and temporary configuration on failure or interruption without stopping unrelated ngrok tools.
 
-The installed Windows launcher is a separate PowerShell implementation. Its
-live ngrok acceptance and equivalent endpoint-ownership checks remain open; the
-source-checkout process tests do not establish those installed-path guarantees.
+The installed Windows launcher is a separate PowerShell implementation. It checks
+the endpoint's unique name, loopback target, HTTPS origin and configured domain.
+Reuse requires a matching installation, executable, process creation time, exact
+command-line identity and a workspace-keyed configuration fingerprint; changed
+credentials cannot reuse the previous configuration. The stop helper also refuses
+unverified ngrok process records. Legacy records without this identity are not
+automatically trusted or stopped.
+
+Twenty-two isolated checks exercise the actual packaged PowerShell functions and
+test cleanup, including stalled HTTP responses, cross-process fingerprint stability,
+retained process handles and owned-process stop/refusal. These are not full installed-launcher or live provider acceptance:
+credential rotation, real authentication, outages and forced-parent termination
+still require end-to-end acceptance. See [production readiness](docs/PRODUCTION_READINESS.md).
 
 An unrelated `*.ngrok.app` Host is rejected with HTTP 421 even while MARO's own tunnel is active.
 
@@ -688,6 +698,7 @@ Reset supports queue, mentor, and complete-workspace scopes and requires explici
 | `npm run check:storage` | Build and exercise ten pre-commit storage faults and a post-commit cache fault against the real encrypted API, including data preservation, cleanup, retry, idempotent replay and restart checks |
 | `npm run check:client-requests` | Exercise the actual client against isolated HTTP connections: deadlines through body transfer, cancellation, in-flight cleanup, no automatic retries, and uncertain write feedback |
 | `npm run check:ngrok` | Build and exercise the real source launcher/runtime with a local ngrok process fixture: port ownership, endpoint matching, deadlines, exits, cancellation, policy arguments and cleanup; no public tunnel |
+| `npm run check:windows-ngrok` | Windows only: build the installer and exercise its packaged ngrok lookup, fingerprint and process-identity functions with local fixtures; no public tunnel |
 | `npm test` | Run the production API suite, manual-handoff extension, recommendation, pagination, and storage-failure checks |
 | `npm run audit:security` | Run `npm audit --audit-level=low` |
 | `npm run check:release` | Run the complete local release gate, including Windows installation acceptance on Windows |

@@ -155,8 +155,6 @@ if ($env:MARO_NGROK_URL) {
   if ($ngrokEndpoint.Scheme -ne "https" -or $ngrokEndpoint.UserInfo -or $ngrokEndpoint.AbsolutePath -ne "/" -or $ngrokEndpoint.Query -or $ngrokEndpoint.Fragment) {
     throw "MARO_NGROK_URL must be an HTTPS origin without credentials, a path, query, or fragment."
   }
-  $allowedHosts = @($env:MARO_ALLOWED_HOSTS, $ngrokEndpoint.Host) | Where-Object { $_ }
-  $env:MARO_ALLOWED_HOSTS = $allowedHosts -join ","
 }
 
 function Get-MaroHealth([int]$candidatePort) {
@@ -248,10 +246,9 @@ if (-not $health -and -not (Test-PortAvailable $port)) {
 $env:PORT = [string]$port
 $appUrl = "http://127.0.0.1:$port/"
 $initialTunnelHosts = @()
-if ($ngrokEndpoint) { $initialTunnelHosts = @($ngrokEndpoint.Host) }
+Set-MaroAllowedHostsFile $initialTunnelHosts
 
 if (-not $health) {
-  Set-MaroAllowedHostsFile $initialTunnelHosts
   $serverEntry = '"' + (Join-Path $appDir "dist\\index.cjs") + '"'
   $serverStdout = Join-Path $dataDir "server-startup.stdout.log"
   $serverStderr = Join-Path $dataDir "server-startup.stderr.log"
@@ -282,36 +279,124 @@ if (-not $health) {
   } | ConvertTo-Json | Set-Content -LiteralPath $serverStatePath -Encoding UTF8
 }
 
-function Find-MaroTunnel([int]$targetPort) {
-  $target = "http://127.0.0.1:$targetPort"
-  foreach ($inspectorPort in 4040..4050) {
-    $client = [Net.Sockets.TcpClient]::new()
-    $connection = $null
-    try {
-      $connection = $client.BeginConnect("127.0.0.1", $inspectorPort, $null, $null)
-      if (-not $connection.AsyncWaitHandle.WaitOne(75)) { continue }
-      $client.EndConnect($connection)
-    } catch {
-      continue
-    } finally {
-      if ($connection) { $connection.AsyncWaitHandle.Close() }
-      $client.Dispose()
+function Find-MaroTunnel([int]$targetPort, [string]$endpointName, [Uri]$expectedEndpoint, [int[]]$inspectorPorts = @(4040..4050), [int]$timeoutMs = 3300) {
+  if (-not $endpointName -or $timeoutMs -le 0) { return $null }
+  Add-Type -AssemblyName System.Net.Http
+  $clock = [Diagnostics.Stopwatch]::StartNew()
+  $handler = [Net.Http.HttpClientHandler]::new()
+  $handler.UseProxy = $false
+  $handler.AllowAutoRedirect = $false
+  $client = [Net.Http.HttpClient]::new($handler)
+  try {
+    foreach ($inspectorPort in $inspectorPorts) {
+      $remaining = $timeoutMs - [int]$clock.ElapsedMilliseconds
+      if ($remaining -le 0) { break }
+      $cancellation = [Threading.CancellationTokenSource]::new()
+      $cancellation.CancelAfter([Math]::Min(300, $remaining))
+      $response = $null
+      try {
+        # Default GetAsync completion includes buffering the entire response body.
+        $response = $client.GetAsync("http://127.0.0.1:$inspectorPort/api/endpoints", $cancellation.Token).GetAwaiter().GetResult()
+        if (-not $response.IsSuccessStatusCode) { continue }
+        $result = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json
+        foreach ($item in @($result.endpoints)) {
+          if ([string]$item.name -cne $endpointName) { continue }
+          $upstream = [Uri]$item.upstream.url
+          $public = [Uri]$item.url
+          if (-not $upstream.IsAbsoluteUri -or $upstream.Scheme -ne "http" -or $upstream.Host -notin @("127.0.0.1", "localhost") -or $upstream.Port -ne $targetPort -or $upstream.UserInfo -or $upstream.AbsolutePath -ne "/" -or $upstream.Query -or $upstream.Fragment) { continue }
+          if (-not $public.IsAbsoluteUri -or $public.Scheme -ne "https" -or $public.UserInfo -or $public.AbsolutePath -ne "/" -or $public.Query -or $public.Fragment) { continue }
+          if ($expectedEndpoint -and $public.GetLeftPart([UriPartial]::Authority) -ne $expectedEndpoint.GetLeftPart([UriPartial]::Authority)) { continue }
+          return [pscustomobject]@{ name = $endpointName; url = $public.GetLeftPart([UriPartial]::Authority) }
+        }
+      } catch {
+        # Ignore unrelated or unavailable inspectors; never follow their redirects.
+      } finally {
+        if ($response) { $response.Dispose() }
+        $cancellation.Dispose()
+      }
     }
-    try {
-      $result = Invoke-RestMethod -Uri "http://127.0.0.1:$inspectorPort/api/endpoints" -TimeoutSec 1
-      $match = $result.endpoints | Where-Object { $_.upstream.url -eq $target } | Select-Object -First 1
-      if ($match) { return $match }
-    } catch {}
+  } finally {
+    $client.Dispose()
+    $handler.Dispose()
   }
   return $null
 }
 
+function Get-MaroTunnelConfigId([string]$target, [Uri]$endpoint, [string]$credentials, [bool]$allowPublic) {
+  if (-not $env:MARO_LEDGER_PASSPHRASE) { throw "The workspace key is required to protect tunnel configuration fingerprints." }
+  $keyBytes = [Text.Encoding]::UTF8.GetBytes($env:MARO_LEDGER_PASSPHRASE)
+  $configBytes = [Text.Encoding]::UTF8.GetBytes(([ordered]@{ target = $target; endpoint = [string]$endpoint; credentials = $credentials; public = $allowPublic } | ConvertTo-Json -Compress))
+  $hmac = [Security.Cryptography.HMACSHA256]::new()
+  try {
+    $hmac.Key = $keyBytes
+    return [Convert]::ToBase64String($hmac.ComputeHash($configBytes))
+  } finally {
+    $hmac.Dispose()
+    [Array]::Clear($keyBytes, 0, $keyBytes.Length)
+    [Array]::Clear($configBytes, 0, $configBytes.Length)
+  }
+}
+
+function Get-MaroOwnedNgrokProcess($state, [string]$appDirectory) {
+  $runtimeProcess = $null
+  $verified = $false
+  try {
+    if ($state.Version -ne 2 -or $state.EndpointName -notmatch "^maro-[a-f0-9]{32}$" -or -not $state.CreatedAtTicks) { return $null }
+    if ([IO.Path]::GetFullPath([string]$state.AppDirectory) -ne [IO.Path]::GetFullPath($appDirectory)) { return $null }
+    $target = [Uri]$state.Target
+    if (-not $target.IsAbsoluteUri -or $target.Scheme -ne "http" -or $target.Host -ne "127.0.0.1" -or $target.UserInfo -or $target.AbsolutePath -ne "/" -or $target.Query -or $target.Fragment) { return $null }
+    $ownedPid = 0
+    if (-not [int]::TryParse([string]$state.Pid, [ref]$ownedPid) -or $ownedPid -le 0) { return $null }
+    $runtimeProcess = [Diagnostics.Process]::GetProcessById($ownedPid)
+    # Retain the OS handle before checking identity, through any later stop operation.
+    $null = $runtimeProcess.Handle
+    $details = Get-CimInstance Win32_Process -Filter "ProcessId = $ownedPid" -ErrorAction Stop
+    if ([IO.Path]::GetFullPath($details.ExecutablePath) -ne [IO.Path]::GetFullPath([string]$state.Executable)) { return $null }
+    if ([string]$details.CreationDate.ToUniversalTime().Ticks -ne [string]$state.CreatedAtTicks) { return $null }
+    if (-not $details.CommandLine.Contains('"' + [string]$state.Target + '"') -or -not $details.CommandLine.Contains('"' + [string]$state.EndpointName + '"')) { return $null }
+    if ($runtimeProcess.HasExited) { return $null }
+    $verified = $true
+    return $runtimeProcess
+  } catch { return $null } finally {
+    if ($runtimeProcess -and -not $verified) { $runtimeProcess.Dispose() }
+  }
+}
+
 $ngrok = Get-Command ngrok -ErrorAction SilentlyContinue
 if ($env:MARO_SKIP_NGROK -ne "1" -and $ngrok -and ($env:NGROK_BASIC_AUTH -or $env:MARO_ALLOW_PUBLIC_TUNNEL -eq "1")) {
-  $activeTunnel = Find-MaroTunnel $port
+  Set-MaroAllowedHostsFile @()
+  $target = "http://127.0.0.1:$port"
+  $configId = Get-MaroTunnelConfigId $target $ngrokEndpoint $env:NGROK_BASIC_AUTH ($env:MARO_ALLOW_PUBLIC_TUNNEL -eq "1")
+  $ngrokStatePath = Join-Path $dataDir "MARO.ngrok.json"
+  $activeTunnel = $null
+  $ownedNgrok = $null
+  if (Test-Path -LiteralPath $ngrokStatePath) {
+    try {
+      $ngrokState = Get-Content -LiteralPath $ngrokStatePath -Raw | ConvertFrom-Json
+      $ownedNgrok = Get-MaroOwnedNgrokProcess $ngrokState $appDir
+      if ($ownedNgrok) {
+        if ($ngrokState.Target -eq $target -and $ngrokState.ConfigId -ceq $configId) {
+          $activeTunnel = Find-MaroTunnel $port $ngrokState.EndpointName $ngrokEndpoint
+          if ($ownedNgrok.HasExited) { $activeTunnel = $null }
+        }
+        if (-not $activeTunnel) {
+          if (-not $ownedNgrok.HasExited) {
+            try { $ownedNgrok.Kill() } catch { if (-not $ownedNgrok.HasExited) { throw } }
+          }
+          if (-not $ownedNgrok.WaitForExit(5000)) { throw "The previous MARO tunnel did not stop." }
+        }
+      }
+    } catch {
+      if ($ownedNgrok) { throw }
+      # Never reuse or terminate a process based only on a stale record or port.
+    } finally {
+      if ($ownedNgrok) { $ownedNgrok.Dispose() }
+    }
+  }
   $startedNgrokProcess = $null
   if (-not $activeTunnel) {
-    $ngrokArguments = @("http", "http://127.0.0.1:$port", "--name", "maro-$port")
+    $endpointName = "maro-" + [guid]::NewGuid().ToString("N")
+    $ngrokArguments = @("http", $target, "--name", $endpointName)
     if ($ngrokEndpoint) { $ngrokArguments += @("--url", $ngrokEndpoint.AbsoluteUri.TrimEnd("/")) }
     $policyPath = $null
     if ($env:NGROK_BASIC_AUTH) {
@@ -340,13 +425,19 @@ if ($env:MARO_SKIP_NGROK -ne "1" -and $ngrok -and ($env:NGROK_BASIC_AUTH -or $en
     $ngrokStderr = Join-Path $dataDir "ngrok-startup.stderr.log"
     Remove-Item -LiteralPath $ngrokStdout, $ngrokStderr -Force -ErrorAction SilentlyContinue
     try {
-      $ngrokProcess = Start-Process -FilePath $ngrok.Source -ArgumentList $ngrokArguments -WorkingDirectory $appDir -WindowStyle Hidden -RedirectStandardOutput $ngrokStdout -RedirectStandardError $ngrokStderr -PassThru
+      $quotedArguments = ($ngrokArguments | ForEach-Object {
+        if ($_.Contains('"') -or $_.Contains([char]13) -or $_.Contains([char]10)) { throw "Invalid character in an ngrok startup argument." }
+        '"' + $_ + '"'
+      }) -join " "
+      $ngrokProcess = Start-Process -FilePath $ngrok.Source -ArgumentList $quotedArguments -WorkingDirectory $appDir -WindowStyle Hidden -RedirectStandardOutput $ngrokStdout -RedirectStandardError $ngrokStderr -PassThru
       $startedNgrokProcess = $ngrokProcess
-      for ($attempt = 0; $attempt -lt 40; $attempt += 1) {
-        Start-Sleep -Milliseconds 250
+      $discoveryClock = [Diagnostics.Stopwatch]::StartNew()
+      while ($discoveryClock.ElapsedMilliseconds -lt 15000) {
         if ($ngrokProcess.HasExited) { break }
-        $activeTunnel = Find-MaroTunnel $port
+        $remaining = 15000 - [int]$discoveryClock.ElapsedMilliseconds
+        $activeTunnel = Find-MaroTunnel $port $endpointName $ngrokEndpoint -timeoutMs ([Math]::Min(3300, $remaining))
         if ($activeTunnel) { break }
+        Start-Sleep -Milliseconds 100
       }
     } finally {
       if ($policyPath) { Remove-Item -LiteralPath $policyPath -Force -ErrorAction SilentlyContinue }
@@ -364,9 +455,14 @@ if ($env:MARO_SKIP_NGROK -ne "1" -and $ngrok -and ($env:NGROK_BASIC_AUTH -or $en
     if ($startedNgrokProcess) {
       $ngrokDetails = Get-CimInstance Win32_Process -Filter "ProcessId = $($ngrokProcess.Id)"
       @{
+        Version = 2
         Pid = $ngrokProcess.Id
         Executable = $ngrokDetails.ExecutablePath
-        Target = "http://127.0.0.1:$port"
+        CreatedAtTicks = [string]$ngrokDetails.CreationDate.ToUniversalTime().Ticks
+        AppDirectory = $appDir
+        EndpointName = $endpointName
+        ConfigId = $configId
+        Target = $target
       } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dataDir "MARO.ngrok.json") -Encoding UTF8
     }
   } else {
@@ -403,14 +499,29 @@ $dataDir = (Get-Content -LiteralPath $dataPathFile -Raw).Trim()
 function Stop-RecordedProcess([string]$statePath, [string]$requiredMarker) {
   if (-not (Test-Path -LiteralPath $statePath)) { return }
   $ownedProcessId = $null
+  $runtimeProcess = $null
   try {
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($state.Pid)" -ErrorAction Stop
+    $recordedPid = 0
+    if (-not [int]::TryParse([string]$state.Pid, [ref]$recordedPid) -or $recordedPid -le 0) { return }
+    $runtimeProcess = [Diagnostics.Process]::GetProcessById($recordedPid)
+    $null = $runtimeProcess.Handle
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $recordedPid" -ErrorAction Stop
     $actualExecutable = [IO.Path]::GetFullPath($process.ExecutablePath)
     $expectedExecutable = [IO.Path]::GetFullPath([string]$state.Executable)
+    if ($requiredMarker -eq "http://127.0.0.1:") {
+      if ($state.Version -ne 2 -or $state.EndpointName -notmatch "^maro-[a-f0-9]{32}$" -or -not $state.CreatedAtTicks) { return }
+      if ([IO.Path]::GetFullPath([string]$state.AppDirectory) -ne [IO.Path]::GetFullPath($appDir)) { return }
+      if ([string]$process.CreationDate.ToUniversalTime().Ticks -ne [string]$state.CreatedAtTicks) { return }
+      $target = [Uri]$state.Target
+      if (-not $target.IsAbsoluteUri -or $target.Scheme -ne "http" -or $target.Host -ne "127.0.0.1" -or $target.UserInfo -or $target.AbsolutePath -ne "/" -or $target.Query -or $target.Fragment) { return }
+      if (-not $process.CommandLine.Contains('"' + [string]$state.Target + '"') -or -not $process.CommandLine.Contains('"' + [string]$state.EndpointName + '"')) { return }
+    }
     if ($actualExecutable -eq $expectedExecutable -and $process.CommandLine -like "*$requiredMarker*") {
       $ownedProcessId = [int]$state.Pid
-      Stop-Process -Id $ownedProcessId -Force -ErrorAction Stop
+      if (-not $runtimeProcess.HasExited) {
+        try { $runtimeProcess.Kill() } catch { if (-not $runtimeProcess.HasExited) { throw } }
+      }
       for ($attempt = 0; $attempt -lt 100; $attempt += 1) {
         if (-not (Get-Process -Id $ownedProcessId -ErrorAction SilentlyContinue)) { break }
         Start-Sleep -Milliseconds 100
@@ -421,11 +532,12 @@ function Stop-RecordedProcess([string]$statePath, [string]$requiredMarker) {
     }
   } catch {
     if ($ownedProcessId) { throw }
-    # A stale process record is safe to discard; executable and command-line checks prevent PID-reuse mistakes.
+    # Never stop an unverified process; ngrok also requires its creation time and exact endpoint identity.
   } finally {
     if (-not $ownedProcessId -or -not (Get-Process -Id $ownedProcessId -ErrorAction SilentlyContinue)) {
       Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
     }
+    if ($runtimeProcess) { $runtimeProcess.Dispose() }
   }
 }
 

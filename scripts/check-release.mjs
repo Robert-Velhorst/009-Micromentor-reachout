@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -87,6 +88,31 @@ async function installedApi(port, pathname, body) {
     throw new Error(`Installed API ${pathname} returned ${response.status}: ${failure.error || "unknown error"}`);
   }
   return response.json();
+}
+
+function installedHostStatus(port, host) {
+  return new Promise((resolve, reject) => {
+    const request = http.get({
+      hostname: "127.0.0.1", port, path: "/api/health", headers: { Host: host },
+      agent: false, signal: AbortSignal.timeout(5000),
+    }, (response) => {
+      response.resume();
+      response.once("end", () => resolve(response.statusCode));
+      response.once("error", reject);
+    });
+    request.once("error", reject);
+  });
+}
+
+async function waitForInstalledHost(port, host, expected) {
+  const deadline = Date.now() + 5000;
+  let actual;
+  do {
+    actual = await installedHostStatus(port, host);
+    if (actual === expected) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  } while (Date.now() < deadline);
+  throw new Error(`Installed Host ${host} returned ${actual}; expected ${expected}`);
 }
 
 async function terminateProcess(pid) {
@@ -254,6 +280,7 @@ await run("Large workspace and recovery checks", process.execPath, ["scripts/che
 
 if (process.platform === "win32") {
   await run("Windows installer build", process.execPath, ["scripts/build-windows-installer.mjs"]);
+  await run("Packaged Windows ngrok function checks", process.execPath, ["scripts/check-windows-ngrok.mjs"]);
   const installerPath = path.join(process.cwd(), "artifacts", "MARO-Windows11-Setup.exe");
   const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "maro-installer-smoke-"));
   const installRoot = path.join(testRoot, "app");
@@ -336,6 +363,8 @@ if (process.platform === "win32") {
           PORT: String(installedPort),
           MARO_SKIP_BROWSER: "1",
           MARO_SKIP_NGROK: "1",
+          MARO_NGROK_URL: "https://not-yet-verified.example",
+          MARO_ALLOWED_HOSTS: "",
         },
       }
     );
@@ -344,6 +373,23 @@ if (process.platform === "win32") {
       `http://127.0.0.1:${installedPort}/api/health`,
       (value) => value?.ok === true
     );
+    if (await installedHostStatus(installedPort, "not-yet-verified.example") !== 421) {
+      throw new Error("The installed launcher allowed its configured domain before verifying an owned tunnel");
+    }
+    console.log("PASS Windows installed host boundary: configured endpoint rejected before tunnel verification");
+    const staleHost = "previous-tunnel.example";
+    fs.writeFileSync(path.join(dataRoot, "MARO.allowed-hosts.json"), JSON.stringify({ hosts: [staleHost] }));
+    await waitForInstalledHost(installedPort, staleHost, 200);
+    await run("Windows installed runtime reuse clears stale tunnel hosts", "powershell.exe", [
+      "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(installRoot, "MARO.ps1"),
+    ], { env: { ...installedEnvironment, PORT: String(installedPort), MARO_SKIP_BROWSER: "1",
+      MARO_SKIP_NGROK: "1", MARO_NGROK_URL: "https://changed-unverified.example", MARO_ALLOWED_HOSTS: "" } });
+    if (Number(fs.readFileSync(path.join(dataRoot, "MARO.server.pid"), "utf8").trim()) !== installedServerPid) {
+      throw new Error("The stale-host check did not exercise reuse of the same installed server");
+    }
+    await waitForInstalledHost(installedPort, staleHost, 421);
+    await waitForInstalledHost(installedPort, "changed-unverified.example", 421);
+    console.log("PASS Windows installed host boundary: reused server clears stale generated domains");
     const readinessResponse = await fetch(`http://127.0.0.1:${installedPort}/api/readiness`);
     const readiness = await readinessResponse.json();
     if (!readiness.checks?.ledgerReadable || health.persistence !== "encrypted-json" || !health.storage?.encrypted) {
