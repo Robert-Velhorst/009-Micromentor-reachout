@@ -1,5 +1,13 @@
 # Codex Worklog
 
+## 2026-09-06 Source Tunnel Configuration Failures
+
+1. Reproduced two filesystem-failure regressions against the actual source launcher: a partial credentials file survived failed creation, and failed Host replacement had already removed its predecessor.
+2. Registered temporary-file ownership immediately after exclusive creation, retained failed-write/close paths for shutdown cleanup, and replaced the Host file without first deleting it. Failed credential-file removal now prevents a successful startup; persistent removal refusal reports the owned path without contents and returns failure, including on normal signal handling.
+3. Added twelve real-filesystem-boundary fault cases to the existing source-process suite. Independent review strengthened genuine exclusive-open collision checks, normal-stop cleanup failure status, and explicit numeric exit/no-signal assertions. Final focused review found no new actionable issue.
+4. Pinned-runtime `npm run check` and `npm test` passed, including all 29 source-launcher scenarios. Logs: `artifacts/check-ngrok-config-2026-09-06.log` and `artifacts/test-ngrok-config-2026-09-06.log`. Local document links and patch whitespace checks passed.
+5. The installer payload was not changed or rebuilt by this patch. Source fault injection is not Windows PowerShell I/O acceptance, physical-disk testing, or live ngrok acceptance. No provider requests, messages or production publication were performed.
+
 ## 2026-09-06 Windows Tunnel Ownership
 
 1. Reproduced acceptance of an unrelated correctly targeted endpoint and termination from a stale process-creation record against the actual generated PowerShell functions.

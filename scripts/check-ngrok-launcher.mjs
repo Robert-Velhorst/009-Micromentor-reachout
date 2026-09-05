@@ -50,7 +50,7 @@ function statusForHost(port, host) {
 }
 
 let passed = 0;
-async function scenario(name, { occupied = false, agentMode = "running", inspectorMode = "valid", stopServer = false, configuredEndpoint = "", stopDuringVersion = false, runtimeInspector = false } = {}) {
+async function scenario(name, { occupied = false, agentMode = "running", inspectorMode = "valid", stopServer = false, configuredEndpoint = "", stopDuringVersion = false, runtimeInspector = false, ioFault = "" } = {}) {
   if (process.argv[2] && !name.includes(process.argv[2])) return;
   const directory = fs.mkdtempSync(path.join(artifacts, "ngrok-launcher-test-"));
   const portOwner = http.createServer((_req, res) => res.end("Unrelated service"));
@@ -60,6 +60,9 @@ async function scenario(name, { occupied = false, agentMode = "running", inspect
   let output = "";
   const children = [];
   const closedPids = new Set();
+  const configFiles = new Map();
+  const configFaults = [];
+  let previousHostsIntact;
   let inspectorRequests = 0;
   let suppliedEndpoints = 0;
   let agentConfiguration;
@@ -97,6 +100,7 @@ async function scenario(name, { occupied = false, agentMode = "running", inspect
         NGROK_BASIC_AUTH: "fixture:synthetic-password-only",
         MARO_ALLOW_PUBLIC_TUNNEL: "0", MARO_NGROK_URL: configuredEndpoint, MARO_ALLOWED_HOSTS: "",
         MARO_TEST_AGENT_MODE: agentMode,
+        MARO_TEST_CONFIG_FAULT: ioFault.replace(/-on-stop$/, ""),
         MARO_TEST_FORCE_GC: inspectorMode === "body-stall" || runtimeInspector ? "1" : "0",
         MARO_TEST_INSPECTOR_URL: `http://127.0.0.1:${inspectorPort}`,
       },
@@ -111,8 +115,37 @@ async function scenario(name, { occupied = false, agentMode = "running", inspect
     launcher.on("message", (message) => {
       if (message.type === "launcher-child") children.push(message);
       if (message.type === "launcher-child-closed") closedPids.add(message.pid);
+      if (message.type === "launcher-config-file") configFiles.set(message.file, message.phase);
+      if (message.type === "launcher-config-fault") configFaults.push(message);
+      if (message.type === "launcher-config-previous-hosts") previousHostsIntact = message.intact;
     });
-    if (occupied) {
+    if (ioFault) {
+      if (ioFault.endsWith("-on-stop")) {
+        await until(() => suppliedEndpoints >= 2, "The shutdown fixture never reached discovery");
+        assert.equal(configFaults.length, 0, "The cleanup fault happened before normal shutdown");
+        launcher.send({ type: "launcher-test-stop" });
+      }
+      const [code, signal] = await within(completion, 25000, "Configuration failure did not close the launcher");
+      assert.equal(signal, null, "Configuration failure must close normally, not through forced termination");
+      assert.equal(code, 1, "A configuration failure must report a failing exit status");
+      assert.ok(configFaults.length > 0, "The configuration fault was never exercised");
+      assert.doesNotMatch(output, /ngrok tunnel ready:/);
+      if (ioFault.startsWith("hosts-initial")) assert.equal(children.some(child => child.kind === "server"), false, "Failed initial configuration must not start MARO");
+      if (ioFault.startsWith("hosts-initial") || (ioFault.startsWith("policy") && !ioFault.includes("cleanup"))) {
+        assert.equal(children.some(child => child.kind === "agent"), false, "Failed configuration must not start the ngrok agent");
+      } else {
+        assert.ok(agentConfiguration && inspectorRequests > 0, "Post-startup configuration failure never reached a verified agent fixture");
+      }
+      if (ioFault.endsWith("rename")) assert.equal(previousHostsIntact, true, "Failed replacement removed the previous allowed-hosts file");
+      for (const [file, phase] of configFiles) {
+        if (ioFault === `${phase}-collision`) {
+          assert.equal(fs.readFileSync(file, "utf8"), "unowned-collision-sentinel", "Failed exclusive creation must not delete another file");
+        } else if (ioFault.startsWith("policy-cleanup-persistent") && phase === "policy") {
+          assert.equal(fs.existsSync(file), true, "The injected persistent refusal must really leave the file");
+          assert.ok(output.includes(file), "An unremovable credentials file needs an actionable location");
+        } else assert.equal(fs.existsSync(file), false, `Configuration failure left an owned ${phase} file`);
+      }
+    } else if (occupied) {
       const [code] = await within(completion, 20_000, "A occupied-port startup did not terminate");
       assert.equal(children.filter((child) => child.kind === "agent").length, 0, "A foreign listener must not allow ngrok to launch");
       assert.notEqual(code, 0, "Failed local startup must fail the launcher");
@@ -174,6 +207,7 @@ async function scenario(name, { occupied = false, agentMode = "running", inspect
     for (const child of children) {
       assert.ok(closedPids.has(child.pid), `Owned ${child.kind} child was not closed before launcher exit`);
       for (const file of [child.allowedHostsPath, child.policyPath].filter(Boolean)) {
+        if (ioFault.startsWith("policy-cleanup-persistent") && file === child.policyPath) continue;
         assert.equal(fs.existsSync(file), false, "Launcher left an owned temporary policy/hosts file");
       }
     }
@@ -198,6 +232,11 @@ async function scenario(name, { occupied = false, agentMode = "running", inspect
     }
     await close(inspector);
     await close(portOwner);
+    for (const file of configFiles.keys()) {
+      assert.equal(path.dirname(path.resolve(file)).toLowerCase(), path.resolve(os.tmpdir()).toLowerCase());
+      assert.match(path.basename(file), new RegExp(`^maro-(allowed-hosts|ngrok-policy)-${launcher.pid}-`));
+      fs.rmSync(file, { force: true });
+    }
     for (const child of children) {
       for (const file of [child.allowedHostsPath, child.policyPath].filter(Boolean)) {
         assert.equal(path.dirname(path.resolve(file)).toLowerCase(), path.resolve(os.tmpdir()).toLowerCase());
@@ -229,5 +268,9 @@ await scenario("invalid inspector JSON can be interrupted cleanly", { inspectorM
 await scenario("a dedicated endpoint must match the configured origin", { configuredEndpoint: "https://configured-fixture.example", inspectorMode: "configured-mismatch" });
 await scenario("a matching dedicated endpoint becomes available", { configuredEndpoint: "https://configured-fixture.example" });
 await scenario("runtime status releases partial inspector bodies even after GC", { runtimeInspector: true });
+for (const ioFault of ["policy-write", "hosts-initial-write", "hosts-publish-write", "hosts-publish-rename", "policy-open", "policy-close", "policy-collision", "hosts-initial-collision", "hosts-publish-collision", "policy-cleanup-transient", "policy-cleanup-persistent"]) {
+  await scenario(`configuration I/O ${ioFault}`, { ioFault });
+}
+await scenario("configuration I/O policy-cleanup-persistent-on-stop", { ioFault: "policy-cleanup-persistent-on-stop", inspectorMode: "foreign" });
 assert.ok(passed > 0, "No launcher scenarios matched the requested filter");
 console.log(`PASS ngrok launcher suite: ${passed} isolated process scenarios; no real ngrok or public endpoints`);

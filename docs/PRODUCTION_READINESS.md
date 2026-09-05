@@ -18,8 +18,9 @@ Complete these gates before declaring the candidate production-ready:
    restart, in-use upgrade, portable backup restoration and data retention.
 3. **Accept the whole installed ngrok lifecycle.** Verify credentials, dedicated
    endpoint ownership, reuse, credential rotation, outages, reconnection and forced
-   launcher termination. Close temporary-configuration I/O failure cases in both
-   launchers. Local fixtures cannot prove a real provider's behavior.
+   launcher termination. Complete the PowerShell temporary-configuration I/O
+   acceptance; source-launcher injected-error coverage is recorded below. Local
+   fixtures cannot prove a real provider's behavior.
 4. **Complete the independent security and distribution gates.** Run the blocked
    repository assessment in a supported managed-permission environment; triage and
    verify findings. Arrange publisher signing and browser-store distribution with
@@ -36,11 +37,16 @@ work still awaiting acceptance.
 
 ## Verified on the current candidate
 
-The full `npm run check:release` passed locally on Windows 11 Pro x64, using
+The last full local `npm run check:release`, on the Windows-ownership revision
+`8734919`, passed on Windows 11 Pro x64 using
 Node.js 22.23.2. The latest local output is
 `artifacts/release-check-windows-ngrok-final-2026-09-06.log`, including all 22 client
 connection scenarios, 17 source-launcher/runtime ngrok scenarios, 22 packaged
 Windows checks and fresh/reused installed-runtime Host authorization checks.
+The subsequent source-launcher configuration change has separate local
+`npm run check` and `npm test` evidence in `artifacts/check-ngrok-config-2026-09-06.log`
+and `artifacts/test-ngrok-config-2026-09-06.log`; it does not modify the installed
+PowerShell payload. A newly submitted revision still requires its own CI run.
 
 | Requirement | Evidence |
 | --- | --- |
@@ -58,7 +64,7 @@ Windows checks and fresh/reused installed-runtime Host authorization checks.
 | Injected storage failures | Ten backup/primary fault cases passed with intact acknowledged data, cache isolation, temporary-file cleanup, successful retry and restart integrity; these are simulated filesystem errors, not physical disk or power-loss tests |
 | Post-commit cache failure | An injected metadata error after successful replacement preserves HTTP 200 and the saved project; the next read reloads storage and replaying the same idempotency key does not duplicate the record |
 | Client connection resilience | 22 isolated real-HTTP scenarios pass: deadlines through body transfer, cancellation, request/timer cleanup, no automatic retry, uncertain write feedback, and slow successful responses. This is not rendered-browser or live-ngrok acceptance. |
-| Source ngrok lifecycle | 17 real-process/local-inspector cases pass: own-child readiness, bounded startup/discovery, endpoint and policy checks, pre-verification Host rejection, process-exit handling, cancellation and cleanup. Partial-response/GC regressions are included; no public tunnel was opened. |
+| Source ngrok lifecycle | 29 real-process/local-inspector cases cover own-child readiness, bounded startup/discovery, endpoint and policy checks, pre-verification Host rejection, process exits, cancellation and cleanup. Twelve configuration I/O cases exercise partial writes, exclusive-create collisions, replacement failure and deletion refusal, including during normal shutdown. Persistent cleanup refusal reports the owned file and returns failure; it is not claimed successfully removed. Partial-response/GC regressions are also included; no public tunnel was opened. |
 | Packaged Windows ngrok functions | 22 local-fixture cases pass: exact endpoint matching, body deadlines, keyed configuration changes, cross-process fingerprint stability, altered process identities, stale/valid stop records, retained handles and parent-controlled test cleanup. This is not whole-launcher or live provider acceptance. |
 | Installed Host authorization | Fresh startup rejects the configured unverified endpoint with HTTP 421. A reused server with a seeded stale host (first verified HTTP 200) keeps its PID but revokes both the old and new unverified domains. |
 | Recommendation indexing | 180 indexed/direct equivalence cases pass; distinct-profile URL reads drop from 2,002,000 to 1,000 in the 1,000-profile regression fixture; full API and release gates pass |
@@ -107,7 +113,7 @@ repository security assessment or proof that every advisory was reachable in MAR
 | --- | --- |
 | Installed extension | Pending. The 2026-09-04 live test exercised the fill function directly, not the popup or `chrome.scripting`. Browser security policy now blocks agent access to `chrome://extensions`; the operator must load the trusted unpacked extension manually. A complete approval-to-fill test is still required. |
 | Clean Windows 11 and another user account | Pending. Two isolated installations and fresh keys were tested under the same existing Windows account. The restricted PATH test is not a clean-OS test. Windows Sandbox was not available as a command on this host. |
-| GitHub checks | Revision `71b82da` passed Linux and Windows, including source ngrok lifecycle checks, in [run 33993749112](https://github.com/Robert-Velhorst/009-Micromentor-reachout/actions/runs/33993749112). Subsequent Windows-launcher changes require their own successful submitted-revision run. |
+| GitHub checks | Every accepted source revision needs its own successful Linux and Windows run. Inspect the [branch's CI runs](https://github.com/Robert-Velhorst/009-Micromentor-reachout/actions?query=branch%3Acodex%2Fgiant-goal-completion) and compare the run's commit with the revision being accepted; a predecessor's green result is not proof for a new patch. |
 | Repository security assessment | A fresh repository-wide assessment remains open. On 2026-09-05, the Deep Scan plugin refused to start because it requires a managed filesystem permission profile; this session has unrestricted filesystem access. No scan findings or completion result were produced. Zero dependency advisories and passing adversarial API tests do not replace the broad assessment. |
 | Signed distribution | Pending publisher signing setup and verification on a clean Windows device. No certificate was purchased and no store submission was made. |
 | Extension distribution | Unpacked development installation is available. Ordinary user distribution still needs a supported browser-store release process. |

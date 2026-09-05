@@ -44,13 +44,15 @@ separate encrypted API/storage suites remain the evidence for persistence.
 ## Source ngrok launcher
 
 `npm run check:ngrok` builds MARO and runs `scripts/check-ngrok-launcher.mjs`.
-Normal tests and the release gate reuse their existing build. Seventeen process
+Normal tests and the release gate reuse their existing build. Twenty-nine process
 scenarios exercise the actual source launcher and encrypted MARO server. Only
 the external ngrok executable and inspector destinations are replaced by local
 fixtures; no real ngrok agent, account, token or public endpoint is used. The
 fixtures validate the actual CLI arguments and authentication-policy file before
 returning endpoint metadata. All test workspaces, listeners, recorded child
-processes and temporary configuration are checked or cleaned up.
+processes and temporary configuration are checked or cleaned up. Persistent
+deletion-refusal fixtures deliberately leave a file for the launcher to report;
+the test runner removes only those owned fixture files after checking the result.
 
 The old launcher reproduced an unsafe startup path: an unrelated service on the
 requested port allowed the ngrok child to start, and the launcher could then exit
@@ -80,10 +82,29 @@ agent startup, separate from local-server startup. The stop-signal test emits th
 launcher's SIGTERM event through a test-only IPC boundary for Windows portability;
 it is not proof of every native console or OS shutdown mechanism.
 
-The installed PowerShell launcher is separate and is not accepted by the source
-launcher suite. Its focused checks are described below. Live ngrok authentication,
-outages, complete installed reuse/credential-rotation workflows, forced parent
-termination and temporary-configuration filesystem failures remain acceptance work.
+Twelve configuration I/O cases cover partial policy/initial-host/published-host
+writes, policy open/close failures, failed Host replacement, real exclusive-open
+collisions for policy and both host-write phases, transient/persistent policy
+deletion refusal, and a persistent refusal first encountered during normal
+shutdown. The pre-fix code left a partial credentials file behind and removed the
+previous hosts file before a replacement rename failed; both failures were
+reproduced. Files are now registered only after exclusive creation succeeds and
+before writing. A failed replacement leaves the old file intact until shutdown.
+
+Faults before initial configuration cannot start MARO; failed policy creation
+cannot start the agent. All I/O cases require exit status 1 with no termination
+signal, no tunnel-ready announcement, and closure of the owned children. No
+credentials are printed. A persistent removal refusal cannot be repaired by the
+launcher: it reports the exact owned file path and keeps a failing exit status,
+including when the operator otherwise stops normally. Resolve the filesystem
+problem and remove that sensitive temporary file before sharing the machine.
+
+These are injected errors at actual Node filesystem boundaries, not a physically
+full disk or every filesystem's crash-consistency guarantee. The installed
+PowerShell launcher is separate and is not accepted by the source-launcher suite.
+Its focused checks are described below. Live ngrok authentication, outages,
+complete installed reuse/credential-rotation workflows, forced parent termination
+and PowerShell temporary-configuration filesystem failures remain acceptance work.
 
 ## Packaged Windows ngrok functions
 

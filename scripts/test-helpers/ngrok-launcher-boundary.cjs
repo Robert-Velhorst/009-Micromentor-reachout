@@ -30,3 +30,4 @@ process.on("message", (message) => {
 process.channel.unref();
 
 require("./ngrok-inspector-boundary.cjs");
+if (process.env.MARO_TEST_CONFIG_FAULT) require("./ngrok-config-faults.cjs");

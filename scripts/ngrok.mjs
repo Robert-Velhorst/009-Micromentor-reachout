@@ -20,6 +20,8 @@ const shutdownController = new AbortController();
 const ownedChildren = new Map();
 const endpointName = `maro-${port}-${process.pid}`;
 const allowedHostsPath = path.join(os.tmpdir(), `maro-allowed-hosts-${process.pid}-${randomUUID()}.json`);
+const ownedConfigurationFiles = new Set();
+const reportedCleanupFailures = new Set();
 
 function run(command, args, options = {}) {
   const child = spawn(command, args, {
@@ -155,6 +157,33 @@ function validatedEndpointUrl(value) {
   return endpoint;
 }
 
+function writePrivateConfiguration(destination, content) {
+  // Register ownership only after exclusive creation succeeds, before any write.
+  const descriptor = fs.openSync(destination, "wx", 0o600);
+  ownedConfigurationFiles.add(destination);
+  try { fs.writeFileSync(descriptor, content, "utf8"); }
+  finally { fs.closeSync(descriptor); }
+}
+
+function removeOwnedConfiguration(file) {
+  if (!ownedConfigurationFiles.has(file)) return;
+  fs.rmSync(file, { force: true });
+  ownedConfigurationFiles.delete(file);
+}
+
+function cleanupConfiguration() {
+  for (const file of ownedConfigurationFiles) {
+    try { removeOwnedConfiguration(file); }
+    catch (error) {
+      process.exitCode = 1;
+      if (!reportedCleanupFailures.has(file)) {
+        console.error(`Cannot remove temporary tunnel configuration: ${file} (${error.code || "I/O failure"}). Remove this file before sharing the machine.`);
+        reportedCleanupFailures.add(file);
+      }
+    }
+  }
+}
+
 function createTrafficPolicy(credentials) {
   const destination = path.join(os.tmpdir(), `maro-ngrok-policy-${process.pid}-${randomUUID()}.json`);
   const policy = {
@@ -169,26 +198,23 @@ function createTrafficPolicy(credentials) {
       },
     ],
   };
-  fs.writeFileSync(destination, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
+  writePrivateConfiguration(destination, JSON.stringify(policy));
   return destination;
 }
 
 function removeTrafficPolicy() {
   if (!policyPath) return;
-  try { fs.rmSync(policyPath, { force: true }); } catch {}
+  removeOwnedConfiguration(policyPath);
   policyPath = null;
 }
 
 function writeAllowedHosts(hosts) {
   const normalized = [...new Set(hosts.filter(Boolean).map((hostValue) => String(hostValue).toLowerCase()))];
   const temporary = `${allowedHostsPath}.tmp-${randomUUID()}`;
-  fs.writeFileSync(temporary, JSON.stringify({ hosts: normalized }), { encoding: "utf8", mode: 0o600, flag: "wx" });
-  fs.rmSync(allowedHostsPath, { force: true });
+  writePrivateConfiguration(temporary, JSON.stringify({ hosts: normalized }));
   fs.renameSync(temporary, allowedHostsPath);
-}
-
-function removeAllowedHosts() {
-  try { fs.rmSync(allowedHostsPath, { force: true }); } catch {}
+  ownedConfigurationFiles.delete(temporary);
+  ownedConfigurationFiles.add(allowedHostsPath);
 }
 
 async function ensureNgrokAvailable() {
@@ -258,7 +284,7 @@ function interrupt() {
 }
 process.once("SIGINT", interrupt);
 process.once("SIGTERM", interrupt);
-process.once("exit", () => { removeTrafficPolicy(); removeAllowedHosts(); });
+process.once("exit", cleanupConfiguration);
 
 try {
   if (!await ensureNgrokAvailable()) throw new Error("ngrok is unavailable or its version check timed out. Install and authenticate ngrok, then try again.");
@@ -307,6 +333,5 @@ try {
 } finally {
   shutdownController.abort();
   await stopOwnedChildren();
-  removeTrafficPolicy();
-  removeAllowedHosts();
+  cleanupConfiguration();
 }

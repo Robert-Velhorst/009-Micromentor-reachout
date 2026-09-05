@@ -364,7 +364,9 @@ The source-checkout launcher used by `npm run dev`:
 - bounds the ngrok version probe to five seconds, MARO startup to fifteen seconds, and endpoint discovery to fifteen seconds with at most 300 ms per inspector request;
 - probes ngrok Agent API ports `4040` through `4050`, including deadlines for partial response bodies;
 - publishes the exact endpoint hostname only after verification; explicit operator-provided `MARO_ALLOWED_HOSTS` entries remain separately trusted;
-- closes its owned children and temporary configuration on failure or interruption without stopping unrelated ngrok tools.
+- closes its owned children on failure or interruption without stopping unrelated ngrok tools;
+- tracks configuration files immediately after exclusive creation, cleans partial writes, and preserves the previous Host file if replacement fails;
+- fails startup when the temporary credentials file cannot be removed. If cleanup remains blocked, it exits with a failure status and reports the retained file path for manual remediation, without printing credentials.
 
 The installed Windows launcher is a separate PowerShell implementation. It checks
 the endpoint's unique name, loopback target, HTTPS origin and configured domain.
