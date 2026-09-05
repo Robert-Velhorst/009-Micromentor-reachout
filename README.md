@@ -674,7 +674,8 @@ Reset supports queue, mentor, and complete-workspace scopes and requires explici
 | `npm run check:operational` | Build and test 1,000 synthetic profiles, request-size guards, backup recovery, and forced restart; write server measurements to `artifacts/operational-check.json` |
 | `npm run check:recommendations` | Compare indexed/direct mentor relationships, verify recommendation rules, and guard against repeated full-profile scans |
 | `npm run check:mentor-pagination` | Check 25-profile page boundaries, complete reachability, empty results, and out-of-range page requests |
-| `npm test` | Run the production API suite, manual-handoff extension, recommendation, and pagination checks |
+| `npm run check:storage` | Build and exercise ten injected storage failures against the real encrypted API, including data preservation, temporary-file cleanup, retry and restart checks |
+| `npm test` | Run the production API suite, manual-handoff extension, recommendation, pagination, and storage-failure checks |
 | `npm run audit:security` | Run `npm audit --audit-level=low` |
 | `npm run check:release` | Run the complete local release gate, including Windows installation acceptance on Windows |
 | `npm run format` | Format the repository with Prettier |
@@ -716,7 +717,7 @@ The gate runs:
 5. manual-handoff extension checks, including popup expiry and target-page guards;
 6. recommendation equivalence, complexity, and mentor-pagination boundary checks;
 7. production build and encrypted API workflow;
-8. isolated 1,000-profile API, request-boundary, backup and crash-recovery checks;
+8. isolated storage-failure/retry checks, plus 1,000-profile API, request-boundary, backup and crash-recovery checks;
 9. Windows installer build using the exact x64 Node version in `.node-version`;
 10. isolated legacy migration and bundled-runtime identity check;
 11. installed encrypted runtime launch without development tools on PATH;

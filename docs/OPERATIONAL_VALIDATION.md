@@ -166,3 +166,53 @@ The final local `check:release` passed with the focus correction included;
 the log is `artifacts/release-check-pagination-2026-09-05.log`. Both disposable
 browser workspaces and their owned servers were cleaned up, and the temporary
 browser viewport override was reset.
+
+## Storage-failure follow-up
+
+`npm run check:storage` builds and starts the real production bundle with a
+disposable encrypted workspace. A test-only Node preload injects one failure
+at a time at the filesystem boundary; no fault-injection setting or endpoint
+is added to the application. The test uses loopback HTTP, not provider traffic.
+Normal tests and the release gate reuse their freshly built bundle for this
+check, avoiding another build.
+
+The child requests an ephemeral port and reports its listening address over
+its inherited IPC channel before the runner sends HTTP requests. Fault
+notifications are deliberately delayed and awaited by ID, with bounded waits
+and child-exit rejection; HTTP and IPC delivery order is not assumed.
+
+Five failures are exercised separately for the rotating backup and primary:
+
+| Operation | Injected condition |
+| --- | --- |
+| Write | Write half the data to the real temporary file, then throw `ENOSPC` |
+| Synchronize | Throw `EIO` before flushing the real handle |
+| Close | Close the real handle, then report `EIO` |
+| Replace | Throw `EACCES` before renaming the temporary file |
+| Open | Throw `EACCES` before creating a temporary file |
+
+The first test reproduced a partial temporary backup file left behind after
+`ENOSPC`. Cleanup previously covered only rename failure. It now also covers
+failures while writing, synchronizing and closing an owned temporary file.
+If deletion itself fails, the original storage error is preserved; the app
+cannot guarantee removal when the filesystem refuses cleanup.
+
+For all ten cases, assertions require HTTP 500, unchanged primary bytes, a
+complete recovery copy, no rejected mutation in subsequent API reads, no
+temporary files when cleanup is available, and exactly one record after a
+healthy retry. The primary-failure cases allow the backup to have advanced to
+the complete pre-mutation primary. Finally, all acknowledged records must
+survive process restart with valid referential integrity.
+
+This is deterministic filesystem-error injection, not a physically full
+volume, permission-policy change, hardware power-loss experiment, or a test of
+all post-rename failures. The close case does not simulate an unclosed handle.
+Errors during cleanup, interrupted processes leaving temporary files, actual
+full-disk behavior and device-level durability remain separate acceptance work.
+
+On 2026-09-05 all ten cases and restart integrity passed locally with Node.js
+22.23.2 on Windows 11. The complete release gate also passed. After review,
+the test runner's ownership and IPC coordination were tightened; that final
+harness passed separately against the same production bundle. Evidence:
+`artifacts/release-check-storage-2026-09-05.log` and
+`artifacts/storage-failures-final-2026-09-05.log`.

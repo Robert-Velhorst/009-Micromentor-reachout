@@ -1269,16 +1269,19 @@ function atomicWriteFile(filePath: string, contents: string) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const handle = fs.openSync(tempPath, "wx", 0o600);
   try {
-    fs.writeFileSync(handle, contents, "utf8");
-    fs.fsyncSync(handle);
-  } finally {
-    fs.closeSync(handle);
-  }
-
-  try {
+    try {
+      fs.writeFileSync(handle, contents, "utf8");
+      fs.fsyncSync(handle);
+    } finally {
+      fs.closeSync(handle);
+    }
     fs.renameSync(tempPath, filePath);
   } catch (error) {
-    fs.rmSync(tempPath, { force: true });
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch {
+      // Cleanup must not replace the original storage failure.
+    }
     throw error;
   }
 }
