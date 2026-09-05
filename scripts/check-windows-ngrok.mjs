@@ -69,6 +69,11 @@ const processCases = [
   "valid-stop",
   "handle-retention",
   "fixture-timeout",
+  "config-locked-state",
+  "config-locked-host-publication",
+  "config-activation",
+  "config-locked-policy",
+  "config-startup",
 ];
 async function stopOwnedFixture() {
   if (!ownedFixture) return;
@@ -105,6 +110,16 @@ try {
     "valid-stop",
     "handle-retention",
     "fixture-timeout",
+    "config-locked-host",
+    "config-locked-state",
+    "config-locked-host-publication",
+    "config-activation",
+    "config-replace",
+    "config-exclusive",
+    "config-locked-cleanup",
+    "config-locked-policy",
+    "config-policy-create-failure",
+    "config-startup",
   ]) {
     if (process.argv[2] && testCase !== process.argv[2]) continue;
     requestCount = 0;
@@ -171,6 +186,7 @@ try {
     clearTimeout(timer);
     await stopOwnedFixture();
     console.log(output.trim());
+    assert.doesNotMatch(output, /synthetic-policy-password|synthetic-sensitive-content/, "Configuration contents escaped into diagnostics");
     if (testCase === "fixture-timeout") {
       assert.match(output, /TIMEOUT_READY/);
       assert.notEqual(
@@ -194,7 +210,7 @@ try {
           "Configuration fingerprint changed between PowerShell processes"
         );
       fingerprint = actual;
-    } else if (!processCases.includes(testCase)) {
+    } else if (!processCases.includes(testCase) && !testCase.startsWith("config-")) {
       assert.ok(
         requestCount > 0,
         "The packaged function never reached its owned inspector"

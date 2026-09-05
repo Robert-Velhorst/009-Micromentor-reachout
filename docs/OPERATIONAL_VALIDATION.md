@@ -104,16 +104,20 @@ full disk or every filesystem's crash-consistency guarantee. The installed
 PowerShell launcher is separate and is not accepted by the source-launcher suite.
 Its focused checks are described below. Live ngrok authentication, outages,
 complete installed reuse/credential-rotation workflows, forced parent termination
-and PowerShell temporary-configuration filesystem failures remain acceptance work.
+and remaining PowerShell write/flush-fault and physical-filesystem behavior remain
+acceptance work. Windows file-lock coverage is described below.
 
 ## Packaged Windows ngrok functions
 
-`npm run check:windows-ngrok` builds the Windows installer and runs twenty-two isolated
+`npm run check:windows-ngrok` builds the Windows installer and runs thirty-two isolated
 scenarios against function definitions parsed from the generated `MARO.ps1` and
-`Stop-MARO.ps1`. Definitions run unchanged; only their input arguments and local
-inspector responses are fixtures. This does not execute the complete tunnel startup
-branch. Tests use owned loopback listeners and disposable Node processes, without
-calling a real ngrok executable or opening a public tunnel.
+`Stop-MARO.ps1`, plus its actual new-agent startup and endpoint-publication blocks.
+Definitions and selected blocks run unchanged. Startup-block tests replace the
+external process-start and inspector-lookup boundaries with an owned Node process
+and fixture endpoint; they validate the actual generated Basic Auth file and quoted
+policy argument, including a path containing spaces. Other cases exercise the actual
+inspector lookup separately. This does not execute the complete installed launcher
+with a real ngrok agent and never opens a public tunnel.
 
 The old lookup accepted a correctly targeted but unrelated endpoint; a red test
 reproduced this. Lookup now requires an exact endpoint name, loopback HTTP target
@@ -146,6 +150,32 @@ then seeds a stale generated host, verifies HTTP 200, reruns the launcher with a
 changed endpoint and skipped tunnel discovery, confirms the same server PID is
 reused, and requires HTTP 421 for both unverified domains. An explicit operator
 `MARO_ALLOWED_HOSTS` entry remains a separate trust decision.
+
+Ten configuration scenarios add real Windows file-sharing locks and filesystem
+operations. Coverage includes successful UTF-8 creation/replacement and host
+normalization, actual exclusive-create refusal preserving a sentinel file, locked
+host replacement, locked credentials-file deletion and successful cleanup after
+unlocking, invalid policy parent directories, blocked process-state or host
+publication, and successful startup/publication controls. Failed policy creation
+cannot reach the process-start boundary. Failed cleanup or publication stops the
+new owned process, while failed state publication leaves the previous record
+unchanged. A publication observer verifies persisted process identity and the
+configuration fingerprint before forwarding the real host writer, so rollback
+cannot hide premature authorization.
+
+The pre-fix packaged code left a temporary host file behind on replacement failure
+and left the newly started agent alive when state persistence failed. Both were
+reproduced with actual locks. Existing files are now replaced without an explicit
+pre-delete; new files use exclusive creation. PowerShell needs a typed null backup
+name for [.NET File.Replace](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.replace?view=netframework-4.8.1),
+which the successful-replacement control verifies. Cleanup retries three times,
+then fails with the retained path rather than silently continuing. No ACLs or
+operator data are changed by these tests.
+
+These tests do not inject partial-write/flush failures into the Windows stream,
+simulate a physically full drive, verify abrupt host termination, or establish
+complete installed startup/reuse and live provider behavior. Those acceptance
+items remain open; local lock tests must not be presented as covering them.
 
 ## Workload and assertions
 

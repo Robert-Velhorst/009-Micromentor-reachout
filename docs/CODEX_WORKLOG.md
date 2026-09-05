@@ -1,5 +1,13 @@
 # Codex Worklog
 
+## 2026-09-06 Windows Tunnel Configuration Files
+
+1. Reproduced leftover temporary hosts files under real Windows file-sharing locks and a new agent left alive after process-state persistence failed.
+2. Added exclusive configuration creation, flushed UTF-8 writes, replacement without pre-deletion, bounded deletion retries and explicit retained-file diagnostics. Process-state publication now precedes host authorization; blocked cleanup, state persistence or host publication stops the newly started owned process.
+3. Added ten Windows configuration scenarios to the existing 22 checks. They execute generated functions and actual startup/publication blocks with owned process boundaries and real file locks. Positive controls caught PowerShell's null-to-empty-string .NET binding; replacement uses `NullString.Value`. Review strengthened case isolation and an observer that checks registration at the publication boundary without altering the real writer.
+4. The full pinned-runtime release gate passed in `artifacts/release-check-windows-config-2026-09-06.log`: 32 Windows function/block cases, 29 source-launcher cases, installed startup, host revocation, configuration restart, upgrades, fresh-key recovery and shutdown. Document links and patch whitespace checks passed.
+5. The rebuilt local installer is unsigned; its exact size and hash are recorded in `PRODUCTION_READINESS.md`. No public tunnel, real ngrok agent or MicroMentor message was used. Complete installed/provider acceptance and Windows partial-write/flush and physical-disk failures remain open.
+
 ## 2026-09-06 Source Tunnel Configuration Failures
 
 1. Reproduced two filesystem-failure regressions against the actual source launcher: a partial credentials file survived failed creation, and failed Host replacement had already removed its predecessor.

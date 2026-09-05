@@ -165,13 +165,53 @@ function Get-MaroHealth([int]$candidatePort) {
   return $null
 }
 
+function Remove-MaroTemporaryConfiguration([string]$filePath) {
+  for ($attempt = 0; $attempt -lt 3; $attempt++) {
+    try { [IO.File]::Delete($filePath); return } catch {
+      if ($attempt -eq 2) { throw "Cannot remove temporary tunnel configuration: $filePath. Resolve the file lock or permissions and remove it before sharing the machine." }
+      Start-Sleep -Milliseconds 100
+    }
+  }
+}
+
+function Write-MaroNewConfiguration([string]$filePath, [string]$content) {
+  $bytes = [Text.Encoding]::UTF8.GetBytes($content)
+  # A failed exclusive create never gives us ownership of an existing file.
+  $stream = $null
+  try {
+    $stream = [IO.File]::Open($filePath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) }
+    finally { $stream.Dispose() }
+  } catch {
+    $failure = $_
+    if ($stream) {
+      try { Remove-MaroTemporaryConfiguration $filePath } catch { Write-Warning $_.Exception.Message }
+    }
+    throw $failure
+  } finally { [Array]::Clear($bytes, 0, $bytes.Length) }
+}
+
+function Set-MaroConfigurationFile([string]$filePath, [string]$content) {
+  $temporary = $filePath + ".tmp-" + [guid]::NewGuid().ToString("N")
+  Write-MaroNewConfiguration $temporary $content
+  try {
+    # PowerShell otherwise coerces a null backup name to an invalid empty path.
+    if ([IO.File]::Exists($filePath)) { [IO.File]::Replace($temporary, $filePath, [NullString]::Value) }
+    else { [IO.File]::Move($temporary, $filePath) }
+  } finally { Remove-MaroTemporaryConfiguration $temporary }
+}
+
 function Set-MaroAllowedHostsFile([string[]]$hosts) {
   $normalized = @($hosts | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() } | Select-Object -Unique)
-  $temporary = $allowedHostsFile + ".tmp-" + [guid]::NewGuid().ToString("N")
-  $json = @{ hosts = $normalized } | ConvertTo-Json -Depth 3
-  [IO.File]::WriteAllText($temporary, $json, [Text.UTF8Encoding]::new($false))
-  Remove-Item -LiteralPath $allowedHostsFile -Force -ErrorAction SilentlyContinue
-  Move-Item -LiteralPath $temporary -Destination $allowedHostsFile -Force
+  Set-MaroConfigurationFile $allowedHostsFile (@{ hosts = $normalized } | ConvertTo-Json -Depth 3)
+}
+
+function Stop-MaroStartedNgrok([Diagnostics.Process]$ownedProcess) {
+  if (-not $ownedProcess) { return }
+  if (-not $ownedProcess.HasExited) {
+    try { $ownedProcess.Kill() } catch { if (-not $ownedProcess.HasExited) { throw } }
+  }
+  if (-not $ownedProcess.WaitForExit(5000)) { throw "The newly started MARO tunnel did not stop." }
 }
 
 function Test-PortAvailable([int]$candidatePort) {
@@ -372,7 +412,7 @@ if ($env:MARO_SKIP_NGROK -ne "1" -and $ngrok -and ($env:NGROK_BASIC_AUTH -or $en
   $ownedNgrok = $null
   if (Test-Path -LiteralPath $ngrokStatePath) {
     try {
-      $ngrokState = Get-Content -LiteralPath $ngrokStatePath -Raw | ConvertFrom-Json
+      $ngrokState = Get-Content -LiteralPath $ngrokStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
       $ownedNgrok = Get-MaroOwnedNgrokProcess $ngrokState $appDir
       if ($ownedNgrok) {
         if ($ngrokState.Target -eq $target -and $ngrokState.ConfigId -ceq $configId) {
@@ -399,38 +439,40 @@ if ($env:MARO_SKIP_NGROK -ne "1" -and $ngrok -and ($env:NGROK_BASIC_AUTH -or $en
     $ngrokArguments = @("http", $target, "--name", $endpointName)
     if ($ngrokEndpoint) { $ngrokArguments += @("--url", $ngrokEndpoint.AbsoluteUri.TrimEnd("/")) }
     $policyPath = $null
-    if ($env:NGROK_BASIC_AUTH) {
-      $separator = $env:NGROK_BASIC_AUTH.IndexOf(":")
-      $passwordLength = if ($separator -ge 0) { $env:NGROK_BASIC_AUTH.Length - $separator - 1 } else { 0 }
-      if ($separator -le 0 -or $passwordLength -lt 8 -or $passwordLength -gt 128 -or $env:NGROK_BASIC_AUTH -match "[\\r\\n]") {
-        throw "NGROK_BASIC_AUTH must use user:password with an 8-128 character password and no line breaks."
-      }
-      $policyPath = Join-Path $env:TEMP ("maro-ngrok-policy-" + [guid]::NewGuid().ToString("N") + ".json")
-      $policyJson = @{
-        on_http_request = @(
-          @{
-            actions = @(
-              @{
-                type = "basic-auth"
-                config = @{ credentials = @($env:NGROK_BASIC_AUTH); enforce = $true; realm = "MARO" }
-              }
-            )
-          }
-        )
-      } | ConvertTo-Json -Depth 8
-      [IO.File]::WriteAllText($policyPath, $policyJson, [Text.UTF8Encoding]::new($false))
-      $ngrokArguments += @("--traffic-policy-file", $policyPath)
-    }
-    $ngrokStdout = Join-Path $dataDir "ngrok-startup.stdout.log"
-    $ngrokStderr = Join-Path $dataDir "ngrok-startup.stderr.log"
-    Remove-Item -LiteralPath $ngrokStdout, $ngrokStderr -Force -ErrorAction SilentlyContinue
     try {
+      if ($env:NGROK_BASIC_AUTH) {
+        $separator = $env:NGROK_BASIC_AUTH.IndexOf(":")
+        $passwordLength = if ($separator -ge 0) { $env:NGROK_BASIC_AUTH.Length - $separator - 1 } else { 0 }
+        if ($separator -le 0 -or $passwordLength -lt 8 -or $passwordLength -gt 128 -or $env:NGROK_BASIC_AUTH -match "[\\r\\n]") {
+          throw "NGROK_BASIC_AUTH must use user:password with an 8-128 character password and no line breaks."
+        }
+        $candidatePolicyPath = Join-Path $env:TEMP ("maro-ngrok-policy-" + [guid]::NewGuid().ToString("N") + ".json")
+        $policyJson = @{
+          on_http_request = @(
+            @{
+              actions = @(
+                @{
+                  type = "basic-auth"
+                  config = @{ credentials = @($env:NGROK_BASIC_AUTH); enforce = $true; realm = "MARO" }
+                }
+              )
+            }
+          )
+        } | ConvertTo-Json -Depth 8
+        Write-MaroNewConfiguration $candidatePolicyPath $policyJson
+        $policyPath = $candidatePolicyPath
+        $ngrokArguments += @("--traffic-policy-file", $policyPath)
+      }
+      $ngrokStdout = Join-Path $dataDir "ngrok-startup.stdout.log"
+      $ngrokStderr = Join-Path $dataDir "ngrok-startup.stderr.log"
+      Remove-Item -LiteralPath $ngrokStdout, $ngrokStderr -Force -ErrorAction SilentlyContinue
       $quotedArguments = ($ngrokArguments | ForEach-Object {
         if ($_.Contains('"') -or $_.Contains([char]13) -or $_.Contains([char]10)) { throw "Invalid character in an ngrok startup argument." }
         '"' + $_ + '"'
       }) -join " "
       $ngrokProcess = Start-Process -FilePath $ngrok.Source -ArgumentList $quotedArguments -WorkingDirectory $appDir -WindowStyle Hidden -RedirectStandardOutput $ngrokStdout -RedirectStandardError $ngrokStderr -PassThru
       $startedNgrokProcess = $ngrokProcess
+      $null = $ngrokProcess.Handle
       $discoveryClock = [Diagnostics.Stopwatch]::StartNew()
       while ($discoveryClock.ElapsedMilliseconds -lt 15000) {
         if ($ngrokProcess.HasExited) { break }
@@ -439,35 +481,43 @@ if ($env:MARO_SKIP_NGROK -ne "1" -and $ngrok -and ($env:NGROK_BASIC_AUTH -or $en
         if ($activeTunnel) { break }
         Start-Sleep -Milliseconds 100
       }
+      if ($policyPath) { Remove-MaroTemporaryConfiguration $policyPath; $policyPath = $null }
+    } catch {
+      Stop-MaroStartedNgrok $startedNgrokProcess
+      throw
     } finally {
-      if ($policyPath) { Remove-Item -LiteralPath $policyPath -Force -ErrorAction SilentlyContinue }
+      if ($policyPath) { Remove-MaroTemporaryConfiguration $policyPath }
     }
   }
 
   if ($activeTunnel) {
     try {
+      if ($startedNgrokProcess) {
+        $ngrokDetails = Get-CimInstance Win32_Process -Filter "ProcessId = $($ngrokProcess.Id)"
+        if (-not $ngrokDetails -or $startedNgrokProcess.HasExited) { throw "The new ngrok process exited before registration." }
+        $newNgrokState = @{
+          Version = 2
+          Pid = $ngrokProcess.Id
+          Executable = $ngrokDetails.ExecutablePath
+          CreatedAtTicks = [string]$ngrokDetails.CreationDate.ToUniversalTime().Ticks
+          AppDirectory = $appDir
+          EndpointName = $endpointName
+          ConfigId = $configId
+          Target = $target
+        } | ConvertTo-Json
+        Set-MaroConfigurationFile $ngrokStatePath $newNgrokState
+      }
       $activeTunnelHost = ([Uri]$activeTunnel.url).Host
       Set-MaroAllowedHostsFile @($activeTunnelHost)
     } catch {
-      if ($startedNgrokProcess) { Stop-Process -Id $startedNgrokProcess.Id -Force -ErrorAction SilentlyContinue }
-      throw "ngrok returned an invalid public endpoint URL. The local app remains available."
-    }
-    if ($startedNgrokProcess) {
-      $ngrokDetails = Get-CimInstance Win32_Process -Filter "ProcessId = $($ngrokProcess.Id)"
-      @{
-        Version = 2
-        Pid = $ngrokProcess.Id
-        Executable = $ngrokDetails.ExecutablePath
-        CreatedAtTicks = [string]$ngrokDetails.CreationDate.ToUniversalTime().Ticks
-        AppDirectory = $appDir
-        EndpointName = $endpointName
-        ConfigId = $configId
-        Target = $target
-      } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dataDir "MARO.ngrok.json") -Encoding UTF8
+      $failure = $_
+      Stop-MaroStartedNgrok $startedNgrokProcess
+      try { Set-MaroAllowedHostsFile @() } catch { Write-Warning $_.Exception.Message }
+      throw "MARO could not save verified tunnel configuration. The local app remains available. $($failure.Exception.Message)"
     }
   } else {
     if ($startedNgrokProcess -and -not $startedNgrokProcess.HasExited) {
-      Stop-Process -Id $startedNgrokProcess.Id -Force -ErrorAction SilentlyContinue
+      Stop-MaroStartedNgrok $startedNgrokProcess
     }
     Set-MaroAllowedHostsFile $initialTunnelHosts
     Write-Warning "ngrok could not open a MARO endpoint. The local app remains available; review $ngrokStderr."
@@ -501,7 +551,7 @@ function Stop-RecordedProcess([string]$statePath, [string]$requiredMarker) {
   $ownedProcessId = $null
   $runtimeProcess = $null
   try {
-    $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    $state = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
     $recordedPid = 0
     if (-not [int]::TryParse([string]$state.Pid, [ref]$recordedPid) -or $recordedPid -le 0) { return }
     $runtimeProcess = [Diagnostics.Process]::GetProcessById($recordedPid)

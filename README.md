@@ -376,9 +376,13 @@ credentials cannot reuse the previous configuration. The stop helper also refuse
 unverified ngrok process records. Legacy records without this identity are not
 automatically trusted or stopped.
 
-Twenty-two isolated checks exercise the actual packaged PowerShell functions and
-test cleanup, including stalled HTTP responses, cross-process fingerprint stability,
-retained process handles and owned-process stop/refusal. These are not full installed-launcher or live provider acceptance:
+Thirty-two isolated checks exercise the packaged PowerShell functions and selected
+startup/publication blocks, including stalled responses, fingerprint stability,
+retained process handles, real file locks, exclusive creation and cleanup. Tunnel
+registration is saved before its hostname is authorized; registration or publication
+failure stops the newly started agent. A credentials-file deletion refusal prevents
+successful tunnel startup and reports the retained file for manual remediation.
+These are not full installed-launcher or live provider acceptance:
 credential rotation, real authentication, outages and forced-parent termination
 still require end-to-end acceptance. See [production readiness](docs/PRODUCTION_READINESS.md).
 

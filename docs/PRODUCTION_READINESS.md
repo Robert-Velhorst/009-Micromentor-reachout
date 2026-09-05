@@ -18,8 +18,9 @@ Complete these gates before declaring the candidate production-ready:
    restart, in-use upgrade, portable backup restoration and data retention.
 3. **Accept the whole installed ngrok lifecycle.** Verify credentials, dedicated
    endpoint ownership, reuse, credential rotation, outages, reconnection and forced
-   launcher termination. Complete the PowerShell temporary-configuration I/O
-   acceptance; source-launcher injected-error coverage is recorded below. Local
+   launcher termination. Complete the remaining PowerShell stream-write/flush and
+   physical-filesystem acceptance; source-injected errors and Windows file-lock
+   coverage are recorded below. Local
    fixtures cannot prove a real provider's behavior.
 4. **Complete the independent security and distribution gates.** Run the blocked
    repository assessment in a supported managed-permission environment; triage and
@@ -37,16 +38,14 @@ work still awaiting acceptance.
 
 ## Verified on the current candidate
 
-The last full local `npm run check:release`, on the Windows-ownership revision
-`8734919`, passed on Windows 11 Pro x64 using
-Node.js 22.23.2. The latest local output is
-`artifacts/release-check-windows-ngrok-final-2026-09-06.log`, including all 22 client
-connection scenarios, 17 source-launcher/runtime ngrok scenarios, 22 packaged
-Windows checks and fresh/reused installed-runtime Host authorization checks.
-The subsequent source-launcher configuration change has separate local
-`npm run check` and `npm test` evidence in `artifacts/check-ngrok-config-2026-09-06.log`
-and `artifacts/test-ngrok-config-2026-09-06.log`; it does not modify the installed
-PowerShell payload. A newly submitted revision still requires its own CI run.
+The full local `npm run check:release` passed on Windows 11 Pro x64 using
+Node.js 22.23.2. The latest output is
+`artifacts/release-check-windows-config-2026-09-06.log`, including all 22 client
+connection scenarios, 29 source-launcher/runtime ngrok scenarios, 32 packaged
+Windows function/block checks and fresh/reused installed-runtime Host checks.
+Installed startup, configuration restart, stopped/in-use upgrades and recovery
+into a second installation with a fresh key also passed. A newly submitted
+revision still requires its own CI run.
 
 | Requirement | Evidence |
 | --- | --- |
@@ -65,7 +64,7 @@ PowerShell payload. A newly submitted revision still requires its own CI run.
 | Post-commit cache failure | An injected metadata error after successful replacement preserves HTTP 200 and the saved project; the next read reloads storage and replaying the same idempotency key does not duplicate the record |
 | Client connection resilience | 22 isolated real-HTTP scenarios pass: deadlines through body transfer, cancellation, request/timer cleanup, no automatic retry, uncertain write feedback, and slow successful responses. This is not rendered-browser or live-ngrok acceptance. |
 | Source ngrok lifecycle | 29 real-process/local-inspector cases cover own-child readiness, bounded startup/discovery, endpoint and policy checks, pre-verification Host rejection, process exits, cancellation and cleanup. Twelve configuration I/O cases exercise partial writes, exclusive-create collisions, replacement failure and deletion refusal, including during normal shutdown. Persistent cleanup refusal reports the owned file and returns failure; it is not claimed successfully removed. Partial-response/GC regressions are also included; no public tunnel was opened. |
-| Packaged Windows ngrok functions | 22 local-fixture cases pass: exact endpoint matching, body deadlines, keyed configuration changes, cross-process fingerprint stability, altered process identities, stale/valid stop records, retained handles and parent-controlled test cleanup. This is not whole-launcher or live provider acceptance. |
+| Packaged Windows ngrok functions and blocks | 32 local-fixture cases cover endpoint matching, deadlines, keyed configuration changes, process identity, parent-controlled cleanup and ten Windows configuration scenarios. Real locks exercise failed replacement, credentials-file deletion and process/host publication. Successful controls cover UTF-8, quoting, startup and registration-before-publication. This is not whole-launcher or live provider acceptance. |
 | Installed Host authorization | Fresh startup rejects the configured unverified endpoint with HTTP 421. A reused server with a seeded stale host (first verified HTTP 200) keeps its PID but revokes both the old and new unverified domains. |
 | Recommendation indexing | 180 indexed/direct equivalence cases pass; distinct-profile URL reads drop from 2,002,000 to 1,000 in the 1,000-profile regression fixture; full API and release gates pass |
 | Mentor-list pagination | Page-boundary tests pass; live synthetic browser interactions verified 25 cards, page 40, search/source reset, empty results, retained notes/stage and heading focus. Desktop/mobile screenshot acceptance remains open. |
@@ -85,8 +84,8 @@ Node 22 remains within its maintenance support period according to the
 
 - File: `artifacts/MARO-Windows11-Setup.exe`
 - Candidate version: 1.2.3
-- Size: 33,665,536 bytes
-- SHA-256: `9548EDC5D93F3BE9A0165A1497E67E14D1A60283265819F4A7B2A5829FD1AE8B`
+- Size: 33,666,048 bytes
+- SHA-256: `746ACE0F64338B4B275B888873C36033730915C9F564A74542802D2C1901950A`
 - Signature: unsigned (`NotSigned` checked on this artifact). Publisher signing and clean-machine trust acceptance remain open.
 
 This hash identifies the local binary, not a future CI rebuild. Installer builds
@@ -117,7 +116,7 @@ repository security assessment or proof that every advisory was reachable in MAR
 | Repository security assessment | A fresh repository-wide assessment remains open. On 2026-09-05, the Deep Scan plugin refused to start because it requires a managed filesystem permission profile; this session has unrestricted filesystem access. No scan findings or completion result were produced. Zero dependency advisories and passing adversarial API tests do not replace the broad assessment. |
 | Signed distribution | Pending publisher signing setup and verification on a clean Windows device. No certificate was purchased and no store submission was made. |
 | Extension distribution | Unpacked development installation is available. Ordinary user distribution still needs a supported browser-store release process. |
-| Installed ngrok path | The PowerShell launcher is separate from `scripts/ngrok.mjs`. Packaged-function checks cover endpoint matching, keyed configuration fingerprints and retained process identity; the installed local runtime also has Host-boundary checks. The complete live startup/reuse/credential-rotation path, authentication, outages, forced-parent termination and temporary-configuration filesystem failures remain open. |
+| Installed ngrok path | The PowerShell launcher is separate from `scripts/ngrok.mjs`. Packaged functions and selected startup/publication blocks have identity, file-lock and cleanup coverage; the installed local runtime also has Host-boundary checks. Complete live startup/reuse/credential rotation, authentication, outages, forced-parent termination, stream-write/flush fault injection and physical-disk behavior remain open. |
 | Operational pilot | The bounded 1,000-profile API/recovery, injected storage-error cases and client connection tests pass; see [operational evidence](OPERATIONAL_VALIDATION.md). Responsive visual acceptance, complete browser interaction coverage, response-size reduction, sustained real usage, end-to-end reconciliation after a lost write acknowledgement, hardware interruption, physically full volumes, live ngrok outages, and larger-than-tested datasets remain open. |
 | Dutch interface | Full translation remains open; storing a locale preference is not a complete Dutch UI. |
 
