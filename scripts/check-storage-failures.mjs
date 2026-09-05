@@ -103,12 +103,38 @@ try {
       cases++;
     }
   }
+  const committedTitle = "Saved despite cache metadata failure";
+  const committedHeaders = { "Content-Type": "application/json", "X-MARO-Request": "1", "Idempotency-Key": randomUUID() };
+  const beforeCommit = await api("/api/projects");
+  const cacheFault = await arm("cache-stat", "primary", "EIO");
+  const cacheFaultDelivered = childMessage("storage-fault-fired", cacheFault);
+  const [committedResponse] = await Promise.all([
+    fetch(`${baseUrl}/api/projects`, {
+      method: "POST", headers: committedHeaders,
+      body: JSON.stringify({ title: committedTitle }), signal: AbortSignal.timeout(10000),
+    }),
+    cacheFaultDelivered,
+  ]);
+  const committedResult = await committedResponse.json();
+  const afterCommit = await api("/api/projects");
+  assert.equal(afterCommit.projects.filter((project) => project.title === committedTitle).length, 1, "The record was committed before the cache error");
+  assert.equal(afterCommit.projects.length, beforeCommit.projects.length + 1);
+  assert.equal(committedResponse.status, 200, "A committed write must not be reported as a retryable failure because cache metadata failed");
+  assert.equal(committedResult.project.title, committedTitle);
+  const replay = await fetch(`${baseUrl}/api/projects`, {
+    method: "POST", headers: committedHeaders,
+    body: JSON.stringify({ title: committedTitle }), signal: AbortSignal.timeout(10000),
+  });
+  assert.equal(replay.status, 200);
+  assert.deepEqual(await replay.json(), committedResult, "Replaying the same key must return the original committed project");
+  assert.deepEqual(await api("/api/projects"), afterCommit, "A replay after cache failure must not create a duplicate");
+  console.log("PASS committed write: cache-stat EIO preserves success, reloads persisted data and supports idempotent replay");
   const expected = await api("/api/projects");
   await stop();
   await start();
   assert.deepEqual(await api("/api/projects"), expected, "All acknowledged retry data must survive a process restart");
   assert.equal((await api("/api/workspace/integrity")).valid, true);
-  console.log(`PASS ${cases} storage fault cases and persisted restart integrity`);
+  console.log(`PASS ${cases} pre-commit faults, post-commit cache failure and persisted restart integrity`);
 } finally {
   await stop();
   assert.equal(path.dirname(fs.realpathSync(sandbox)), fs.realpathSync(artifacts));

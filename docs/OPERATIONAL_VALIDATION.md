@@ -216,3 +216,29 @@ the test runner's ownership and IPC coordination were tightened; that final
 harness passed separately against the same production bundle. Evidence:
 `artifacts/release-check-storage-2026-09-05.log` and
 `artifacts/storage-failures-final-2026-09-05.log`.
+
+## Post-commit cache failure
+
+The next regression test injects `EIO` from the metadata read only after the
+real primary-file replacement succeeds. Before remediation, the test confirmed
+that the project was already present in a subsequent API read but the original
+request returned HTTP 500 with a retryable error. Cache refresh had incorrectly
+been treated as part of the required storage operation.
+
+After successful replacement, the old cache is now invalidated. If metadata
+reading or cache construction fails, a generic server warning is emitted and
+the saved operation still returns success. The next request reloads storage.
+The new test verifies one saved project, HTTP 200, replay of the same idempotency
+key without duplication, and persistence after restart. The ten pre-commit
+error cases must still reject their mutations and preserve previous data.
+
+This covers a post-commit metadata exception, not every possible cache error
+or HTTP delivery failure. It does not promise exactly-once execution across
+connection loss, process termination or expiration of the in-memory idempotency
+cache. Those remain separate operational acceptance cases.
+
+The complete local release gate passed on 2026-09-05, recorded in
+`artifacts/release-check-cache-commit-2026-09-05.log`. The final test with its
+additional replay assertion passed separately in
+`artifacts/storage-cache-final-2026-09-05.log`. Both test processes and their
+disposable data were cleaned up.

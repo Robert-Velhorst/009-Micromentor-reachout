@@ -12,7 +12,8 @@ Server.prototype.listen = function (...args) {
 const ledger = path.join(process.env.MARO_DATA_DIR, "maro-ledger.json");
 const handles = new Map();
 let armed;
-const original = Object.fromEntries(["openSync", "writeFileSync", "fsyncSync", "closeSync", "renameSync"].map((name) => [name, fs[name].bind(fs)]));
+let primaryCommitted = false;
+const original = Object.fromEntries(["openSync", "writeFileSync", "fsyncSync", "closeSync", "renameSync", "statSync"].map((name) => [name, fs[name].bind(fs)]));
 function target(file) {
   if (typeof file !== "string" || !file.endsWith(".tmp")) return null;
   if (file.startsWith(`${ledger}.backup.`)) return "backup";
@@ -29,10 +30,11 @@ function fault(stage, destination) {
 }
 process.on("message", (message) => {
   if (message?.type !== "arm-storage-fault") return;
-  if (!["open", "write", "sync", "close", "rename"].includes(message.stage) || !["primary", "backup"].includes(message.target)) {
+  if (!["open", "write", "sync", "close", "rename", "cache-stat"].includes(message.stage) || !["primary", "backup"].includes(message.target)) {
     throw new Error("Invalid storage fault");
   }
   armed = message;
+  primaryCommitted = false;
   process.send({ type: "storage-fault-armed", id: message.id });
 });
 fs.openSync = (file, ...args) => {
@@ -66,5 +68,12 @@ fs.closeSync = (handle) => {
 fs.renameSync = (from, to) => {
   const error = fault("rename", target(from));
   if (error) throw error;
-  return original.renameSync(from, to);
+  const result = original.renameSync(from, to);
+  if (to === ledger) primaryCommitted = true;
+  return result;
+};
+fs.statSync = (file, ...args) => {
+  const error = file === ledger && primaryCommitted ? fault("cache-stat", "primary") : null;
+  if (error) throw error;
+  return original.statSync(file, ...args);
 };

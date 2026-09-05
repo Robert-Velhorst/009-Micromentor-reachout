@@ -636,6 +636,11 @@ Runtime data is ignored by Git. Override the directory with `MARO_DATA_DIR`.
 
 Every successful mutation is normalized, serialized to a flushed temporary file, and atomically moved into place. The previous valid primary is retained as the rolling backup. If the primary cannot be parsed or decrypted, MARO attempts the backup and records a high-risk recovery event.
 
+If refreshing the optional in-memory cache fails after file replacement succeeds,
+MARO keeps the successful acknowledgement, discards the old cache and reloads
+storage on the next read. Failures before replacement remain errors. This does
+not remove uncertainty when the connection drops before an acknowledgement arrives.
+
 ### Workspace backups
 
 Portable backups use:
@@ -674,7 +679,7 @@ Reset supports queue, mentor, and complete-workspace scopes and requires explici
 | `npm run check:operational` | Build and test 1,000 synthetic profiles, request-size guards, backup recovery, and forced restart; write server measurements to `artifacts/operational-check.json` |
 | `npm run check:recommendations` | Compare indexed/direct mentor relationships, verify recommendation rules, and guard against repeated full-profile scans |
 | `npm run check:mentor-pagination` | Check 25-profile page boundaries, complete reachability, empty results, and out-of-range page requests |
-| `npm run check:storage` | Build and exercise ten injected storage failures against the real encrypted API, including data preservation, temporary-file cleanup, retry and restart checks |
+| `npm run check:storage` | Build and exercise ten pre-commit storage faults and a post-commit cache fault against the real encrypted API, including data preservation, cleanup, retry, idempotent replay and restart checks |
 | `npm test` | Run the production API suite, manual-handoff extension, recommendation, pagination, and storage-failure checks |
 | `npm run audit:security` | Run `npm audit --audit-level=low` |
 | `npm run check:release` | Run the complete local release gate, including Windows installation acceptance on Windows |

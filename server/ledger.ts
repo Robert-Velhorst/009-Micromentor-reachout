@@ -1293,14 +1293,20 @@ function writeState(state: LedgerState, options: { preserveBackup?: boolean } = 
     atomicWriteFile(backupDataPath(), fs.readFileSync(filePath, "utf8"));
   }
   atomicWriteFile(filePath, encryptLedgerJson(JSON.stringify(state, null, 2)));
-  const stat = fs.statSync(filePath);
-  ledgerCache = {
-    filePath,
-    modifiedAtMs: stat.mtimeMs,
-    size: stat.size,
-    passphrase: ledgerPassphrase(),
-    state: structuredClone(state),
-  };
+  ledgerCache = null;
+  try {
+    const stat = fs.statSync(filePath);
+    ledgerCache = {
+      filePath,
+      modifiedAtMs: stat.mtimeMs,
+      size: stat.size,
+      passphrase: ledgerPassphrase(),
+      state: structuredClone(state),
+    };
+  } catch {
+    // File replacement succeeded; an optional cache failure must not invite retries.
+    console.warn("Ledger saved, but cache refresh failed. The next read will reload storage.");
+  }
 }
 
 function replaceState(target: LedgerState, next: LedgerState) {

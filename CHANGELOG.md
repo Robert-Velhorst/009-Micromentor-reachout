@@ -2,6 +2,8 @@
 
 ## 1.2.3 - Unreleased
 
+- Keep successful storage acknowledgements when post-commit cache refresh fails; discard the old cache and reload on the next read instead of returning a misleading retryable failure.
+- Verify post-commit metadata failure, persisted data and idempotent replay alongside the ten pre-commit storage-fault cases.
 - Clean up temporary ledger files after failed writes, flushes or closes as well as failed replacements; retain the original error if cleanup itself fails.
 - Add isolated storage-fault tests for the encrypted primary and backup, rejected-mutation cache isolation, successful retries and restart integrity.
 - Limit the mentor list to 25 profiles per page while keeping full-campaign search, source filters and unsaved edits during page navigation. Reset pages on filter/campaign changes and move keyboard focus to the list heading after paging.
