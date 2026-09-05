@@ -245,6 +245,7 @@ await runNpm("Dependency security audit", ["run", "audit:security"]);
 await runNpm("TypeScript contract check", ["run", "check"]);
 await runNpm("Manual handoff extension checks", ["run", "check:extension"]);
 await runNpm("Recommendation equivalence and complexity checks", ["run", "check:recommendations"]);
+await runNpm("Mentor pagination boundary checks", ["run", "check:mentor-pagination"]);
 await runNpm("Build plus encrypted ledger API smoke test", ["run", "check:api"]);
 await run("Large workspace and recovery checks", process.execPath, ["scripts/check-operational.mjs"]);
 

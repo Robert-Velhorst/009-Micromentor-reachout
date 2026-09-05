@@ -2,6 +2,8 @@
 
 ## 1.2.3 - Unreleased
 
+- Limit the mentor list to 25 profiles per page while keeping full-campaign search, source filters and unsaved edits during page navigation. Reset pages on filter/campaign changes and move keyboard focus to the list heading after paging.
+- Add deterministic pagination boundary checks to normal tests and the release gate; document the separate live-browser acceptance scope.
 - Index mentor relationships within each recommendation calculation, avoiding repeated full-profile scans while retaining direct identity/URL matching and unchanged write guards.
 - Add recommendation behavior, indexed/direct lookup equivalence, and deterministic 1,000-profile complexity checks to normal tests and the release gate.
 - Allow portable restore requests up to 16 MiB without raising the ordinary 1 MiB API limit.

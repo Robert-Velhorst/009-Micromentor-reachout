@@ -130,6 +130,7 @@ The practical operator flow is:
 - Computes a transparent fit score with reasons, risks, and threshold evidence.
 - Detects duplicate identities and profile URLs without deleting source history.
 - Supports durable do-not-contact state and identity cooldown.
+- Shows 25 mentor profiles per page, with page selection above and below the list. Search and source filters apply to the complete campaign; changing filters or campaign returns to page one. Unsaved notes and stage edits remain while browsing pages, but require Save before a ledger refresh.
 
 ### Drafting and approval
 
@@ -672,7 +673,8 @@ Reset supports queue, mentor, and complete-workspace scopes and requires explici
 | `npm run check:api` | Build and run the encrypted API smoke workflow |
 | `npm run check:operational` | Build and test 1,000 synthetic profiles, request-size guards, backup recovery, and forced restart; write server measurements to `artifacts/operational-check.json` |
 | `npm run check:recommendations` | Compare indexed/direct mentor relationships, verify recommendation rules, and guard against repeated full-profile scans |
-| `npm test` | Run the production API suite, manual-handoff extension checks, and recommendation checks |
+| `npm run check:mentor-pagination` | Check 25-profile page boundaries, complete reachability, empty results, and out-of-range page requests |
+| `npm test` | Run the production API suite, manual-handoff extension, recommendation, and pagination checks |
 | `npm run audit:security` | Run `npm audit --audit-level=low` |
 | `npm run check:release` | Run the complete local release gate, including Windows installation acceptance on Windows |
 | `npm run format` | Format the repository with Prettier |
@@ -712,14 +714,16 @@ The gate runs:
 3. dependency vulnerability audit;
 4. both TypeScript checks;
 5. manual-handoff extension checks, including popup expiry and target-page guards;
-6. production build and encrypted API workflow;
-7. Windows installer build using the exact x64 Node version in `.node-version`;
-8. isolated legacy migration and bundled-runtime identity check;
-9. installed encrypted runtime launch without development tools on PATH;
-10. configuration-triggered restart and ownership-checked stop;
-11. stopped and in-use upgrade preservation;
-12. portable backup restore into a fresh installation with a new encryption key, followed by restart;
-13. final installer SHA-256 output.
+6. recommendation equivalence, complexity, and mentor-pagination boundary checks;
+7. production build and encrypted API workflow;
+8. isolated 1,000-profile API, request-boundary, backup and crash-recovery checks;
+9. Windows installer build using the exact x64 Node version in `.node-version`;
+10. isolated legacy migration and bundled-runtime identity check;
+11. installed encrypted runtime launch without development tools on PATH;
+12. configuration-triggered restart and ownership-checked stop;
+13. stopped and in-use upgrade preservation;
+14. portable backup restore into a fresh installation with a new encryption key, followed by restart;
+15. final installer SHA-256 output.
 
 ### Continuous integration
 
@@ -736,7 +740,10 @@ by itself verify the current candidate.
 
 ### Last measured resource baseline
 
-These figures are evidence from the final verification run, not universal guarantees:
+These historical 1.2.2 figures come from the final verification report, not the
+current 1.2.3 candidate or universal guarantees. Current larger-workspace
+measurements and browser-test limitations are in
+[`docs/OPERATIONAL_VALIDATION.md`](docs/OPERATIONAL_VALIDATION.md).
 
 | Surface | Observed value |
 | --- | --- |

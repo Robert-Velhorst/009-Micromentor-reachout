@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -28,6 +28,8 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { MentorPagination } from "@/components/MentorPagination";
+import { mentorPageWindow } from "@/lib/mentorPagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -477,6 +479,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<LedgerTab>("ledger");
   const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
   const [sourceFilterId, setSourceFilterId] = useState("");
+  const [mentorPagination, setMentorPagination] = useState({ scope: "", page: 1 });
+  const mentorListHeading = useRef<HTMLHeadingElement>(null);
   const [sourceEdits, setSourceEdits] = useState<Record<string, SourceForm>>({});
   const [discoveryStatus, setDiscoveryStatus] = useState("");
 
@@ -653,6 +657,17 @@ export default function Home() {
     if (!needle) return mentors;
     return mentors.filter((mentor) => `${mentor.name} ${mentor.headline} ${mentor.bio} ${mentor.skills.join(" ")}`.toLowerCase().includes(needle));
   }, [details?.mentors, query, sourceFilterId]);
+  const mentorPageScope = JSON.stringify([activeCampaignId, query, sourceFilterId]);
+  useEffect(() => {
+    setMentorPagination({ scope: mentorPageScope, page: 1 });
+  }, [mentorPageScope]);
+  const mentorPage = mentorPageWindow(filteredMentors.length, mentorPagination.scope === mentorPageScope ? mentorPagination.page : 1);
+  const visibleMentors = filteredMentors.slice(mentorPage.start, mentorPage.end);
+  const changeMentorPage = (page: number) => {
+    setMentorPagination({ scope: mentorPageScope, page });
+    mentorListHeading.current?.focus({ preventScroll: true });
+    mentorListHeading.current?.scrollIntoView({ block: "start" });
+  };
   const selectedMentor = useMemo(() => {
     const mentors = details?.mentors || [];
     return mentors.find((mentor) => mentor.id === selectedMentorId) || filteredMentors[0] || mentors[0] || null;
@@ -1879,7 +1894,7 @@ export default function Home() {
               <CardHeader className="px-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <CardTitle className="text-lg">Mentor profiles and fit scores</CardTitle>
+                    <h2 ref={mentorListHeading} tabIndex={-1} className="scroll-mt-4 text-lg font-semibold leading-none">Mentor profiles and fit scores</h2>
                     <div className="mt-1 text-xs text-muted-foreground">Strong match threshold: {strongFitThreshold}%</div>
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
@@ -1899,7 +1914,7 @@ export default function Home() {
                     </select>
                     <div className="relative">
                       <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search mentors" className="h-9 rounded-md pl-9 sm:w-64" />
+                      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search mentors" aria-label="Search mentors" className="h-9 rounded-md pl-9 sm:w-64" />
                     </div>
                   </div>
                 </div>
@@ -1916,13 +1931,14 @@ export default function Home() {
                     </Button>
                   </div>
                 ) : null}
+                <MentorPagination range={mentorPage} total={filteredMentors.length} onChange={changeMentorPage} />
                 <div className="space-y-3">
-                  {filteredMentors.map((mentor) => {
+                  {visibleMentors.map((mentor) => {
                     const assessment = assessmentsByMentor.get(mentor.id);
                     const mentorMessages = messagesByMentor.get(mentor.id) || [];
                     const sourceRecord = mentor.sourceRecordId ? sourceRecordsById.get(mentor.sourceRecordId) : null;
                     return (
-                      <div key={mentor.id} className="rounded-md border p-4">
+                      <div key={mentor.id} data-mentor-id={mentor.id} className="rounded-md border p-4">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div>
                             <div className="flex flex-wrap items-center gap-2">
@@ -2032,10 +2048,11 @@ export default function Home() {
                   })}
                   {!filteredMentors.length ? (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      No mentors in this campaign yet.
+                      {details?.mentors.length ? "No mentors match these filters." : "No mentors in this campaign yet."}
                     </div>
                   ) : null}
                 </div>
+                {mentorPage.pageCount > 1 ? <MentorPagination range={mentorPage} total={filteredMentors.length} onChange={changeMentorPage} /> : null}
               </CardContent>
             </Card>
 

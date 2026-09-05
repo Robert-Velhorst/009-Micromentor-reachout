@@ -126,3 +126,43 @@ samples support a local latency improvement. They do not prove reduced memory
 use, a memory-leak fix, or a faster rendered browser experience. The response
 still contains the complete campaign data; no features or historical records
 were removed to obtain the improvement.
+
+## Mentor-list pagination follow-up
+
+The previous frontend mounted every filtered mentor card. During a synthetic
+1,000-profile browser exercise, the tab became unresponsive and screenshot
+capture returned a blank image. This observation does not establish a browser
+crash or an out-of-memory cause. The list now mounts at most 25 cards, with
+previous/next controls and direct page selection above and below the list.
+Filtering still searches the complete campaign before slicing the current page.
+
+On 2026-09-05, the in-app browser's DOM and interaction checks verified 25
+cards, navigation to page 40, finding a profile outside that page, first-page
+reset for a 111-result search and a source filter, and the empty-results
+message. A typed note survived next/previous navigation, Save, and Refresh.
+An unsaved stage change survived next/previous navigation. Using the bottom
+pager moved focus to the native list heading, with 25 cards still mounted and
+no warning/error console entries in the final check.
+The test used only disposable synthetic data and did not contact MicroMentor.
+
+`npm run check:mentor-pagination` checks the actual TypeScript page calculation:
+empty lists, partial last pages, invalid/out-of-range requests, shrinking
+results, and reaching all 1,000 distinct records exactly once across 40 pages.
+It runs in normal tests and the release gate. These are calculation tests, not
+automated React interaction coverage. Campaign switching, stage edits, filter
+changes and focus behavior still need repeatable browser regression coverage.
+
+Screenshot capture and requested viewport sizes were unreliable in this browser
+session. No desktop/mobile visual acceptance or measured render-latency claim
+is made. The temporary test server also reached its automatic cleanup timeout;
+the later connection refusal was a stopped fixture, not an app crash.
+
+The browser still receives and holds the entire campaign payload. Pagination
+reduces mounted card/control count, not API response bytes or total workspace
+memory. Message-heavy and duplicate-heavy workspaces, sustained use and browser
+memory/latency measurements remain separate acceptance work.
+
+The final local `check:release` passed with the focus correction included;
+the log is `artifacts/release-check-pagination-2026-09-05.log`. Both disposable
+browser workspaces and their owned servers were cleaned up, and the temporary
+browser viewport override was reset.
