@@ -2,6 +2,9 @@
 
 ## 1.2.3 - Unreleased
 
+- Require the source ngrok launcher to receive listening confirmation from its own MARO child before starting a tunnel; fail and clean up owned processes on startup errors, exits and interruption.
+- Bound version checks and endpoint discovery, explicitly close stalled inspector connections, match the unique endpoint name/upstream/HTTPS origin, and defer automatic host allowlisting until verification.
+- Add real-process launcher regression tests with local ngrok/inspector fixtures, including forced-GC partial-response coverage, validated authentication-policy arguments and runtime-status checks. Installed PowerShell and live ngrok acceptance remain separate.
 - Bound client reads to 60 seconds and mutations to 120 seconds, including response-body transfer, and release pending-request entries after failure. Do not automatically retry interrupted actions.
 - Explain potentially saved outcomes after mutation timeouts, connection loss, server errors or unusable success responses; retain ordinary validation errors. Add isolated real-HTTP client regression checks to normal tests and the release gate.
 - Keep successful storage acknowledgements when post-commit cache refresh fails; discard the old cache and reload on the next read instead of returning a misleading retryable failure.

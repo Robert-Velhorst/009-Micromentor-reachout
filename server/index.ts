@@ -324,6 +324,9 @@ async function startServer() {
 
   server.listen(port, host, () => {
     console.log(`Server running on http://${host}:${port}/`);
+    if (process.send && process.connected) {
+      process.send({ type: "maro-ready", pid: process.pid, host, port }, () => {});
+    }
   });
 }
 

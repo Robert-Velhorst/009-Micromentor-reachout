@@ -41,6 +41,50 @@ cannot undo server work by aborting fetch. Operators must refresh and inspect
 saved state before manually repeating an action with an unknown outcome. The
 separate encrypted API/storage suites remain the evidence for persistence.
 
+## Source ngrok launcher
+
+`npm run check:ngrok` builds MARO and runs `scripts/check-ngrok-launcher.mjs`.
+Normal tests and the release gate reuse their existing build. Seventeen process
+scenarios exercise the actual source launcher and encrypted MARO server. Only
+the external ngrok executable and inspector destinations are replaced by local
+fixtures; no real ngrok agent, account, token or public endpoint is used. The
+fixtures validate the actual CLI arguments and authentication-policy file before
+returning endpoint metadata. All test workspaces, listeners, recorded child
+processes and temporary configuration are checked or cleaned up.
+
+The old launcher reproduced an unsafe startup path: an unrelated service on the
+requested port allowed the ngrok child to start, and the launcher could then exit
+with status zero despite MARO failing. The launcher now requires an IPC listening
+confirmation from its own child. It stops owned children on errors, exits and
+interruption, and waits for their closure before returning.
+
+Tests cover occupied ports, successful and dedicated-endpoint startup, version
+probe timeout/cancellation, ngrok and MARO exits, stalled inspector headers and
+bodies, fallback after a stalled or HTTP-error inspector, wrong endpoint name,
+upstream, scheme/path or configured origin, invalid JSON, and cleanup. Before
+verification, an automatically configured endpoint is absent from the generated
+allowlist and the real MARO runtime rejects its Host with HTTP 421. Explicit
+operator `MARO_ALLOWED_HOSTS` entries remain separately trusted.
+
+A forced-GC case reproduced a stuck partial inspector response on the pinned
+Node runtime despite fetch cancellation. The launcher now uses Node's native
+HTTP request lifecycle and explicitly destroys its request/response on timeout.
+The same GC test covers the app's existing runtime-status path, which passed
+without changes. This records the observed regression, not a universal claim
+about all Node fetch implementations.
+
+Deadlines are five seconds for the version probe, fifteen seconds for owned
+server readiness, and fifteen seconds for endpoint discovery (including at most
+300 ms per inspector request). Tests anchor the discovery wait after actual
+agent startup, separate from local-server startup. The stop-signal test emits the
+launcher's SIGTERM event through a test-only IPC boundary for Windows portability;
+it is not proof of every native console or OS shutdown mechanism.
+
+The installed PowerShell launcher is separate and has not been changed or
+accepted by this suite. Live ngrok authentication/outage behavior, Windows
+endpoint ownership and reuse, forced parent termination, and filesystem errors
+during temporary configuration creation remain acceptance work.
+
 ## Workload and assertions
 
 - Import 1,000 distinct synthetic mentor profiles in ten batches through the

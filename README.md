@@ -356,13 +356,19 @@ $env:MARO_NGROK_URL = "https://your-dedicated-endpoint.example"
 npm.cmd run dev
 ```
 
-The launcher:
+The source-checkout launcher used by `npm run dev`:
 
 - validates that the URL is HTTPS;
-- locates only the endpoint targeting MARO's loopback port;
-- probes ngrok Agent API ports `4040` through `4050` with bounded timeouts;
-- publishes only the exact endpoint hostname to the server allowlist;
-- does not stop or reuse unrelated local ngrok tools.
+- waits for its own MARO child to confirm it is listening, rather than accepting an unrelated service on the requested port;
+- locates only its uniquely named endpoint targeting MARO's loopback port and checks any configured origin;
+- bounds the ngrok version probe to five seconds, MARO startup to fifteen seconds, and endpoint discovery to fifteen seconds with at most 300 ms per inspector request;
+- probes ngrok Agent API ports `4040` through `4050`, including deadlines for partial response bodies;
+- publishes the exact endpoint hostname only after verification; explicit operator-provided `MARO_ALLOWED_HOSTS` entries remain separately trusted;
+- closes its owned children and temporary configuration on failure or interruption without stopping unrelated ngrok tools.
+
+The installed Windows launcher is a separate PowerShell implementation. Its
+live ngrok acceptance and equivalent endpoint-ownership checks remain open; the
+source-checkout process tests do not establish those installed-path guarantees.
 
 An unrelated `*.ngrok.app` Host is rejected with HTTP 421 even while MARO's own tunnel is active.
 
@@ -681,6 +687,7 @@ Reset supports queue, mentor, and complete-workspace scopes and requires explici
 | `npm run check:mentor-pagination` | Check 25-profile page boundaries, complete reachability, empty results, and out-of-range page requests |
 | `npm run check:storage` | Build and exercise ten pre-commit storage faults and a post-commit cache fault against the real encrypted API, including data preservation, cleanup, retry, idempotent replay and restart checks |
 | `npm run check:client-requests` | Exercise the actual client against isolated HTTP connections: deadlines through body transfer, cancellation, in-flight cleanup, no automatic retries, and uncertain write feedback |
+| `npm run check:ngrok` | Build and exercise the real source launcher/runtime with a local ngrok process fixture: port ownership, endpoint matching, deadlines, exits, cancellation, policy arguments and cleanup; no public tunnel |
 | `npm test` | Run the production API suite, manual-handoff extension, recommendation, pagination, and storage-failure checks |
 | `npm run audit:security` | Run `npm audit --audit-level=low` |
 | `npm run check:release` | Run the complete local release gate, including Windows installation acceptance on Windows |

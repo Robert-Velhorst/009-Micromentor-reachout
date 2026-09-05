@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import net from "node:net";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const port = Number(process.env.PORT || 3000);
@@ -15,42 +16,47 @@ const basicAuth = process.env.NGROK_BASIC_AUTH;
 const allowPublicTunnel = process.env.MARO_ALLOW_PUBLIC_TUNNEL === "1";
 const configuredEndpointUrl = process.env.MARO_NGROK_URL;
 let policyPath = null;
-let ngrokExitCode = null;
+const shutdownController = new AbortController();
+const ownedChildren = new Map();
+const endpointName = `maro-${port}-${process.pid}`;
 const allowedHostsPath = path.join(os.tmpdir(), `maro-allowed-hosts-${process.pid}-${randomUUID()}.json`);
 
 function run(command, args, options = {}) {
-  return spawn(command, args, {
+  const child = spawn(command, args, {
     cwd: root,
     env: { ...process.env, ...options.env },
     shell: false,
     stdio: options.stdio ?? "inherit",
     windowsHide: true,
   });
+  ownedChildren.set(child, new Promise((resolve) => child.once("close", resolve)));
+  child.on("error", (error) => shutdownController.abort(error));
+  if (!options.probe) {
+    child.once("exit", (code, signal) => {
+      shutdownController.abort(new Error(`${options.label || command} exited (${signal || code}).`));
+    });
+  }
+  return child;
 }
 
-function waitForServer() {
+function waitForServer(child) {
   return new Promise((resolve, reject) => {
-    const started = Date.now();
-
-    const tryConnect = () => {
-      const socket = net.connect({ host, port });
-
-      socket.on("connect", () => {
-        socket.end();
-        resolve();
-      });
-
-      socket.on("error", () => {
-        socket.destroy();
-        if (Date.now() - started > 15000) {
-          reject(new Error(`Server did not respond on ${host}:${port}`));
-          return;
-        }
-        setTimeout(tryConnect, 300);
-      });
+    const signal = shutdownController.signal;
+    const finish = (error) => {
+      clearTimeout(timer);
+      child.removeListener("message", ready);
+      signal.removeEventListener("abort", aborted);
+      if (error) reject(error);
+      else resolve();
     };
-
-    tryConnect();
+    const ready = (message) => {
+      if (message?.type === "maro-ready" && message.pid === child.pid && message.host === host && message.port === port) finish();
+    };
+    const aborted = () => finish(signal.reason);
+    const timer = setTimeout(() => finish(new Error("MARO did not confirm startup within 15 seconds.")), 15_000);
+    child.on("message", ready);
+    signal.addEventListener("abort", aborted, { once: true });
+    if (signal.aborted) aborted();
   });
 }
 
@@ -58,31 +64,71 @@ function tunnelTargetsLocalServer(value) {
   try {
     const target = new URL(value);
     const targetHost = target.hostname === "localhost" ? "127.0.0.1" : target.hostname;
-    return targetHost === host && Number(target.port || 80) === port;
+    return target.protocol === "http:" && !target.username && !target.password && target.pathname === "/" && !target.search && !target.hash && targetHost === host && Number(target.port || 80) === port;
   } catch {
     return false;
   }
 }
 
+function readInspector(inspectorUrl, signal, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(signal.reason); return; }
+    let response;
+    let settled = false;
+    const chunks = [];
+    const finish = (error, data) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener("abort", aborted);
+      request.destroy();
+      response?.destroy();
+      chunks.length = 0;
+      if (error) reject(error);
+      else resolve(data);
+    };
+    const request = http.get(`${inspectorUrl}/api/endpoints`, { agent: false }, (incoming) => {
+      response = incoming;
+      if (response.statusCode !== 200) { finish(new Error("Inspector did not return JSON data.")); return; }
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.once("error", (error) => finish(error));
+      response.once("aborted", () => finish(new Error("Inspector response was interrupted.")));
+      response.once("end", () => {
+        try { finish(null, JSON.parse(Buffer.concat(chunks).toString("utf8"))); }
+        catch (error) { finish(error); }
+      });
+    });
+    const aborted = () => finish(signal.reason);
+    const timer = setTimeout(() => finish(new Error("Inspector request timed out.")), timeoutMs);
+    request.once("error", (error) => finish(error));
+    signal.addEventListener("abort", aborted, { once: true });
+  });
+}
+
 async function waitForTunnel() {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (ngrokExitCode !== null) return null;
+  const signal = shutdownController.signal;
+  const deadline = performance.now() + 15_000;
+  while (!signal.aborted && performance.now() < deadline) {
     for (let inspectorPort = 4040; inspectorPort <= 4050; inspectorPort += 1) {
+      const remaining = deadline - performance.now();
+      if (signal.aborted || remaining <= 0) break;
       try {
         const inspectorUrl = `http://127.0.0.1:${inspectorPort}`;
-        const response = await fetch(`${inspectorUrl}/api/endpoints`);
-        if (!response.ok) continue;
-        const data = await response.json();
-        const endpoint = (data.endpoints || []).find((item) => tunnelTargetsLocalServer(item.upstream?.url));
-        if (endpoint?.url) {
-          return { publicUrl: endpoint.url, inspectorUrl };
+        const data = await readInspector(inspectorUrl, signal, Math.min(300, remaining));
+        const found = (Array.isArray(data.endpoints) ? data.endpoints : []).find((item) => item?.name === endpointName && tunnelTargetsLocalServer(item.upstream?.url));
+        const publicEndpoint = found?.url ? validatedEndpointUrl(found.url) : null;
+        if (publicEndpoint && (!endpoint || publicEndpoint.origin === endpoint.origin)) {
+          signal.throwIfAborted();
+          return { publicUrl: publicEndpoint.origin, inspectorUrl };
         }
       } catch {
         // ngrok chooses the next available local inspector port.
       }
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) break;
+    try { await delay(Math.min(500, remaining), undefined, { signal }); } catch { break; }
   }
 
   return null;
@@ -147,16 +193,41 @@ function removeAllowedHosts() {
 
 async function ensureNgrokAvailable() {
   return new Promise((resolve) => {
-    const child = spawn(ngrokCommand, ["version"], {
-      cwd: root,
-      shell: false,
-      stdio: "ignore",
-      windowsHide: true,
-    });
-
-    child.on("error", () => resolve(false));
-    child.on("exit", (code) => resolve(code === 0));
+    const child = run(ngrokCommand, ["version"], { stdio: "ignore", probe: true });
+    const signal = shutdownController.signal;
+    const aborted = () => finish(false);
+    const timer = setTimeout(() => finish(false), 5000);
+    const finish = (available) => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", aborted);
+      resolve(available);
+    };
+    child.once("error", () => finish(false));
+    child.once("exit", (code) => finish(code === 0));
+    signal.addEventListener("abort", aborted, { once: true });
+    if (signal.aborted) aborted();
   });
+}
+
+async function stopOwnedChildren() {
+  for (const child of ownedChildren.keys()) {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+  }
+  let timer;
+  try {
+    await Promise.race([
+      Promise.all(ownedChildren.values()),
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          for (const child of ownedChildren.keys()) {
+            if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+          }
+          resolve();
+        }, 3000);
+      }),
+    ]);
+  } finally { clearTimeout(timer); }
+  await Promise.all(ownedChildren.values());
 }
 
 if (!basicAuth && !allowPublicTunnel) {
@@ -180,96 +251,62 @@ try {
   process.exit(1);
 }
 
-const available = await ensureNgrokAvailable();
-if (!available) {
-  console.error("ngrok is not installed or is not available on PATH.");
-  console.error("Install ngrok, authenticate it with your ngrok account, then run npm run dev again.");
-  process.exit(1);
+let interrupted = false;
+function interrupt() {
+  interrupted = true;
+  shutdownController.abort(new Error("Launcher stopped."));
 }
+process.once("SIGINT", interrupt);
+process.once("SIGTERM", interrupt);
+process.once("exit", () => { removeTrafficPolicy(); removeAllowedHosts(); });
 
-writeAllowedHosts(endpoint ? [endpoint.hostname] : []);
+try {
+  if (!await ensureNgrokAvailable()) throw new Error("ngrok is unavailable or its version check timed out. Install and authenticate ngrok, then try again.");
+  shutdownController.signal.throwIfAborted();
+  writeAllowedHosts([]);
+  const server = run(process.execPath, ["dist/index.cjs"], {
+    label: "Local MARO server",
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+    env: {
+      NODE_ENV: "production", HOST: host, PORT: String(port),
+      MARO_ALLOWED_HOSTS: process.env.MARO_ALLOWED_HOSTS || "",
+      MARO_ALLOWED_HOSTS_FILE: allowedHostsPath,
+    },
+  });
+  server.stdout.on("data", (chunk) => process.stdout.write(chunk));
+  server.stderr.on("data", (chunk) => process.stderr.write(chunk));
+  await waitForServer(server);
+  shutdownController.signal.throwIfAborted();
 
-const server = run(process.execPath, ["dist/index.cjs"], {
-  stdio: ["ignore", "pipe", "pipe"],
-  env: {
-    NODE_ENV: "production",
-    HOST: host,
-    PORT: String(port),
-    MARO_ALLOWED_HOSTS: [process.env.MARO_ALLOWED_HOSTS, endpoint?.hostname].filter(Boolean).join(","),
-    MARO_ALLOWED_HOSTS_FILE: allowedHostsPath,
-  },
-});
-
-server.stdout.on("data", (chunk) => process.stdout.write(chunk));
-server.stderr.on("data", (chunk) => process.stderr.write(chunk));
-
-await waitForServer();
-
-const ngrokArgs = ["http", `http://${host}:${port}`];
-if (endpoint) {
-  ngrokArgs.push("--url", endpoint.origin);
-}
-if (protectedCredentials) {
-  policyPath = createTrafficPolicy(protectedCredentials);
-  ngrokArgs.push("--traffic-policy-file", policyPath);
-} else {
-  console.warn("Warning: MARO_ALLOW_PUBLIC_TUNNEL=1 explicitly allows this tunnel to be public without basic auth.");
-}
-ngrokArgs.push("--name", `maro-${port}-${process.pid}`);
-
-const ngrok = run(ngrokCommand, ngrokArgs, {
-  stdio: ["ignore", "pipe", "pipe"],
-});
-
-ngrok.stdout.on("data", (chunk) => process.stdout.write(chunk));
-ngrok.stderr.on("data", (chunk) => process.stderr.write(chunk));
-
-server.on("exit", (code) => {
-  if (code !== 0 && code !== null) {
-    console.error(`Local server exited with ${code}.`);
+  const ngrokArgs = ["http", `http://${host}:${port}`, "--name", endpointName];
+  if (endpoint) ngrokArgs.push("--url", endpoint.origin);
+  if (protectedCredentials) {
+    policyPath = createTrafficPolicy(protectedCredentials);
+    ngrokArgs.push("--traffic-policy-file", policyPath);
+  } else {
+    console.warn("Warning: MARO_ALLOW_PUBLIC_TUNNEL=1 explicitly allows this tunnel to be public without basic auth.");
   }
-  removeAllowedHosts();
-  ngrok.kill();
-});
-
-ngrok.on("exit", (code) => {
-  ngrokExitCode = code;
+  const ngrok = run(ngrokCommand, ngrokArgs, { label: "ngrok", stdio: ["ignore", "pipe", "pipe"] });
+  ngrok.stdout.on("data", (chunk) => process.stdout.write(chunk));
+  ngrok.stderr.on("data", (chunk) => process.stderr.write(chunk));
+  const tunnel = await waitForTunnel();
+  shutdownController.signal.throwIfAborted();
+  if (!tunnel) throw new Error("ngrok did not expose a matching HTTPS endpoint within 15 seconds. Check the ngrok output above.");
   removeTrafficPolicy();
-  removeAllowedHosts();
-  if (code !== 0 && code !== null) {
-    console.error(`ngrok exited with ${code}.`);
-  }
-  server.kill();
-});
-
-const tunnel = await waitForTunnel();
-removeTrafficPolicy();
-if (tunnel) {
   writeAllowedHosts([new URL(tunnel.publicUrl).hostname]);
   console.log(`ngrok tunnel ready: ${tunnel.publicUrl}`);
   console.log(`ngrok inspector: ${tunnel.inspectorUrl}`);
-} else {
-  console.error("ngrok did not expose a tunnel for this MARO server. Check the ngrok output above.");
-  ngrok.kill();
-  server.kill();
-  process.exit(1);
-}
-
-function shutdown() {
+  await new Promise((resolve) => {
+    if (shutdownController.signal.aborted) resolve();
+    else shutdownController.signal.addEventListener("abort", resolve, { once: true });
+  });
+  shutdownController.signal.throwIfAborted();
+} catch (error) {
+  if (!interrupted) console.error(error.message);
+  process.exitCode = interrupted ? 0 : 1;
+} finally {
+  shutdownController.abort();
+  await stopOwnedChildren();
   removeTrafficPolicy();
   removeAllowedHosts();
-  ngrok.kill();
-  server.kill();
 }
-
-process.on("exit", removeAllowedHosts);
-
-process.on("SIGINT", () => {
-  shutdown();
-  process.exit(0);
-});
-
-process.on("SIGTERM", () => {
-  shutdown();
-  process.exit(0);
-});
