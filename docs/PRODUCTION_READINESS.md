@@ -8,9 +8,9 @@ published as a signed release.
 
 The full `npm run check:release` passed locally on Windows 11 Pro x64, using
 Node.js 22.23.2. The latest local output is
-`artifacts/release-check-cache-commit-2026-09-05.log`. The final storage test,
-including the added idempotent replay assertion, was also checked separately in
-`artifacts/storage-cache-final-2026-09-05.log`.
+`artifacts/release-check-client-network-2026-09-05.log`. The final expanded
+client-connection suite, including exact deadline boundaries, was also checked
+separately in `artifacts/client-network-final-2026-09-05.log`.
 
 | Requirement | Evidence |
 | --- | --- |
@@ -27,6 +27,7 @@ including the added idempotent replay assertion, was also checked separately in
 | Recovery boundaries | Restore preview leaves both encrypted files byte-identical; oversized requests rejected; corrupt primary recovers from rotating backup with integrity and audit checks |
 | Injected storage failures | Ten backup/primary fault cases passed with intact acknowledged data, cache isolation, temporary-file cleanup, successful retry and restart integrity; these are simulated filesystem errors, not physical disk or power-loss tests |
 | Post-commit cache failure | An injected metadata error after successful replacement preserves HTTP 200 and the saved project; the next read reloads storage and replaying the same idempotency key does not duplicate the record |
+| Client connection resilience | 22 isolated real-HTTP scenarios pass: deadlines through body transfer, cancellation, request/timer cleanup, no automatic retry, uncertain write feedback, and slow successful responses. This is not rendered-browser or live-ngrok acceptance. |
 | Recommendation indexing | 180 indexed/direct equivalence cases pass; distinct-profile URL reads drop from 2,002,000 to 1,000 in the 1,000-profile regression fixture; full API and release gates pass |
 | Mentor-list pagination | Page-boundary tests pass; live synthetic browser interactions verified 25 cards, page 40, search/source reset, empty results, retained notes/stage and heading focus. Desktop/mobile screenshot acceptance remains open. |
 | Process cleanup | Test runtimes stopped and temporary installations cleaned up |
@@ -46,7 +47,7 @@ Node 22 remains within its maintenance support period according to the
 - File: `artifacts/MARO-Windows11-Setup.exe`
 - Candidate version: 1.2.3
 - Size: 33,663,488 bytes
-- SHA-256: `B1DFA7BB5DA47D59FEB47F207F7FFF5F181B1362BC5D0D78EA7B5726729A3788`
+- SHA-256: `CC2FDE02984E336D904212814D2D23B0CACA5F84D73152F5A220800951FE61AA`
 - Signature: unsigned. No code-signing certificate was found in the current user's Windows certificate store.
 
 This hash identifies the local binary, not a future CI rebuild. Installer builds
@@ -73,11 +74,11 @@ repository security assessment or proof that every advisory was reachable in MAR
 | --- | --- |
 | Installed extension | Pending. The 2026-09-04 live test exercised the fill function directly, not the popup or `chrome.scripting`. Browser security policy now blocks agent access to `chrome://extensions`; the operator must load the trusted unpacked extension manually. A complete approval-to-fill test is still required. |
 | Clean Windows 11 and another user account | Pending. Two isolated installations and fresh keys were tested under the same existing Windows account. The restricted PATH test is not a clean-OS test. Windows Sandbox was not available as a command on this host. |
-| GitHub checks | Revision `614527c` passed Linux and Windows, including the ten storage-failure cases, in [run 33953685562](https://github.com/Robert-Velhorst/009-Micromentor-reachout/actions/runs/33953685562). Subsequent post-commit cache changes require their own successful submitted-revision run. |
+| GitHub checks | Revision `a45157d` passed Linux and Windows, including post-commit cache-failure and idempotent replay checks, in [run 33991102201](https://github.com/Robert-Velhorst/009-Micromentor-reachout/actions/runs/33991102201). Subsequent client-connection changes require their own successful submitted-revision run. |
 | Repository security assessment | A fresh repository-wide assessment remains open. On 2026-09-05, the Deep Scan plugin refused to start because it requires a managed filesystem permission profile; this session has unrestricted filesystem access. No scan findings or completion result were produced. Zero dependency advisories and passing adversarial API tests do not replace the broad assessment. |
 | Signed distribution | Pending publisher signing setup and verification on a clean Windows device. No certificate was purchased and no store submission was made. |
 | Extension distribution | Unpacked development installation is available. Ordinary user distribution still needs a supported browser-store release process. |
-| Operational pilot | The bounded 1,000-profile API/recovery and ten injected pre-commit storage-error cases pass; see [operational evidence](OPERATIONAL_VALIDATION.md). Responsive visual acceptance, complete browser interaction coverage, response-size reduction, sustained real usage, post-commit/connection ambiguity, hardware interruption, physically full volumes, ngrok outages, and larger-than-tested datasets remain open. |
+| Operational pilot | The bounded 1,000-profile API/recovery, injected storage-error cases and client connection tests pass; see [operational evidence](OPERATIONAL_VALIDATION.md). Responsive visual acceptance, complete browser interaction coverage, response-size reduction, sustained real usage, end-to-end reconciliation after a lost write acknowledgement, hardware interruption, physically full volumes, live ngrok outages, and larger-than-tested datasets remain open. |
 | Dutch interface | Full translation remains open; storing a locale preference is not a complete Dutch UI. |
 
 ## Installed-extension acceptance procedure

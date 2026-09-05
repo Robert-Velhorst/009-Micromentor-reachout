@@ -2,6 +2,8 @@
 
 ## 1.2.3 - Unreleased
 
+- Bound client reads to 60 seconds and mutations to 120 seconds, including response-body transfer, and release pending-request entries after failure. Do not automatically retry interrupted actions.
+- Explain potentially saved outcomes after mutation timeouts, connection loss, server errors or unusable success responses; retain ordinary validation errors. Add isolated real-HTTP client regression checks to normal tests and the release gate.
 - Keep successful storage acknowledgements when post-commit cache refresh fails; discard the old cache and reload on the next read instead of returning a misleading retryable failure.
 - Verify post-commit metadata failure, persisted data and idempotent replay alongside the ten pre-commit storage-fault cases.
 - Clean up temporary ledger files after failed writes, flushes or closes as well as failed replacements; retain the original error if cleanup itself fails.

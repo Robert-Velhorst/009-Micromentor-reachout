@@ -680,6 +680,7 @@ Reset supports queue, mentor, and complete-workspace scopes and requires explici
 | `npm run check:recommendations` | Compare indexed/direct mentor relationships, verify recommendation rules, and guard against repeated full-profile scans |
 | `npm run check:mentor-pagination` | Check 25-profile page boundaries, complete reachability, empty results, and out-of-range page requests |
 | `npm run check:storage` | Build and exercise ten pre-commit storage faults and a post-commit cache fault against the real encrypted API, including data preservation, cleanup, retry, idempotent replay and restart checks |
+| `npm run check:client-requests` | Exercise the actual client against isolated HTTP connections: deadlines through body transfer, cancellation, in-flight cleanup, no automatic retries, and uncertain write feedback |
 | `npm test` | Run the production API suite, manual-handoff extension, recommendation, pagination, and storage-failure checks |
 | `npm run audit:security` | Run `npm audit --audit-level=low` |
 | `npm run check:release` | Run the complete local release gate, including Windows installation acceptance on Windows |
@@ -784,6 +785,20 @@ npm.cmd run doctor
 ### Encrypted ledger cannot be opened
 
 Verify that the same `MARO_LEDGER_PASSPHRASE` is available. For an installed Windows copy, launch MARO as the same Windows user who installed it. MARO cannot recover data without the correct passphrase or DPAPI-protected key.
+
+### A request times out or the connection disappears
+
+MARO's client allows 60 seconds for reads and 120 seconds for other requests,
+including imports, exports and restoration. This covers receiving the full
+response, not only connecting. Browser suspension can delay timer execution.
+There are no automatic client retries.
+
+Check that MARO is running and, for remote access, that your protected ngrok
+tunnel is available. Refresh to check the current records before repeating a
+save, approval, import, restore or other action. A timeout, interrupted connection,
+server error or unusable success response may occur after the action was saved.
+Cancelling the browser request does not roll back server work. A manual retry is
+a new action, not a promise of exactly-once execution across reconnection.
 
 ### ngrok refuses to start
 

@@ -18,6 +18,29 @@ The check also runs within `check:release`, after the production API suite.
 Linux CI runs it after `npm test`; Linux and Windows CI upload separate reports,
 including a failure report when one is available.
 
+## Client connection failures
+
+`npm run check:client-requests` compiles the actual TypeScript API client and runs
+it against isolated loopback HTTP servers. Twenty-two scenarios passed locally on
+2026-09-05 with Node.js 22.23.2. The test also runs in `npm test` and the release
+gate. Client timers are advanced deterministically; fetch and response streams
+use real connections. No MicroMentor requests, operator records or public tunnels
+are involved, and each owned test server is closed.
+
+The original client reproduced an indefinitely pending read. Regression checks
+now cover stalled headers and bodies, coalesced requests, fresh reads after a
+timeout, connection loss for GET/POST/PATCH, cancellation and timer/listener
+cleanup, preserved validation errors, uncertain mutation outcomes, and a slow
+write that completes successfully within its longer deadline. The client does
+not retry automatically. Read deadlines are 60 seconds; other requests have
+120 seconds, including full response transfer.
+
+This is client transport evidence, not rendered-browser acceptance, a live ngrok
+outage test, or proof of exactly-once writes across connection loss. The client
+cannot undo server work by aborting fetch. Operators must refresh and inspect
+saved state before manually repeating an action with an unknown outcome. The
+separate encrypted API/storage suites remain the evidence for persistence.
+
 ## Workload and assertions
 
 - Import 1,000 distinct synthetic mentor profiles in ten batches through the

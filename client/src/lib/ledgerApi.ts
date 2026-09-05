@@ -591,25 +591,55 @@ export type MentorCsvColumnMap = Partial<Record<"name" | "company" | "headline" 
 const inFlightRequests = new Map<string, Promise<unknown>>();
 
 async function performRequest<T>(url: string, options: RequestInit, headers: Headers): Promise<T> {
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
-  const responseText = await response.text();
-  let data: (T & { error?: string }) | null = null;
-  if (responseText) {
+  const isMutation = !["GET", "HEAD"].includes((options.method || "GET").toUpperCase());
+  const uncertainOutcome = isMutation
+    ? " This action may already have been saved. Refresh and check the result before trying again."
+    : "";
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  let timedOut = false;
+  if (options.signal?.aborted) cancel();
+  else options.signal?.addEventListener("abort", cancel, { once: true });
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, isMutation ? 120_000 : 60_000);
+
+  try {
+    let response: Response;
+    let responseText: string;
     try {
-      data = JSON.parse(responseText) as T & { error?: string };
+      response = await fetch(url, { ...options, headers, signal: controller.signal });
+      // Keep the deadline active until the body has arrived, not just the headers.
+      responseText = await response.text();
     } catch {
-      if (!response.ok) throw new Error(`Request failed with ${response.status}`);
-      throw new Error("MARO returned an invalid API response");
+      const reason = timedOut
+        ? "MARO took too long to respond."
+        : options.signal?.aborted
+          ? "The MARO request was cancelled."
+          : "The connection to MARO was interrupted. Check that MARO is running and your connection is available.";
+      throw new Error(reason + uncertainOutcome);
     }
+
+    const responseUncertainty = response.ok || response.status >= 500 ? uncertainOutcome : "";
+    let data: (T & { error?: string }) | null = null;
+    if (responseText) {
+      try {
+        data = JSON.parse(responseText) as T & { error?: string };
+      } catch {
+        const reason = response.ok ? "MARO returned an invalid API response" : `Request failed with ${response.status}`;
+        throw new Error(reason + responseUncertainty);
+      }
+    }
+    if (!response.ok) {
+      throw new Error((data?.error || `Request failed with ${response.status}`) + responseUncertainty);
+    }
+    if (!data) throw new Error("MARO returned an empty API response" + uncertainOutcome);
+    return data;
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", cancel);
   }
-  if (!response.ok) {
-    throw new Error(data?.error || `Request failed with ${response.status}`);
-  }
-  if (!data) throw new Error("MARO returned an empty API response");
-  return data;
 }
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
