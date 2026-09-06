@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { AlertTriangle, RotateCcw } from "lucide-react";
-import { Component, ReactNode } from "react";
+import { Component, ReactNode, type ContextType } from "react";
+import { LocaleContext } from "@/lib/locale";
 
 interface Props {
   children: ReactNode;
@@ -12,6 +13,8 @@ interface State {
 }
 
 class ErrorBoundary extends Component<Props, State> {
+  static contextType = LocaleContext;
+  declare context: ContextType<typeof LocaleContext>;
   constructor(props: Props) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -22,6 +25,7 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   render() {
+    const { t } = this.context;
     if (this.state.hasError) {
       const showDetails = import.meta.env.DEV;
 
@@ -33,7 +37,7 @@ class ErrorBoundary extends Component<Props, State> {
               className="text-destructive mb-6 flex-shrink-0"
             />
 
-            <h2 className="text-xl mb-4">An unexpected error occurred.</h2>
+            <h2 className="text-xl mb-4">{t("error.title")}</h2>
 
             {showDetails ? (
               <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
@@ -43,7 +47,7 @@ class ErrorBoundary extends Component<Props, State> {
               </div>
             ) : (
               <p className="mb-6 text-center text-sm text-muted-foreground">
-                Reload the page to recover. Technical details are hidden in production builds.
+                {t("error.recovery")}
               </p>
             )}
 
@@ -56,7 +60,7 @@ class ErrorBoundary extends Component<Props, State> {
               )}
             >
               <RotateCcw size={16} />
-              Reload Page
+              {t("error.reload")}
             </button>
           </div>
         </div>

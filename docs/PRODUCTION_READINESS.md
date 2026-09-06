@@ -40,12 +40,14 @@ work still awaiting acceptance.
 
 The full local `npm run check:release` passed on Windows 11 Pro x64 using
 Node.js 22.23.2. The latest output is
-`artifacts/release-check-windows-config-2026-09-06.log`, including all 22 client
+`artifacts/release-check-localization-final-2026-09-06.log`, including all 28 client
 connection scenarios, 29 source-launcher/runtime ngrok scenarios, 32 packaged
 Windows function/block checks and fresh/reused installed-runtime Host checks.
 Installed startup, configuration restart, stopped/in-use upgrades and recovery
 into a second installation with a fresh key also passed. A newly submitted
-revision still requires its own CI run.
+revision still requires its own CI run. The locale rendering/handler gate also
+passes; additional direct restore/reset handler assertions passed separately
+after the release run had completed that stage.
 
 | Requirement | Evidence |
 | --- | --- |
@@ -62,7 +64,8 @@ revision still requires its own CI run.
 | Recovery boundaries | Restore preview leaves both encrypted files byte-identical; oversized requests rejected; corrupt primary recovers from rotating backup with integrity and audit checks |
 | Injected storage failures | Ten backup/primary fault cases passed with intact acknowledged data, cache isolation, temporary-file cleanup, successful retry and restart integrity; these are simulated filesystem errors, not physical disk or power-loss tests |
 | Post-commit cache failure | An injected metadata error after successful replacement preserves HTTP 200 and the saved project; the next read reloads storage and replaying the same idempotency key does not duplicate the record |
-| Client connection resilience | 22 isolated real-HTTP scenarios pass: deadlines through body transfer, cancellation, request/timer cleanup, no automatic retry, uncertain write feedback, and slow successful responses. This is not rendered-browser or live-ngrok acceptance. |
+| Client connection resilience | 28 isolated real-HTTP scenarios pass: deadlines through body transfer, cancellation, request/timer cleanup, no automatic retry, uncertain write feedback, slow successful responses and fresh settings after successful/uncertain updates, restore and reset. This is not whole-browser or live-ngrok acceptance. |
+| Initial Dutch interface | 66 paired messages cover the header, navigation, pagination, setup/pause notices, backup/recovery controls and fallback pages. Browser checks verify switching, retained unsaved campaign/backup fields, reload persistence, notice translation and failure feedback. Full coverage and visual/accessibility acceptance remain open; see [localization evidence](LOCALIZATION_VALIDATION.md). |
 | Source ngrok lifecycle | 29 real-process/local-inspector cases cover own-child readiness, bounded startup/discovery, endpoint and policy checks, pre-verification Host rejection, process exits, cancellation and cleanup. Twelve configuration I/O cases exercise partial writes, exclusive-create collisions, replacement failure and deletion refusal, including during normal shutdown. Persistent cleanup refusal reports the owned file and returns failure; it is not claimed successfully removed. Partial-response/GC regressions are also included; no public tunnel was opened. |
 | Packaged Windows ngrok functions and blocks | 32 local-fixture cases cover endpoint matching, deadlines, keyed configuration changes, process identity, parent-controlled cleanup and ten Windows configuration scenarios. Real locks exercise failed replacement, credentials-file deletion and process/host publication. Successful controls cover UTF-8, quoting, startup and registration-before-publication. This is not whole-launcher or live provider acceptance. |
 | Installed Host authorization | Fresh startup rejects the configured unverified endpoint with HTTP 421. A reused server with a seeded stale host (first verified HTTP 200) keeps its PID but revokes both the old and new unverified domains. |
@@ -84,8 +87,8 @@ Node 22 remains within its maintenance support period according to the
 
 - File: `artifacts/MARO-Windows11-Setup.exe`
 - Candidate version: 1.2.3
-- Size: 33,666,048 bytes
-- SHA-256: `746ACE0F64338B4B275B888873C36033730915C9F564A74542802D2C1901950A`
+- Size: 33,669,632 bytes
+- SHA-256: `39188133BAD8596A0EB57379E387262FD4EAA4A4827521522CD4D573592823D0`
 - Signature: unsigned (`NotSigned` checked on this artifact). Publisher signing and clean-machine trust acceptance remain open.
 
 This hash identifies the local binary, not a future CI rebuild. Installer builds
@@ -118,7 +121,7 @@ repository security assessment or proof that every advisory was reachable in MAR
 | Extension distribution | Unpacked development installation is available. Ordinary user distribution still needs a supported browser-store release process. |
 | Installed ngrok path | The PowerShell launcher is separate from `scripts/ngrok.mjs`. Packaged functions and selected startup/publication blocks have identity, file-lock and cleanup coverage; the installed local runtime also has Host-boundary checks. Complete live startup/reuse/credential rotation, authentication, outages, forced-parent termination, stream-write/flush fault injection and physical-disk behavior remain open. |
 | Operational pilot | The bounded 1,000-profile API/recovery, injected storage-error cases and client connection tests pass; see [operational evidence](OPERATIONAL_VALIDATION.md). Responsive visual acceptance, complete browser interaction coverage, response-size reduction, sustained real usage, end-to-end reconciliation after a lost write acknowledgement, hardware interruption, physically full volumes, live ngrok outages, and larger-than-tested datasets remain open. |
-| Dutch interface | Full translation remains open; storing a locale preference is not a complete Dutch UI. |
+| Dutch interface | Language selection and initial translated controls are implemented and tested. Most detailed workflows, server messages and the extension still need translation. See [coverage and remaining acceptance](LOCALIZATION_VALIDATION.md); a working selector is not full Dutch-language acceptance. |
 
 ## Installed-extension acceptance procedure
 

@@ -276,4 +276,49 @@ for (const [method, deadline] of [["GET", 60_000], ["HEAD", 60_000], ["POST", 12
   });
 }
 
+for (const operation of ["updateWorkspaceSettings", "restoreWorkspace", "resetWorkspace"]) {
+for (const writeFails of [false, true]) {
+  await scenario(`settings reads after ${operation} (${writeFails ? "failed" : "successful"}) do not reuse older in-flight reads`, async ({ api, fixture, requests }) => {
+    let oldResponse;
+    let releaseWrite;
+    const patchStarted = deferred();
+    const oldReadArrived = deferred();
+    let locale = "en";
+    fixture.reply = (request, response) => {
+      if (request.method !== "GET") {
+        releaseWrite = () => {
+          locale = "nl";
+          if (writeFails) response.destroy();
+          else response.end(JSON.stringify({ settings: { locale } }));
+        };
+        patchStarted.resolve();
+      } else if (!oldResponse) {
+        oldResponse = response;
+        oldReadArrived.resolve();
+      } else {
+        response.end(JSON.stringify({ settings: { locale } }));
+      }
+    };
+    const writing = settled(api[operation](operation === "updateWorkspaceSettings" ? { locale: "nl" } : operation === "resetWorkspace" ? "workspace" : "{}"));
+    await within(patchStarted.promise, "Settings write did not arrive");
+    const oldRead = settled(api.workspaceSettings());
+    const coalescedRead = settled(api.workspaceSettings());
+    // Wait for the specific GET, not the earlier PATCH receipt.
+    await within(oldReadArrived.promise, "Old settings read did not arrive");
+    releaseWrite();
+    const writeResult = await within(writing, "Settings write did not settle");
+    assert.equal(Boolean(writeResult.error), writeFails);
+    try {
+      const fresh = await within(api.workspaceSettings(), "A post-write read reused stale in-flight settings");
+      assert.equal(fresh.settings.locale, "nl");
+      assert.equal(requests.filter((request) => request.method === "GET").length, 2);
+    } finally {
+      oldResponse.end('{"settings":{"locale":"en"}}');
+      assert.equal((await oldRead).value?.settings.locale, "en");
+      assert.equal((await coalescedRead).value?.settings.locale, "en");
+    }
+  });
+}
+}
+
 console.log(`PASS client request suite: ${passed} isolated HTTP scenarios; no provider requests or operator data`);

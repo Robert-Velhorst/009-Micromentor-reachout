@@ -2,8 +2,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AlertCircle, Home } from "lucide-react";
 import { useLocation } from "wouter";
+import { useTranslation } from "@/lib/locale";
+import { useEffect } from "react";
+import { ledgerApi } from "@/lib/ledgerApi";
 
 export default function NotFound() {
+  const { t, setLocale } = useTranslation();
+  useEffect(() => {
+    let active = true;
+    // This route does not mount Home, which normally loads the workspace preference.
+    void ledgerApi.workspaceSettings().then(({ settings }) => {
+      if (active) setLocale(settings.locale);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [setLocale]);
   const [, setLocation] = useLocation();
 
   const handleGoHome = () => {
@@ -24,13 +36,11 @@ export default function NotFound() {
           <h1 className="text-4xl font-bold text-slate-900 mb-2">404</h1>
 
           <h2 className="text-xl font-semibold text-slate-700 mb-4">
-            Page Not Found
+            {t("notFound.title")}
           </h2>
 
           <p className="text-slate-600 mb-8 leading-relaxed">
-            Sorry, the page you are looking for doesn't exist.
-            <br />
-            It may have been moved or deleted.
+            {t("notFound.description")}
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -39,7 +49,7 @@ export default function NotFound() {
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg transition-all duration-200 shadow-md hover:shadow-lg"
             >
               <Home className="w-4 h-4 mr-2" />
-              Go Home
+              {t("notFound.home")}
             </Button>
           </div>
         </CardContent>

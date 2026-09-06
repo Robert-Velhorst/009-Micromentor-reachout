@@ -589,6 +589,7 @@ export type MentorImportResult = {
 export type MentorCsvColumnMap = Partial<Record<"name" | "company" | "headline" | "bio" | "skills" | "industries" | "location" | "profileUrl" | "notes" | "source" | "priority" | "stage", string>>;
 
 const inFlightRequests = new Map<string, Promise<unknown>>();
+let settingsReadEpoch = 0;
 
 async function performRequest<T>(url: string, options: RequestInit, headers: Headers): Promise<T> {
   const isMutation = !["GET", "HEAD"].includes((options.method || "GET").toUpperCase());
@@ -652,7 +653,8 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     headers.set("Idempotency-Key", globalThis.crypto?.randomUUID?.() || `maro-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   }
 
-  const key = `${method}:${url}:${typeof options.body === "string" ? options.body : ""}`;
+  const epoch = method === "GET" && url === "/api/workspace/settings" ? settingsReadEpoch : 0;
+  const key = `${method}:${url}:${typeof options.body === "string" ? options.body : ""}:${epoch}`;
   const existing = inFlightRequests.get(key);
   if (existing) return existing as Promise<T>;
 
@@ -662,6 +664,16 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     return await pending;
   } finally {
     if (inFlightRequests.get(key) === pending) inFlightRequests.delete(key);
+  }
+}
+
+async function changeSettings<T>(url: string, options: RequestInit): Promise<T> {
+  // Restore and reset also replace settings. Never reuse a pre-write read afterward.
+  settingsReadEpoch += 1;
+  try {
+    return await request<T>(url, options);
+  } finally {
+    settingsReadEpoch += 1;
   }
 }
 
@@ -679,18 +691,18 @@ export const ledgerApi = {
       body: JSON.stringify({ backupJson }),
     }),
   restoreWorkspace: (backupJson: string) =>
-    request<{ restored: true; summary: WorkspaceSummary }>("/api/workspace/restore", {
+    changeSettings<{ restored: true; summary: WorkspaceSummary }>("/api/workspace/restore", {
       method: "POST",
       body: JSON.stringify({ backupJson, confirm: true }),
     }),
   resetWorkspace: (scope: "queue" | "mentors" | "workspace") =>
-    request<{ reset: true; scope: string; summary: WorkspaceSummary }>("/api/workspace/reset", {
+    changeSettings<{ reset: true; scope: string; summary: WorkspaceSummary }>("/api/workspace/reset", {
       method: "POST",
       body: JSON.stringify({ scope, confirm: true }),
     }),
   workspaceSettings: () => request<{ settings: WorkspaceSettings; environmentOutboundPause: boolean }>("/api/workspace/settings"),
   updateWorkspaceSettings: (payload: Partial<WorkspaceSettings>) =>
-    request<{ settings: WorkspaceSettings; environmentOutboundPause: boolean }>("/api/workspace/settings", {
+    changeSettings<{ settings: WorkspaceSettings; environmentOutboundPause: boolean }>("/api/workspace/settings", {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),

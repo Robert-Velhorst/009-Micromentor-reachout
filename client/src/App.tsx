@@ -2,6 +2,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Home from "./pages/Home";
+import { LocaleProvider } from "./lib/locale";
 
 
 function Router() {
@@ -22,9 +23,11 @@ function Router() {
 
 function App() {
   return (
-    <ErrorBoundary>
-      <Router />
-    </ErrorBoundary>
+    <LocaleProvider>
+      <ErrorBoundary>
+        <Router />
+      </ErrorBoundary>
+    </LocaleProvider>
   );
 }
 

@@ -29,6 +29,10 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { MentorPagination } from "@/components/MentorPagination";
+import { LanguageSelect } from "@/components/LanguageSelect";
+import { WorkspaceNotice, type WorkspaceNoticeValue } from "@/components/WorkspaceNotice";
+import { useTranslation } from "@/lib/locale";
+import type { Locale } from "@/lib/messages";
 import { mentorPageWindow } from "@/lib/mentorPagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -433,6 +437,9 @@ const readinessItemTone: Record<CampaignReadiness["items"][number]["status"], st
 };
 
 export default function Home() {
+  const { t, setLocale, locale } = useTranslation();
+  const localeRevision = useRef(0);
+  const localeWritesPending = useRef(0);
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
   const [projects, setProjects] = useState<OutreachProject[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -473,7 +480,7 @@ export default function Home() {
   const [selectedTimeline, setSelectedTimeline] = useState<MentorRelationshipTimeline | null>(null);
   const [workspaceBackupText, setWorkspaceBackupText] = useState("");
   const [workspacePreview, setWorkspacePreview] = useState<WorkspaceSummary | null>(null);
-  const [workspaceStatus, setWorkspaceStatus] = useState("");
+  const [workspaceStatus, setWorkspaceStatus] = useState<WorkspaceNoticeValue | null>(null);
   const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings | null>(null);
   const [environmentOutboundPause, setEnvironmentOutboundPause] = useState(false);
   const [activeTab, setActiveTab] = useState<LedgerTab>("ledger");
@@ -485,6 +492,7 @@ export default function Home() {
   const [discoveryStatus, setDiscoveryStatus] = useState("");
 
   const loadLedger = async (campaignId?: string, options: { refreshRuntime?: boolean } = {}) => {
+    const readLocaleRevision = localeRevision.current;
     setLoading(true);
     setError("");
     try {
@@ -503,6 +511,10 @@ export default function Home() {
       setRuntimeStatus(nextRuntimeStatus);
       setHaiStatus(snapshot.haiStatus);
       setWorkspaceSettings(settingsResult.settings);
+      // An older refresh must not undo a language change that is still saving.
+      if (readLocaleRevision === localeRevision.current && localeWritesPending.current === 0) {
+        setLocale(settingsResult.settings.locale);
+      }
       setEnvironmentOutboundPause(settingsResult.environmentOutboundPause);
       setDraftEdits({});
     } catch (err) {
@@ -716,6 +728,23 @@ export default function Home() {
       setWorkspaceSettings(result.settings);
       setEnvironmentOutboundPause(result.environmentOutboundPause);
     });
+
+  const withLocaleWrite = async <T,>(action: () => Promise<T>) => {
+    localeRevision.current += 1;
+    localeWritesPending.current += 1;
+    try {
+      return await action();
+    } finally {
+      localeWritesPending.current -= 1;
+      localeRevision.current += 1;
+    }
+  };
+
+  const updateLocale = (locale: Locale) => withLocaleWrite(async () => {
+    const result = await ledgerApi.updateWorkspaceSettings({ locale });
+    setWorkspaceSettings((current) => current ? { ...current, locale: result.settings.locale } : current);
+    setLocale(result.settings.locale);
+  });
 
   const createCampaign = async () => {
     setError("");
@@ -1128,74 +1157,76 @@ export default function Home() {
 
   const downloadWorkspaceBackup = async () => {
     setError("");
-    setWorkspaceStatus("");
+    setWorkspaceStatus(null);
     try {
       const backup = await ledgerApi.workspaceBackup();
       const filename = `maro-workspace-backup-${new Date().toISOString().slice(0, 10)}.json`;
       downloadText(filename, JSON.stringify(backup, null, 2), "application/json;charset=utf-8");
       setWorkspacePreview(backup.summary);
-      setWorkspaceStatus("Backup exported.");
+      setWorkspaceStatus({ message: "workspace.exported" });
       await loadLedger(activeCampaignId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to export workspace backup");
+      setError(err instanceof Error ? err.message : t("workspace.exportFailed"));
     }
   };
 
   const downloadSupportBundle = async () => {
-    setWorkspaceStatus("");
+    setWorkspaceStatus(null);
     try {
       const bundle = await ledgerApi.supportBundle();
       downloadText(`maro-support-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(bundle, null, 2), "application/json;charset=utf-8");
-      setWorkspaceStatus("Sanitized support bundle exported.");
+      setWorkspaceStatus({ message: "workspace.supportExported" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to export support bundle");
+      setError(err instanceof Error ? err.message : t("workspace.supportFailed"));
     }
   };
 
   const checkWorkspaceIntegrity = async () => {
     try {
       const result = await ledgerApi.workspaceIntegrity();
-      setWorkspaceStatus(result.valid ? `Integrity check passed at ${formatDate(result.checkedAt)}.` : result.error || "Integrity check failed.");
+      setWorkspaceStatus(result.valid
+        ? { message: "workspace.integrityPassed", details: formatDate(result.checkedAt) }
+        : { message: "workspace.integrityFailed", details: result.error || undefined });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Integrity check failed");
+      setError(err instanceof Error ? err.message : t("workspace.integrityFailed"));
     }
   };
 
   const previewWorkspaceRestore = async () => {
     setError("");
-    setWorkspaceStatus("");
+    setWorkspaceStatus(null);
     try {
       const result = await ledgerApi.previewWorkspaceRestore(workspaceBackupText);
       setWorkspacePreview(result.summary);
-      setWorkspaceStatus("Backup is valid. Review counts before restoring.");
+      setWorkspaceStatus({ message: "workspace.valid" });
     } catch (err) {
       setWorkspacePreview(null);
-      setError(err instanceof Error ? err.message : "Backup validation failed");
+      setError(err instanceof Error ? err.message : t("workspace.validationFailed"));
     }
   };
 
   const restoreWorkspace = async () => {
-    if (!window.confirm("Restore this MARO backup and replace the current local workspace?")) return;
+    if (!window.confirm(t("workspace.restoreConfirm"))) return;
     setError("");
-    setWorkspaceStatus("");
+    setWorkspaceStatus(null);
     try {
-      const result = await ledgerApi.restoreWorkspace(workspaceBackupText);
+      const result = await withLocaleWrite(() => ledgerApi.restoreWorkspace(workspaceBackupText));
       setWorkspacePreview(result.summary);
-      setWorkspaceStatus("Workspace restored.");
+      setWorkspaceStatus({ message: "workspace.restored" });
       setActiveCampaignId("");
       await loadLedger("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to restore workspace");
+      setError(err instanceof Error ? err.message : t("workspace.restoreFailed"));
     }
   };
 
   const resetWorkspace = async (scope: "queue" | "mentors" | "workspace") => {
-    const label = scope === "queue" ? "message queue, replies, follow-ups, outcomes, and billing records" : scope === "mentors" ? "mentors and all related outreach history" : "the full workspace";
-    if (!window.confirm(`Reset ${label}? This cannot be undone unless you have a backup.`)) return;
+    const confirmation = scope === "queue" ? "workspace.resetQueueConfirm" : scope === "mentors" ? "workspace.resetMentorsConfirm" : "workspace.resetAllConfirm";
+    if (!window.confirm(t(confirmation))) return;
     await mutate(async () => {
-      const result = await ledgerApi.resetWorkspace(scope);
+      const result = await withLocaleWrite(() => ledgerApi.resetWorkspace(scope));
       setWorkspacePreview(result.summary);
-      setWorkspaceStatus(`Reset completed: ${scope}.`);
+      setWorkspaceStatus({ message: "workspace.reset" });
     });
   };
 
@@ -1203,32 +1234,35 @@ export default function Home() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
         <div className="container flex h-16 items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-primary text-primary-foreground">
               <MailPlus className="h-5 w-5" />
             </div>
             <div>
               <div className="text-base font-semibold leading-none">MARO</div>
-              <div className="text-xs text-muted-foreground">MicroMentor outreach operating ledger</div>
+              <div className="text-xs text-muted-foreground">{t("header.subtitle")}</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="hidden rounded-md border-emerald-200 bg-emerald-50 text-emerald-700 md:inline-flex">
-              Persisted local API
+              {t("header.local")}
             </Badge>
-            <Button variant={privacyMode ? "default" : "outline"} className="rounded-md" onClick={togglePrivacyMode} aria-label={privacyMode ? "Turn privacy mode off" : "Turn privacy mode on"}>
+            <Button variant={privacyMode ? "default" : "outline"} className="rounded-md" onClick={togglePrivacyMode} aria-label={t(privacyMode ? "privacy.disable" : "privacy.enable")}>
               {privacyMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              <span className="hidden sm:inline">{privacyMode ? "Privacy on" : "Privacy off"}</span>
+              <span className="hidden sm:inline">{t(privacyMode ? "privacy.on" : "privacy.off")}</span>
             </Button>
-            <Button variant="outline" className="rounded-md" onClick={() => void loadLedger(activeCampaignId, { refreshRuntime: true })} aria-label="Refresh ledger">
+            <Button variant="outline" className="rounded-md" onClick={() => void loadLedger(activeCampaignId, { refreshRuntime: true })} aria-label={t("refresh.label")}>
               <RefreshCcw className="h-4 w-4" />
-              <span className="hidden sm:inline">Refresh</span>
+              <span className="hidden sm:inline">{t("refresh")}</span>
             </Button>
           </div>
         </div>
+        <div className="container">
+          <LanguageSelect onChange={updateLocale} disabled={!workspaceSettings || loading} />
+        </div>
       </header>
 
-      <main className="container py-5">
+      <main lang="en" className="container py-5">
         {error ? (
           <div className="mb-4 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             <AlertTriangle className="h-4 w-4" />
@@ -1236,32 +1270,32 @@ export default function Home() {
           </div>
         ) : null}
         {publicTunnelWithoutAuth ? (
-          <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <div lang={locale} className="mb-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
             <AlertTriangle className="h-4 w-4" />
-            ngrok was explicitly opened publicly without `NGROK_BASIC_AUTH`. Protect the tunnel before sharing sensitive mentor data.
+            {t("outbound.warning")}
           </div>
         ) : null}
         {workspaceSettings && !workspaceSettings.firstRunCompleted ? (
-          <section className="mb-4 flex flex-col gap-3 border-y bg-sky-50 px-4 py-4 text-sm text-sky-950 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="font-medium">Workspace setup</div>
-              <div className="mt-1 text-xs text-sky-800">Local ledger ready. Manual send and approval gates are active.</div>
+          <section lang={locale} className="mb-4 flex flex-col gap-3 border-y bg-sky-50 px-4 py-4 text-sm text-sky-950 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 break-words">
+              <div className="font-medium">{t("setup.title")}</div>
+              <div className="mt-1 text-xs text-sky-800">{t("setup.status")}</div>
             </div>
             <Button className="rounded-md" onClick={() => void updateSafetySettings({ firstRunCompleted: true })}>
               <Check className="h-4 w-4" />
-              Complete setup
+              {t("setup.complete")}
             </Button>
           </section>
         ) : null}
         {workspaceSettings?.outboundPaused || environmentOutboundPause ? (
-          <div className="mb-4 flex flex-col gap-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
+          <div lang={locale} className="mb-4 flex flex-col gap-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <CirclePause className="h-4 w-4" />
-              Outbound handoffs and send confirmations are paused.
+              {t("outbound.paused")}
             </div>
             {!environmentOutboundPause ? (
               <Button variant="outline" className="rounded-md border-red-300 bg-white" onClick={() => void updateSafetySettings({ outboundPaused: false })}>
-                <CirclePlay className="h-4 w-4" /> Resume
+                <CirclePlay className="h-4 w-4" /> {t("outbound.resume")}
               </Button>
             ) : null}
           </div>
@@ -1501,30 +1535,30 @@ export default function Home() {
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as LedgerTab)} className="mt-5 gap-4">
           <div className="overflow-x-auto">
-            <TabsList className="h-10 rounded-md">
+            <TabsList lang={locale} className="h-10 rounded-md">
               <TabsTrigger value="ledger" className="rounded-md">
                 <Gauge className="h-4 w-4" />
-                Ledger
+                {t("tab.ledger")}
               </TabsTrigger>
               <TabsTrigger value="mentors" className="rounded-md">
                 <Users className="h-4 w-4" />
-                Mentors
+                {t("tab.mentors")}
               </TabsTrigger>
               <TabsTrigger value="review" className="rounded-md">
                 <FileText className="h-4 w-4" />
-                Review
+                {t("tab.review")}
               </TabsTrigger>
               <TabsTrigger value="responses" className="rounded-md">
                 <MessageSquareReply className="h-4 w-4" />
-                Responses
+                {t("tab.responses")}
               </TabsTrigger>
               <TabsTrigger value="billing" className="rounded-md">
                 <Euro className="h-4 w-4" />
-                Billing
+                {t("tab.billing")}
               </TabsTrigger>
               <TabsTrigger value="audit" className="rounded-md">
                 <ShieldCheck className="h-4 w-4" />
-                Audit
+                {t("tab.audit")}
               </TabsTrigger>
             </TabsList>
           </div>
@@ -3379,50 +3413,52 @@ function WorkspacePanel({
 }: {
   backupText: string;
   preview: WorkspaceSummary | null;
-  status: string;
+  status: WorkspaceNoticeValue | null;
   onBackupTextChange: (value: string) => void;
   onExport: () => void;
   onPreview: () => void;
   onRestore: () => void;
   onReset: (scope: "queue" | "mentors" | "workspace") => void;
 }) {
+  const { t, locale } = useTranslation();
   return (
-    <Card className="rounded-md py-5">
+    <Card lang={locale} className="rounded-md py-5">
       <CardHeader className="px-5">
-        <CardTitle className="text-lg">Workspace safety</CardTitle>
+        <CardTitle className="text-lg">{t("workspace.title")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 px-5">
         <Button variant="outline" className="w-full rounded-md" onClick={onExport}>
-          Export backup
+          {t("workspace.export")}
         </Button>
         <Textarea
           value={backupText}
           onChange={(event) => onBackupTextChange(event.target.value)}
-          placeholder="Paste MARO backup JSON to preview or restore"
+          aria-label={t("workspace.input")}
+          placeholder={t("workspace.placeholder")}
           className="min-h-28 rounded-md font-mono text-xs"
         />
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" className="rounded-md" onClick={onPreview} disabled={!backupText.trim()}>
-            Preview
+            {t("workspace.preview")}
           </Button>
           <Button className="rounded-md" onClick={onRestore} disabled={!backupText.trim()}>
-            Restore
+            {t("workspace.restore")}
           </Button>
         </div>
-        {status ? <div className="rounded-md border bg-muted/20 p-2 text-xs text-muted-foreground">{status}</div> : null}
+        <WorkspaceNotice notice={status} />
         {preview ? <WorkspaceSummaryGrid summary={preview} /> : null}
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-          Resets are permanent unless you export a backup first.
+          {t("workspace.warning")}
         </div>
         <div className="grid gap-2">
           <Button variant="outline" className="rounded-md" onClick={() => onReset("queue")}>
-            Reset queue history
+            {t("workspace.resetQueue")}
           </Button>
           <Button variant="outline" className="rounded-md" onClick={() => onReset("mentors")}>
-            Reset mentors
+            {t("workspace.resetMentors")}
           </Button>
           <Button variant="outline" className="rounded-md border-red-200 text-red-700 hover:bg-red-50 hover:text-red-700" onClick={() => onReset("workspace")}>
-            Reset workspace
+            {t("workspace.resetAll")}
           </Button>
         </div>
       </CardContent>
@@ -3431,14 +3467,15 @@ function WorkspacePanel({
 }
 
 function WorkspaceSummaryGrid({ summary }: { summary: WorkspaceSummary }) {
+  const { t, number, locale } = useTranslation();
   return (
-    <div className="grid grid-cols-2 gap-2">
-      <MiniStat label="Campaigns" value={summary.campaigns} />
-      <MiniStat label="Sources" value={summary.sourceRecords} />
-      <MiniStat label="Mentors" value={summary.mentors} />
-      <MiniStat label="Drafts" value={summary.drafts} />
-      <MiniStat label="Invoices" value={summary.invoiceRecords} />
-      <MiniStat label="Audit" value={summary.auditEvents} />
+    <div lang={locale} className="grid grid-cols-2 gap-2">
+      <MiniStat label={t("count.campaigns")} value={number(summary.campaigns)} />
+      <MiniStat label={t("count.sources")} value={number(summary.sourceRecords)} />
+      <MiniStat label={t("count.mentors")} value={number(summary.mentors)} />
+      <MiniStat label={t("count.drafts")} value={number(summary.drafts)} />
+      <MiniStat label={t("count.invoices")} value={number(summary.invoiceRecords)} />
+      <MiniStat label={t("count.audit")} value={number(summary.auditEvents)} />
     </div>
   );
 }

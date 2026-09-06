@@ -1007,6 +1007,16 @@ try {
   assert(integrity.valid === true, "Workspace integrity endpoint did not validate a healthy ledger");
   const initialSettings = await api("/api/workspace/settings");
   assert(initialSettings.settings.outreachCooldownDays === 30, "Default identity cooldown is not 30 days");
+  const dutchSettings = await api("/api/workspace/settings", { method: "PATCH", body: JSON.stringify({ locale: "nl" }) });
+  assert(dutchSettings.settings.locale === "nl", "Dutch preference was not acknowledged");
+  for (const key of Object.keys(initialSettings.settings).filter((key) => key !== "locale")) {
+    assert(dutchSettings.settings[key] === initialSettings.settings[key], `Language change altered ${key}`);
+  }
+  assert((await api("/api/workspace/settings")).settings.locale === "nl", "Dutch preference did not survive another request");
+  await expectFailure("/api/workspace/settings", { method: "PATCH", body: JSON.stringify({ locale: "de" }) }, 400);
+  assert((await api("/api/workspace/settings")).settings.locale === "nl", "Rejected language changed the preference");
+  await api("/api/workspace/settings", { method: "PATCH", body: JSON.stringify({ locale: initialSettings.settings.locale }) });
+  console.log("PASS workspace locale: saved Dutch preference, invalid locale rejection and unchanged safety settings");
   await expectFailure("/api/workspace/settings", {
     method: "PATCH",
     body: JSON.stringify({ retentionDays: 2 }),

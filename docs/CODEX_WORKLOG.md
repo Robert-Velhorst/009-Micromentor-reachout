@@ -1,5 +1,13 @@
 # Codex Worklog
 
+## 2026-09-06 Locale Controls And Preference Safety
+
+1. Connected the saved English/Dutch preference to a language menu and 66 paired interface messages. Translated header/navigation, pagination, setup/pause notices, backup/recovery controls and fallback pages; most detailed workflows remain English.
+2. Kept language changes independent of dashboard reloads and merged only the acknowledged locale, preserving unsaved drafts and safety fields. Fixed review-reproduced stale settings reads across settings writes, restore and reset, including uncertain failures and overlapping requests.
+3. Added real React rendering and actual Home-handler checks, API preference checks and six real-HTTP settings consistency regressions. Both default tests and the full release gate now include localization. Targeted review found no remaining actionable issue in this bounded change; it was not a broad security assessment.
+4. Verified browser switching, retained campaign/backup input, reload persistence, direct Dutch 404, existing status translation and connection-failure feedback using local synthetic workspaces. Test servers were stopped. Unreliable screenshot framing and viewport overrides leave visual/mobile acceptance open.
+5. The full pinned-runtime Windows release gate passed in `artifacts/release-check-localization-final-2026-09-06.log`, including 28 client, 29 source-ngrok and 32 packaged Windows scenarios, upgrades and independent-key recovery. Additional direct restore/reset handler assertions passed after that stage of the release run. The rebuilt unsigned installer hash is recorded in `PRODUCTION_READINESS.md`; this is not production publication.
+
 ## 2026-09-06 Windows Tunnel Configuration Files
 
 1. Reproduced leftover temporary hosts files under real Windows file-sharing locks and a new agent left alive after process-state persistence failed.

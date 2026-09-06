@@ -272,6 +272,7 @@ await runNpm("TypeScript contract check", ["run", "check"]);
 await runNpm("Manual handoff extension checks", ["run", "check:extension"]);
 await runNpm("Recommendation equivalence and complexity checks", ["run", "check:recommendations"]);
 await runNpm("Mentor pagination boundary checks", ["run", "check:mentor-pagination"]);
+await runNpm("Locale rendering and preference safety", ["run", "check:localization"]);
 await runNpm("Client connection deadlines and uncertain outcomes", ["run", "check:client-requests"]);
 await runNpm("Build plus encrypted ledger API smoke test", ["run", "check:api"]);
 await run("Storage failure and retry checks", process.execPath, ["scripts/check-storage-failures.mjs"]);
