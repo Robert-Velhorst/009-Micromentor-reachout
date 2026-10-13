@@ -1,5 +1,13 @@
 # Codex Worklog
 
+## 2026-10-13 Compact Dashboard Audit Payload
+
+1. Added opt-in `auditDetail=summary` to the dashboard API and enabled it in the UI. Only audit `beforeState`/`afterState` snapshots are omitted; legacy default/full requests, audit metadata, all other dashboard fields, stored records and backups remain unchanged. Invalid modes fail with HTTP 400.
+2. New API and client regression tests failed against the prior implementation, then passed with the change. Rich workflow, encrypted-file byte identity, full audit API, backup and restored audit comparisons pass. The client suite now has 29 scenarios, including safe campaign-ID query encoding.
+3. Two independent local 1,000-profile runs compared 20 alternating-order pairs each. Responses fell from 4,678,040 to 3,179,879 bytes (32.03%). Every other field matched after normalizing only response-generation clocks. Local median/p95 observations and their limits are in `OPERATIONAL_VALIDATION.md`; no CPU, memory or browser-render speedup is claimed.
+4. Browser network inspection confirmed the real compact request returned HTTP 200. Synthetic mentor creation and audit persistence after reload passed with no reported console warnings/errors. Screenshot capture remained blank, so visual acceptance is still open. The temporary browser tab and runtime were stopped.
+5. Full pinned-runtime Windows release checks passed in `artifacts/release-check-compact-dashboard-2026-10-13.log`, including dependency audit, type checks, workflows, launcher/storage scenarios, installed upgrades and independent-key recovery. The rebuilt unsigned installer is identified in `PRODUCTION_READINESS.md`. No real messages, public tunnel, main merge or public release were performed.
+
 ## 2026-10-13 Launcher Fixture Port Reservation
 
 1. Linux CI run `38370979987` failed in the last ngrok shutdown fixture with `EADDRINUSE` before discovery; its Windows release job passed. The route and localization tests had passed on Linux. The failed run remains recorded rather than treated as accepted.

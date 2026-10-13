@@ -1574,6 +1574,10 @@ function audit(
   });
 }
 
+function auditEventSummary({ beforeState: _beforeState, afterState: _afterState, ...metadata }: AuditEvent) {
+  return metadata;
+}
+
 function recalcCampaign(state: LedgerState, campaignId: string) {
   const campaign = state.campaigns.find((item) => item.id === campaignId);
   if (!campaign) return;
@@ -3338,18 +3342,23 @@ export function registerLedgerRoutes(app: Express) {
   app.get("/api/ledger/summary", route((_req, _res, state) => buildLedgerSummary(state)));
 
   app.get("/api/dashboard", route((req, res, state) => {
+    const auditDetail = req.query.auditDetail ?? "full";
+    if (auditDetail !== "full" && auditDetail !== "summary") {
+      return jsonError(res, 400, "auditDetail must be full or summary");
+    }
     const summary = buildLedgerSummary(state);
     const requestedCampaignId = typeof req.query.campaignId === "string" ? req.query.campaignId : "";
     if (requestedCampaignId && !requireCampaign(state, requestedCampaignId)) {
       return jsonError(res, 404, "Campaign not found");
     }
     const selectedCampaignId = requestedCampaignId || state.campaigns.find((campaign) => campaign.status === "active")?.id || state.campaigns[0]?.id || "";
+    const details = selectedCampaignId ? attachCampaignDetails(state, selectedCampaignId) : null;
     return {
-      summary,
+      summary: auditDetail === "summary" ? { ...summary, recentActivity: summary.recentActivity.map(auditEventSummary) } : summary,
       projects: state.projects,
       campaigns: state.campaigns,
       selectedCampaignId,
-      details: selectedCampaignId ? attachCampaignDetails(state, selectedCampaignId) : null,
+      details: auditDetail === "summary" && details ? { ...details, auditEvents: details.auditEvents.map(auditEventSummary) } : details,
       health: {
         ok: true,
         service: "maro-ledger",

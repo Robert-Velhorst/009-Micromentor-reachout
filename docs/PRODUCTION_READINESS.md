@@ -40,7 +40,7 @@ work still awaiting acceptance.
 
 The full local `npm run check:release` passed on Windows 11 Pro x64 using
 Node.js 22.23.2. The latest output is
-`artifacts/release-check-explore-route-2026-10-13.log`, including all 28 client
+`artifacts/release-check-compact-dashboard-2026-10-13.log`, including all 29 client
 connection scenarios, 29 source-launcher/runtime ngrok scenarios, 32 packaged
 Windows function/block checks and fresh/reused installed-runtime Host checks.
 Installed startup, configuration restart, stopped/in-use upgrades and recovery
@@ -67,7 +67,8 @@ are not counted as successful release checks.
 | Recovery boundaries | Restore preview leaves both encrypted files byte-identical; oversized requests rejected; corrupt primary recovers from rotating backup with integrity and audit checks |
 | Injected storage failures | Ten backup/primary fault cases passed with intact acknowledged data, cache isolation, temporary-file cleanup, successful retry and restart integrity; these are simulated filesystem errors, not physical disk or power-loss tests |
 | Post-commit cache failure | An injected metadata error after successful replacement preserves HTTP 200 and the saved project; the next read reloads storage and replaying the same idempotency key does not duplicate the record |
-| Client connection resilience | 28 isolated real-HTTP scenarios pass: deadlines through body transfer, cancellation, request/timer cleanup, no automatic retry, uncertain write feedback, slow successful responses and fresh settings after successful/uncertain updates, restore and reset. This is not whole-browser or live-ngrok acceptance. |
+| Client connection resilience | 29 isolated real-HTTP scenarios pass: deadlines through body transfer, cancellation, request/timer cleanup, no automatic retry, uncertain write feedback, slow successful responses, fresh settings after successful/uncertain updates, restore/reset, and compact dashboard query encoding. This is not whole-browser or live-ngrok acceptance. |
+| Compact dashboard | The UI explicitly requests audit metadata without before/after snapshots. Full APIs, storage and backup/restore retain complete audit records. Two local 20-pair synthetic runs reduced response bytes by 32.03% with deep equality of all other fields. Browser network inspection confirmed HTTP 200 for the compact request; synthetic mentor creation and audit persistence passed. This is not rendering, CPU or memory acceptance; see [operational evidence](OPERATIONAL_VALIDATION.md#compact-dashboard-comparison). |
 | Incremental Dutch interface | 255 paired messages cover initial controls, mentor list/manual entry, CSV intake, campaign/project forms and source/discovery controls. Actual-component and handler checks cover labels, states, preserved data/values, completion guards and secure source links. Synthetic browser checks cover retained input, saved campaign/source values, translated notices and mentor/CSV workflows. Full coverage and visual/accessibility acceptance remain open; see [localization evidence](LOCALIZATION_VALIDATION.md). |
 | Hidden installer payload files | A regression reproduced the omission of a hidden runtime by the old archive command. The replacement includes hidden files/directories and preserves exact extracted bytes; existing-archive collisions fail without changing the archive. The rebuilt installer starts its bundled runtime and passes the installed upgrade/recovery checks. |
 | Source ngrok lifecycle | 29 real-process/local-inspector cases cover own-child readiness, bounded startup/discovery, endpoint and policy checks, pre-verification Host rejection, process exits, cancellation and cleanup. Twelve configuration I/O cases exercise partial writes, exclusive-create collisions, replacement failure and deletion refusal, including during normal shutdown. Persistent cleanup refusal reports the owned file and returns failure; it is not claimed successfully removed. Partial-response/GC regressions are also included; no public tunnel was opened. |
@@ -91,8 +92,8 @@ Node 22 remains within its maintenance support period according to the
 
 - File: `artifacts/MARO-Windows11-Setup.exe`
 - Candidate version: 1.2.3
-- Size: 33,673,728 bytes
-- SHA-256: `DB7F41223891E0F7C2E7E037C37AD211CF797942E096547F5A32F96D9600B8B2`
+- Size: 33,674,240 bytes
+- SHA-256: `8961AA7B6E1ECC6B067693B8CD21D74DD62B020EE99872F12A4C9E6AFADBC812`
 - Signature: unsigned (`NotSigned` checked on this artifact). Publisher signing and clean-machine trust acceptance remain open.
 
 This hash identifies the local binary, not a future CI rebuild. Installer builds

@@ -682,8 +682,11 @@ export const ledgerApi = {
   readiness: () => request<ReadinessStatus>("/api/readiness"),
   diagnostics: () => request<Diagnostics>("/api/diagnostics"),
   runtimeStatus: () => request<RuntimeStatus>("/api/runtime/status"),
-  dashboard: (campaignId?: string) =>
-    request<DashboardSnapshot>(campaignId ? `/api/dashboard?campaignId=${encodeURIComponent(campaignId)}` : "/api/dashboard"),
+  dashboard: (campaignId?: string) => {
+    const query = new URLSearchParams({ auditDetail: "summary" });
+    if (campaignId) query.set("campaignId", campaignId);
+    return request<DashboardSnapshot>(`/api/dashboard?${query}`);
+  },
   workspaceBackup: () => request<WorkspaceBackup>("/api/workspace/backup", { method: "POST" }),
   previewWorkspaceRestore: (backupJson: string) =>
     request<{ valid: true; summary: WorkspaceSummary }>("/api/workspace/restore/preview", {

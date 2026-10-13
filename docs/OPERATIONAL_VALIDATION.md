@@ -195,7 +195,10 @@ items remain open; local lock tests must not be presented as covering them.
 - Import 1,000 distinct synthetic mentor profiles in ten batches through the
   normal CSV API, with profile content, identities, fit assessments and audit events.
 - Reimport a batch and confirm no extra profiles are created.
-- Read the complete dashboard 20 times and measure full HTTP response delivery.
+- After one warmup per mode, read 20 alternating-order pairs of full and compact
+  dashboards and measure complete HTTP body delivery. Compare every response
+  field except the two omitted audit snapshots and three response-generation
+  timestamps. Verify full audit history and encrypted storage are unchanged.
 - Export an approximately 3.8 MB portable backup and preview its restoration.
 - Verify that preview changes neither the primary encrypted file nor its rotating backup.
 - Reject bodies above 16 MiB on both restore routes and above 1 MiB on the
@@ -245,9 +248,54 @@ transfer but exclude JSON parsing in the caller and frontend rendering. Other
 work was running on this host; do not infer a hardware-independent latency
 guarantee or a before/after speedup from these numbers.
 
+## Compact dashboard comparison
+
+The interface now requests `auditDetail=summary`. This omits only `beforeState`
+and `afterState` from dashboard audit entries. The default API response remains
+full; `/api/audit`, campaign details, encrypted storage and portable backup/restore
+retain the complete records. No polling, retry, extra request or dependency was
+added. Unknown, empty, repeated and object-valued modes are rejected.
+
+On 2026-10-13, a paired synthetic run on Windows x64 with Node 22.23.2 measured:
+
+| Measurement | Full | Compact |
+| --- | --- | --- |
+| Response bytes | 4,678,040 | 3,179,879 |
+| Samples | 20 | 20 |
+| Median HTTP body completion | 106.25 ms | 92.26 ms |
+| Nearest-rank p95 | 145.25 ms | 117.52 ms |
+
+The response is 32.03% smaller in this fixture. Evidence:
+`artifacts/operational-compact-first-2026-10-13.json` and
+`artifacts/check-compact-operational-first-2026-10-13.log`.
+Both variants ran against the same unchanged ledger with alternating order.
+A repeat within the full release gate measured the same byte counts and 32.03%
+reduction: full median/p95 133.34/186.27 ms, compact 117.14/164.59 ms. Evidence:
+`artifacts/operational-check.json` and
+`artifacts/release-check-compact-dashboard-2026-10-13.log`.
+API workflow tests also compare richer approval/message/billing data and verify
+that full audit payloads survive backup and restore. Client real-HTTP tests verify
+the explicit mode and correct campaign-ID encoding. New regression tests failed
+against the prior implementation before passing with the change.
+
+The fixed synthetic fixture requires at least 20% fewer response bytes; timing is
+observational, not a CI gate. These results exclude JSON parsing and browser
+rendering and do not establish a CPU or memory reduction. The process snapshots
+cover the combined workload, not separate mode peaks. Do not compare these
+latencies directly with the older host measurements above.
+
+An isolated local browser check confirmed an actual dashboard request with
+`auditDetail=summary` and HTTP 200. A newly created synthetic mentor appeared in
+the audit tab and persisted after reload; approval-required, privacy and manual
+sending indicators remained active. No warning/error console entries were
+reported. One immediate post-reload locator attempt timed out; the fresh page
+state was loaded and the subsequent audit interaction passed. Screenshot capture
+again returned blank pixels despite populated DOM/accessibility state, so visual
+acceptance is not claimed. The owned browser tab and runtime were stopped.
+
 ## Still required
 
-The dashboard response size and frontend rendering warrant further profiling
+The remaining dashboard payload and frontend rendering warrant further profiling
 and targeted optimization with unchanged duplicate/contact safeguards.
 No arbitrary latency threshold has been added to make CI look like a product
 acceptance test. The measurements establish a baseline, not acceptable UX.

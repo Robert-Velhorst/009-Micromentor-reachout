@@ -4,6 +4,8 @@ import { request as httpRequest } from "node:http";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { deepStrictEqual } from "node:assert/strict";
+import { assertCompactDashboard, stableDashboard } from "./test-helpers/dashboard-contract.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -873,6 +875,22 @@ try {
   assert(Array.isArray(details.nextActions), "Campaign details did not include next actions");
   assert(details.nextActions.some((action) => action.type === "draft_message" || action.type === "generate_cost_record"), "Next actions did not include remaining operational work");
   assert(details.auditEvents.length >= 10, "Audit trail was not recorded");
+  const auditBeforeCompact = await api("/api/audit");
+  const persistedBeforeCompact = fs.readFileSync(ledgerFile);
+  const fullDashboard = await api(`/api/dashboard?campaignId=${campaignId}`);
+  const compactDashboard = await api(`/api/dashboard?campaignId=${campaignId}&auditDetail=summary`);
+  assertCompactDashboard(fullDashboard, compactDashboard);
+  const explicitFullDashboard = await api(`/api/dashboard?campaignId=${campaignId}&auditDetail=full`);
+  deepStrictEqual(stableDashboard(explicitFullDashboard), stableDashboard(fullDashboard));
+  assertCompactDashboard(await api("/api/dashboard"), await api("/api/dashboard?auditDetail=summary"));
+  for (const query of ["auditDetail=invalid", "auditDetail=", "auditDetail=summary&auditDetail=full", "auditDetail[mode]=summary"]) {
+    await expectFailure(`/api/dashboard?${query}`, {}, 400);
+  }
+  await expectFailure("/api/dashboard?campaignId=missing-campaign&auditDetail=summary", {}, 404);
+  deepStrictEqual((await api(`/api/campaigns/${campaignId}`)).auditEvents, details.auditEvents);
+  deepStrictEqual(await api("/api/audit"), auditBeforeCompact, "Compact reads must not strip stored audit payloads");
+  deepStrictEqual(fs.readFileSync(ledgerFile), persistedBeforeCompact, "Dashboard reads must not rewrite encrypted storage");
+  console.log("PASS compact dashboard: only audit snapshots omitted; full API, stored history and all other fields preserved");
   const mentorTimeline = await api(`/api/mentors/${mentorId}/timeline`);
   const relationshipTimeline = mentorTimeline.relationshipTimeline;
   assert(relationshipTimeline?.entries.some((entry) => entry.label === "Draft"), "Mentor timeline endpoint did not include the relationship draft timeline");
@@ -934,6 +952,9 @@ try {
 
   await expectFailure("/api/workspace/backup", {}, 404);
   const backup = await api("/api/workspace/backup", { method: "POST" });
+  for (const event of auditBeforeCompact.auditEvents) {
+    deepStrictEqual(backup.ledger.auditEvents.find((item) => item.id === event.id), event, "Backup must preserve full pre-compact audit history");
+  }
   assert(backup.kind === "maro-workspace-backup", "Workspace backup did not include backup kind");
   assert(backup.summary.mentors === 4, "Workspace backup did not include mentor count");
   assert(backup.summary.sourceRecords === 5, "Workspace backup did not include source record count");
@@ -996,6 +1017,9 @@ try {
   assert(restored.summary.qualityReviews === 3, "Workspace restore did not restore quality review count");
   assert(restored.summary.invoiceRecords === 1, "Workspace restore did not restore invoice count");
   const restoredDetails = await api(`/api/campaigns/${campaignId}`);
+  for (const event of details.auditEvents) {
+    deepStrictEqual(restoredDetails.auditEvents.find((item) => item.id === event.id), event, "Restore must preserve full audit history after compact reads");
+  }
   assert(restoredDetails.campaign.messagesDrafted === 3, "Restored campaign draft count was not available");
   assert(restoredDetails.sourceRecords.length === 4, "Restored source records were not available");
   assert(restoredDetails.qualityReviews.length === 3, "Restored quality review was not available");

@@ -84,7 +84,7 @@ async function scenario(name, test) {
   });
   const origin = `http://127.0.0.1:${server.address().port}`;
   const context = vm.createContext({
-    module: { exports: {} }, Headers, AbortController, Error, crypto: globalThis.crypto,
+    module: { exports: {} }, Headers, URLSearchParams, AbortController, Error, crypto: globalThis.crypto,
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
     fetch: async (url, options) => {
       const signal = options.signal
@@ -320,5 +320,21 @@ for (const writeFails of [false, true]) {
   });
 }
 }
+
+await scenario("dashboard requests compact audit records and encodes campaign identifiers", async ({ api, requests, fixture }) => {
+  fixture.reply = (_request, response) => response.end('{"selectedCampaignId":"fixture","details":{"auditEvents":[{"id":"event-1"}]}}');
+  for (const campaignId of [undefined, "campaign & auditDetail=full/?#"]) {
+    const result = await api.dashboard(campaignId);
+    assert.equal(result.details.auditEvents[0].id, "event-1");
+    const observed = requests.at(-1);
+    assert.equal(observed.method, "GET");
+    const url = new URL(observed.url, "http://fixture.invalid");
+    assert.equal(url.pathname, "/api/dashboard");
+    assert.deepEqual(url.searchParams.getAll("auditDetail"), ["summary"]);
+    assert.equal(url.searchParams.get("campaignId"), campaignId ?? null);
+    assert.equal(url.hash, "");
+  }
+  assert.equal(requests.length, 2);
+});
 
 console.log(`PASS client request suite: ${passed} isolated HTTP scenarios; no provider requests or operator data`);

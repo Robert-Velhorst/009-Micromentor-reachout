@@ -578,6 +578,14 @@ The React client adds the mutation and idempotency headers automatically. Truste
 - `GET /api/dashboard`
 - `GET /api/actions`
 
+`GET /api/dashboard` accepts an optional `campaignId` and `auditDetail=full|summary`.
+Omitting `auditDetail` preserves the full response for existing API clients. The
+web interface explicitly requests `summary`, which omits only `beforeState` and
+`afterState` from dashboard audit entries. All audit metadata and other dashboard
+fields remain available. Full audit history remains in storage, `/api/audit`,
+campaign details and portable backups. Invalid or repeated audit modes return
+HTTP 400. See [paired workload evidence](docs/OPERATIONAL_VALIDATION.md#compact-dashboard-comparison).
+
 </details>
 
 <details>

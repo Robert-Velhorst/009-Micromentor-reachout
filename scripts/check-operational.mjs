@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { assertCompactDashboard } from "./test-helpers/dashboard-contract.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const artifacts = path.join(root, "artifacts");
@@ -105,6 +106,8 @@ function digest(value) {
 try {
   await start();
   const dashboard = await api("/api/dashboard");
+  const compactSeed = await api("/api/dashboard?auditDetail=summary");
+  check("Compact dashboard preserves the seeded workspace", () => assertCompactDashboard(dashboard, compactSeed));
   const campaignId = dashboard.selectedCampaignId;
   const campaignRoute = `/api/campaigns/${campaignId}`;
   const { session } = await api("/api/resource-sessions", { method: "POST", body: { campaignId } });
@@ -127,11 +130,40 @@ try {
     assert.equal(replay.importedCount, 0);
     assert.equal(replay.skipped.length, 100);
   });
+  const dashboardRoute = `/api/dashboard?campaignId=${campaignId}`;
+  const ledgerBeforeReads = digest(fs.readFileSync(ledgerFile));
+  const auditBeforeReads = await api("/api/audit");
+  for (const mode of ["full", "summary"]) await api(`${dashboardRoute}&auditDetail=${mode}`);
+  let verifiedPairs = 0;
   for (let cycle = 0; cycle < 20; cycle++) {
-    const loaded = await api(`/api/dashboard?campaignId=${campaignId}`, { label: "dashboard-1000" });
-    assert.equal(loaded.details.mentors.length, mentorCount);
-    if ((cycle + 1) % 5 === 0) console.log(`Measured ${cycle + 1}/20 dashboard reads`);
+    const pair = {};
+    for (const mode of cycle % 2 ? ["summary", "full"] : ["full", "summary"]) {
+      pair[mode] = await api(`${dashboardRoute}&auditDetail=${mode}`, {
+        label: mode === "full" ? "dashboard-1000" : "dashboard-summary-1000",
+      });
+      assert.equal(digest(pair[mode].details.mentors), expectedProfiles);
+    }
+    assertCompactDashboard(pair.full, pair.summary);
+    verifiedPairs++;
+    if ((cycle + 1) % 5 === 0) console.log(`Measured ${cycle + 1}/20 paired full/compact dashboard reads`);
   }
+  check("Compact dashboard preserves every non-snapshot field across all 20 pairs", () => assert.equal(verifiedPairs, 20));
+  check("Dashboard comparison does not rewrite the encrypted ledger", () => assert.equal(digest(fs.readFileSync(ledgerFile)), ledgerBeforeReads));
+  const auditAfterReads = await api("/api/audit");
+  check("Full audit payloads remain intact after compact reads", () => assert.deepEqual(auditAfterReads, auditBeforeReads));
+  const describeReads = (label) => {
+    const samples = report.measurements.filter(item => item.label === label);
+    const times = samples.map(item => item.durationMs).sort((a, b) => a - b);
+    const sizes = samples.map(item => item.responseBytes);
+    return { samples: samples.length, medianMs: Number(((times[9] + times[10]) / 2).toFixed(2)), p95Ms: times[18], minBytes: Math.min(...sizes), maxBytes: Math.max(...sizes) };
+  };
+  const fullReads = describeReads("dashboard-1000"), compactReads = describeReads("dashboard-summary-1000");
+  report.dashboardComparison = {
+    full: fullReads, compact: compactReads,
+    minimumReductionPercent: Number((100 * (1 - compactReads.maxBytes / fullReads.minBytes)).toFixed(2)),
+    note: "20 alternating-order pairs after one warmup per mode. Latency includes HTTP body transfer, not JSON parsing or browser rendering. Timing is observational, not a CI threshold.",
+  };
+  check("Compact dashboard reduces response bytes by at least 20 percent for this fixture", () => assert.ok(compactReads.maxBytes <= fullReads.minBytes * 0.8));
   const { session: measured } = await api(`/api/resource-sessions/${session.id}/end`, { method: "POST" });
   report.processSamples = { start: measured.startSnapshot, end: measured.endSnapshot };
   report.processMeasurementNote = "Existing application snapshots at workload boundaries, not continuous sampling or peak memory; excludes browser and ngrok.";
@@ -153,6 +185,7 @@ try {
   await api("/api/projects", { method: "POST", body: { title: "x".repeat(1024 * 1024) }, expectedStatus: 413 });
   check("Oversized requests do not modify the workspace", () => assert.equal(digest(fs.readFileSync(ledgerFile)), beforePreview));
   await api("/api/workspace/reset", { method: "POST", body: { scope: "workspace", confirm: true } });
+  assertCompactDashboard(await api("/api/dashboard"), await api("/api/dashboard?auditDetail=summary"));
   await api("/api/workspace/restore", { method: "POST", body: { backupJson, confirm: true }, label: "restore-1000" });
   const restoredProfiles = (await api(campaignRoute)).mentors;
   check("Large backup restores every profile and field", () => assert.equal(digest(restoredProfiles), expectedProfiles));
