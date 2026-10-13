@@ -40,7 +40,7 @@ work still awaiting acceptance.
 
 The full local `npm run check:release` passed on Windows 11 Pro x64 using
 Node.js 22.23.2. The latest output is
-`artifacts/release-check-campaign-localization-2026-10-13.log`, including all 28 client
+`artifacts/release-check-explore-route-2026-10-13.log`, including all 28 client
 connection scenarios, 29 source-launcher/runtime ngrok scenarios, 32 packaged
 Windows function/block checks and fresh/reused installed-runtime Host checks.
 Installed startup, configuration restart, stopped/in-use upgrades and recovery
@@ -57,6 +57,7 @@ are not counted as successful release checks.
 | Client and server contracts | Both TypeScript checks passed |
 | API workflow | Encrypted production API smoke passed, including approval, handoff, backup/restore and 43 workflow audit events |
 | Extension regression gate | Actual popup handlers exercised with simulated browser APIs; route, expiry, wrong-recipient, target-page drift, editor activation, fallback and clear checks passed |
+| Current MicroMentor discovery route | Live read-only navigation confirmed Home -> Explore -> mentor results on 2026-10-13. The generated start link now uses `https://app.micromentor.org/explore`, covered by an API regression and a local browser link check. Existing classic profile handoffs remain unchanged. This is not whole-platform or installed-extension acceptance; see [route evidence](MICROMENTOR_LIVE_CHECK_2026-10-13.md). |
 | Runtime pin | `.node-version` controls CI and installer packaging; wrong-version packaging was rejected before output mutation |
 | Installer contents | Bundled Node executable and manifest identify 22.23.2 x64; required app/extension payload files found |
 | Installed startup | Encrypted runtime started with development tools removed from PATH |
@@ -91,7 +92,7 @@ Node 22 remains within its maintenance support period according to the
 - File: `artifacts/MARO-Windows11-Setup.exe`
 - Candidate version: 1.2.3
 - Size: 33,673,728 bytes
-- SHA-256: `243CFE08F1622A688BE332BE86EC6F99884882F1D6870375F6118EEC53327007`
+- SHA-256: `DB7F41223891E0F7C2E7E037C37AD211CF797942E096547F5A32F96D9600B8B2`
 - Signature: unsigned (`NotSigned` checked on this artifact). Publisher signing and clean-machine trust acceptance remain open.
 
 This hash identifies the local binary, not a future CI rebuild. Installer builds

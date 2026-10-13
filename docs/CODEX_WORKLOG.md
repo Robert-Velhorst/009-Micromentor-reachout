@@ -1,5 +1,12 @@
 # Codex Worklog
 
+## 2026-10-13 Current MicroMentor Discovery Route
+
+1. Read-only live navigation from the authenticated Home page through the visible Explore button confirmed `https://app.micromentor.org/explore` with mentor results. Home exposed no WebMCP tools. Flutter accessibility required Enter on its visible accessibility placeholder; no page script, provider API, inbox or messaging action was used.
+2. Replaced the generated classic directory start link with the current Explore route. Existing stored classic profile URLs and recipient matching remain unchanged. Updated the generated rationale to describe only the observed browse-and-review workflow.
+3. Added an exact API route assertion, reproduced its failure on the previous build, and passed it in the rebuilt API/release suites. Verified the generated native link in the Dutch local browser with no query appended, correct security attributes and a clean console.
+4. Full Windows release checks passed in `artifacts/release-check-explore-route-2026-10-13.log`, including installed upgrades and recovery. The unsigned installer hash is in `PRODUCTION_READINESS.md`. This read-only live route check does not accept the entire platform or the installed extension; no main merge, signing purchase, real message or public tunnel was performed.
+
 ## 2026-10-13 Campaign And Source Controls
 
 1. Added 106 paired messages for campaign metrics/settings/creation, project forms and source registration/discovery controls, bringing the catalog to 255. Added accessible field names, localized counts and explicit English boundaries for untranslated recommendations/readiness/runtime content. Stored status values and operator text are unchanged.

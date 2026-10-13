@@ -352,6 +352,10 @@ try {
 
   const initialDiscoveryPlan = await api(`/api/campaigns/${campaignId}/discovery-plan`);
   assert(initialDiscoveryPlan.discoveryPlan.sources.length === 3, "Discovery plan did not generate three focused source routes");
+  assert(
+    initialDiscoveryPlan.discoveryPlan.sources.find((source) => source.sourceType === "MicroMentor")?.launchUrl === "https://app.micromentor.org/explore",
+    "MicroMentor discovery must open the current Explore route, without changing stored profile URLs"
+  );
   assert(initialDiscoveryPlan.discoveryPlan.unrecordedCount === 3, "New discovery plan did not report its unrecorded sources");
   assert(
     initialDiscoveryPlan.discoveryPlan.sources.every((source) => source.searchQuery.includes("Automation") || source.searchQuery.includes("automation")),

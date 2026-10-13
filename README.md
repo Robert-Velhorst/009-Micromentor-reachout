@@ -118,6 +118,7 @@ The practical operator flow is:
 
 - Builds a local campaign-specific discovery plan.
 - Recommends MicroMentor, LinkedIn, and open-web research paths.
+- Opens the current [MicroMentor Explore](https://app.micromentor.org/explore) route for manual discovery; existing classic profile URLs are preserved. See the [live route check](docs/MICROMENTOR_LIVE_CHECK_2026-10-13.md).
 - Copies prepared queries without putting campaign data into external URLs.
 - Records planned, searched, imported, skipped, result-count, and note evidence.
 - Links imported mentors back to the search that produced them.

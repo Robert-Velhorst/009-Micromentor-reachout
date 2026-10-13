@@ -818,8 +818,8 @@ function buildDiscoveryPlan(state: LedgerState, campaign: OutreachCampaign): Dis
       name: "MicroMentor mentor directory",
       sourceType: "MicroMentor",
       searchQuery: discoveryQuery(commonParts),
-      launchUrl: "https://classic.micromentor.org/mentors",
-      rationale: "Start with the dedicated mentor directory and apply its expertise, industry, language, and country filters.",
+      launchUrl: "https://app.micromentor.org/explore",
+      rationale: "Browse mentors in MicroMentor Explore and review their profiles before manual intake.",
     },
     {
       key: "linkedin",
