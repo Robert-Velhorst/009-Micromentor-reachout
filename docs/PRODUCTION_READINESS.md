@@ -96,7 +96,7 @@ Node 22 remains within its maintenance support period according to the
 - File: `artifacts/MARO-Windows11-Setup.exe`
 - Candidate version: 1.2.3
 - Size: 33,681,408 bytes
-- SHA-256: `831A5D847449C101007DAA3BA21C5645BBDC8D9FAE72432D966754E53E9B9DDE`
+- SHA-256: `47C7F39898BE2853ACC6668B4009FB50C1F511A87C644730427543095208EF15`
 - Signature: unsigned (`NotSigned` checked on this artifact). Publisher signing and clean-machine trust acceptance remain open.
 
 This hash identifies the local binary, not a future CI rebuild. Installer builds
