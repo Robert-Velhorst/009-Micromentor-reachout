@@ -219,6 +219,7 @@ for (const nonProfileRoute of [
   "https://app.micromentor.org/inbox/chats",
   "https://app.micromentor.org/myProfile",
   "https://app.micromentor.org/accountSettings",
+  "https://academy.micromentor.org/profile/mentor-123",
 ]) {
   assert.throws(
     () => comparableProfileUrl(nonProfileRoute),

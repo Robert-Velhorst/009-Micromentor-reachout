@@ -55,8 +55,9 @@ actions beyond the navigation explicitly listed above.
   and preserve an existing classic mentor profile URL through an approved handoff.
   Popup regression tests cover the current app's profile and invite routes,
   wrong-recipient blocking, query-insensitive matching, the sole-editor Flutter
-  fallback and refusal on inbox/non-profile routes. This change does not migrate
-  or rewrite stored profiles, source queries or recipient-matching rules.
+  fallback and refusal on inbox/non-profile routes, including a same-brand
+  Academy URL. This change does not migrate or rewrite stored profiles, source
+  queries or recipient-matching rules.
 - The rebuilt local browser displayed the exact Explore link in Dutch, with
   `_blank` and `noopener noreferrer`; the console contained no warning/error
   entries. The link was inspected without transmitting a prepared query.
