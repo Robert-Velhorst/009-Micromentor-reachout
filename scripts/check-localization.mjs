@@ -7,6 +7,7 @@ import { build } from "esbuild";
 import "./check-mentor-localization.mjs";
 import "./check-campaign-localization.mjs";
 import "./check-mentor-detail-localization.mjs";
+import "./check-delivery-controls.mjs";
 
 const require = createRequire(new URL("../package.json", import.meta.url));
 const { outputFiles } = await build({
@@ -113,7 +114,7 @@ function fixture() {
     },
     setLocale: (locale) => { state.locale = locale; events.push(["locale", locale]); },
   };
-  for (const name of ["setLoading", "setError", "setSummary", "setProjects", "setCampaigns", "setActiveCampaignId", "setDetails", "setHealthStatus", "setRuntimeStatus", "setHaiStatus", "setWorkspaceSettings", "setEnvironmentOutboundPause", "setDraftEdits", "setWorkspaceStatus", "setWorkspacePreview"]) {
+  for (const name of ["setLoading", "setError", "setSummary", "setProjects", "setCampaigns", "setActiveCampaignId", "setDetails", "setDeliverySafety", "setHealthStatus", "setRuntimeStatus", "setHaiStatus", "setWorkspaceSettings", "setEnvironmentOutboundPause", "setDraftEdits", "setWorkspaceStatus", "setWorkspacePreview"]) {
     scope[name] = (...args) => events.push([name, ...args]);
   }
   scope.setWorkspaceSettings = (next) => { state.settings = typeof next === "function" ? next(state.settings) : next; };

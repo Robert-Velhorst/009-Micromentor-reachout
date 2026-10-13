@@ -30,6 +30,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { MentorPagination } from "@/components/MentorPagination";
 import { LanguageSelect } from "@/components/LanguageSelect";
+import { UncertainDeliveryControl } from "@/components/UncertainDeliveryControl";
 import { WorkspaceNotice, type WorkspaceNoticeValue } from "@/components/WorkspaceNotice";
 import { useTranslation } from "@/lib/locale";
 import type { Locale, MessageKey } from "@/lib/messages";
@@ -45,6 +46,7 @@ import {
   type CampaignDetails,
   type CampaignReadiness,
   type DiscoveryPlanSource,
+  type DeliverySafety,
   type HaiIntegrationStatus,
   type HealthStatus,
   type LedgerSummary,
@@ -250,6 +252,7 @@ const actionTabMap: Record<NextActionRecommendation["type"], LedgerTab> = {
   fix_blocked_draft: "review",
   review_draft: "review",
   confirm_manual_send: "review",
+  resolve_uncertain_delivery: "review",
   follow_up_due: "responses",
   record_response_outcome: "responses",
   generate_cost_record: "billing",
@@ -446,6 +449,8 @@ export default function Home() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [activeCampaignId, setActiveCampaignId] = useState("");
   const [details, setDetails] = useState<CampaignDetails | null>(null);
+  const [deliverySafety, setDeliverySafety] = useState<DeliverySafety>({ uncertainAttempts: [], blockedMentorIds: [] });
+  const blockedDeliveryMentors = useMemo(() => new Set(deliverySafety.blockedMentorIds), [deliverySafety]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -508,6 +513,7 @@ export default function Home() {
       setCampaigns(snapshot.campaigns);
       setActiveCampaignId(snapshot.selectedCampaignId);
       setDetails(snapshot.details);
+      setDeliverySafety(snapshot.deliverySafety);
       setHealthStatus(snapshot.health);
       setRuntimeStatus(nextRuntimeStatus);
       setHaiStatus(snapshot.haiStatus);
@@ -1533,6 +1539,10 @@ export default function Home() {
           </div>
         </section>
 
+        {deliverySafety.uncertainAttempts.length ? <div lang={locale} role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <span>{t("delivery.title")}: {number(deliverySafety.uncertainAttempts.length)}</span>
+          <Button variant="outline" onClick={() => setActiveTab("review")}><AlertTriangle className="h-4 w-4"/>{t("delivery.open")}</Button>
+        </div> : null}
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as LedgerTab)} className="mt-5 gap-4">
           <div className="overflow-x-auto">
             <TabsList lang={locale} className="h-10 rounded-md">
@@ -2287,9 +2297,27 @@ export default function Home() {
           </TabsContent>
 
           <TabsContent value="review" className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+            {deliverySafety.uncertainAttempts.length ? <section lang={locale} aria-label={t("delivery.title")} className="space-y-3 border-y py-4 xl:col-span-2">
+              <h2 className="text-lg font-semibold">{t("delivery.title")} ({number(deliverySafety.uncertainAttempts.length)})</h2>
+              <p className="text-sm text-amber-800">{t("delivery.warning")}</p>
+              {deliverySafety.uncertainAttempts.map(attempt => <div key={attempt.id} className="rounded-md border p-4">
+                <h3 className="font-medium">{attempt.mentorName}</h3>
+                <p className="text-sm text-muted-foreground">{attempt.campaignTitle} - {formatDate(attempt.createdAt, locale)}</p>
+                <p className="break-words text-sm">{attempt.subject}</p>
+                <UncertainDeliveryControl resolving privacyMode={privacyMode} context={attempt.errorMessage} revision={attempt}
+                  paused={Boolean(workspaceSettings?.outboundPaused || environmentOutboundPause)}
+                  onRefresh={() => loadLedger()}
+                  onSubmit={async (resolution, note) => {
+                    if (resolution === "uncertain") return;
+                    await ledgerApi.resolveSendAttempt(attempt.id, resolution, resolution === "confirmed_sent" ? note : "", resolution === "failed" ? note : "");
+                    await loadLedger();
+                  }} />
+              </div>)}
+            </section> : null}
             <ReviewColumn
               title="Needs review"
               messages={pendingReview}
+              blockedMentorIds={blockedDeliveryMentors}
               details={details}
               draftEdits={draftEdits}
               onDraftEdit={setDraftEdits}
@@ -2342,6 +2370,7 @@ export default function Home() {
             <ReviewColumn
               title="Approved, awaiting manual send confirmation"
               messages={approvedMessages}
+              blockedMentorIds={blockedDeliveryMentors}
               details={details}
               draftEdits={draftEdits}
               onDraftEdit={setDraftEdits}
@@ -2396,7 +2425,7 @@ export default function Home() {
                   <Button
                     className="w-full rounded-md"
                     onClick={() => void mutate(() => ledgerApi.confirmSend(message.id, sendEvidence[message.id] || ""))}
-                    disabled={!sendEvidence[message.id]?.trim() || hasUnsavedEdit}
+                    disabled={!sendEvidence[message.id]?.trim() || hasUnsavedEdit || blockedDeliveryMentors.has(message.mentorProfileId)}
                   >
                     <Send className="h-4 w-4" />
                     Confirm manually sent
@@ -2412,11 +2441,20 @@ export default function Home() {
                       variant="outline"
                       className="rounded-md border-red-200 text-red-700 hover:bg-red-50 hover:text-red-700"
                       onClick={() => void mutate(() => ledgerApi.recordFailedSendAttempt(message.id, sendFailureNotes[message.id] || ""))}
-                      disabled={!sendFailureNotes[message.id]?.trim()}
+                      disabled={!sendFailureNotes[message.id]?.trim() || blockedDeliveryMentors.has(message.mentorProfileId)}
                     >
                       Record failed
                     </Button>
                   </div>
+                  <UncertainDeliveryControl privacyMode={privacyMode} revision={details}
+                    disabled={hasUnsavedEdit || blockedDeliveryMentors.has(message.mentorProfileId)}
+                    paused={Boolean(workspaceSettings?.outboundPaused || environmentOutboundPause)}
+                    onRefresh={() => loadLedger()}
+                    onSubmit={async (_resolution, note) => {
+                      setDeliverySafety(current => ({ ...current, blockedMentorIds: [...current.blockedMentorIds, message.mentorProfileId] }));
+                      await ledgerApi.recordUncertainSendAttempt(message.id, note);
+                      await loadLedger();
+                    }} />
                 </div>
               );
               }}
@@ -3780,6 +3818,7 @@ function MessageQualityBox({ quality }: { quality: CampaignDetails["qualityRevie
 function ReviewColumn({
   title,
   messages,
+  blockedMentorIds,
   details,
   draftEdits,
   onDraftEdit,
@@ -3797,6 +3836,7 @@ function ReviewColumn({
 }: {
   title: string;
   messages: CampaignDetails["messages"];
+  blockedMentorIds: Set<string>;
   details: CampaignDetails | null;
   draftEdits: Record<string, Pick<MessageDraft, "subject" | "body">>;
   onDraftEdit: React.Dispatch<React.SetStateAction<Record<string, Pick<MessageDraft, "subject" | "body">>>>;
@@ -3812,6 +3852,7 @@ function ReviewColumn({
   onOpenProfile: (messageId: string, profileUrl: string | null | undefined) => void;
   action: (message: CampaignDetails["messages"][number]) => React.ReactNode;
 }) {
+  const { t, locale } = useTranslation();
   return (
     <Card className="rounded-md py-5">
       <CardHeader className="px-5">
@@ -3827,7 +3868,8 @@ function ReviewColumn({
           const draftBodyVisible = isSensitiveVisible(draftBodyKey);
           const edit = draftEdits[message.id];
           const hasUnsavedEdit = Boolean(edit && (edit.subject !== message.subject || edit.body !== message.body));
-          const handoffReady = message.status === "approved" && !hasUnsavedEdit;
+          const deliveryBlocked = blockedMentorIds.has(message.mentorProfileId);
+          const handoffReady = message.status === "approved" && !hasUnsavedEdit && !deliveryBlocked;
           return (
             <div key={message.id} className="rounded-md border p-4">
               <div className="mb-3 flex items-start justify-between gap-3">
@@ -3839,9 +3881,17 @@ function ReviewColumn({
                   {message.status}
                 </Badge>
               </div>
+              {deliveryBlocked ? <div lang={locale} role="alert" className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{t("delivery.blocked")}</div> : null}
               {latestSendAttempt?.status === "failed" ? (
-                <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-700">
-                  Last manual send attempt failed: {latestSendAttempt.errorMessage || "No failure reason recorded."}
+                <div lang={locale} className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-700">
+                  <p>{t("delivery.failedSummary")}</p>
+                  {latestSendAttempt.errorMessage ? <SensitiveText privacyMode={privacyMode}
+                    visible={isSensitiveVisible(`attempt-note:${latestSendAttempt.id}`)}
+                    onReveal={() => onRevealSensitive(`attempt-note:${latestSendAttempt.id}`)}
+                    onHide={() => onHideSensitive(`attempt-note:${latestSendAttempt.id}`)}
+                    placeholder={t("delivery.hiddenNote")}>
+                    <p className="break-words whitespace-pre-wrap">{latestSendAttempt.errorMessage}</p>
+                  </SensitiveText> : null}
                 </div>
               ) : null}
               {quality ? <MessageQualityBox quality={quality} /> : null}
@@ -3947,7 +3997,7 @@ function ReviewColumn({
                   <div className="mt-2 text-xs text-amber-700">Save and re-approve the changed content before external handoff.</div>
                 ) : null}
                 {handoffStatus[message.id] ? <div className="mt-2 text-xs text-muted-foreground">{handoffStatus[message.id]}</div> : null}
-                {handoffFallback[message.id] ? (
+                {handoffFallback[message.id] && !deliveryBlocked && (!privacyMode || draftBodyVisible) ? (
                   <Textarea
                     aria-label={`Manual handoff fallback for ${mentor?.name || "mentor"}`}
                     value={handoffFallback[message.id]}

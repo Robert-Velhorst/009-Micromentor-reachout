@@ -11,7 +11,7 @@ does not reload the dashboard, replace message draft edits, change privacy mode,
 or replace unsaved safety-setting fields. There is no translation service, extra
 runtime dependency, background polling or automatic retry.
 
-The paired catalog currently contains 322 messages covering:
+The paired catalog currently contains 342 messages covering:
 
 - Header, privacy controls, refresh, setup and outbound-pause notices.
 - Six navigation tabs and mentor pagination, including accessible names and
@@ -44,6 +44,9 @@ The paired catalog currently contains 322 messages covering:
   sensitive-text reveal/hide buttons are translated without changing visibility
   state or callbacks. Generated timeline titles/details, assessments and audit
   descriptions remain unchanged and explicitly marked English.
+- Uncertain-delivery recording, workspace-wide reconciliation, warnings, evidence
+  controls, failed-save recovery and failed-attempt privacy placeholders. Changing
+  locale preserves the selected resolution and unsaved verification note.
 
 The document language follows the selected locale. Untranslated main content is
 explicitly marked English, with language overrides for translated regions.
@@ -194,6 +197,13 @@ the isolated workspace `http://127.0.0.1:54146/`:
 
 ## Remaining work
 
+The uncertainty increment adds actual-component and submission-handler tests in
+`scripts/check-delivery-controls.mjs`. Both synthetic resolution paths, locale
+preservation, copy blocking and failed-note reveal/hide were checked in the
+browser; see [delivery evidence](UNCERTAIN_DELIVERY_VALIDATION.md). Most other
+review controls remain English. The mentor-detail count is explicitly labeled
+Send attempts / Verzendpogingen because it includes non-confirmed outcomes.
+
 Review/response/billing tabs, readiness/runtime panels, generated timeline
 titles/details, recommendations, server errors, remaining date/currency consistency and the extension still
 need translation. Operator-entered mentor data and approved message text must not
@@ -216,3 +226,6 @@ dependency, translation network request or full dashboard refresh is needed when
 switching language.
 The mentor-detail increment brings the bundle to 361.33 kB / 100.71 kB gzip,
 1.49 kB compressed above the preceding compact-dashboard build (99.22 kB gzip).
+The uncertainty/reconciliation increment brings it to 369.16 kB / 102.76 kB gzip,
+another 2.05 kB compressed. This adds no runtime dependency or background polling;
+it is not evidence of sustained CPU/RAM usage or user-perceived latency.

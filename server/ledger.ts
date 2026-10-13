@@ -26,6 +26,7 @@ type NextActionType =
   | "fix_blocked_draft"
   | "review_draft"
   | "confirm_manual_send"
+  | "resolve_uncertain_delivery"
   | "follow_up_due"
   | "record_response_outcome"
   | "generate_cost_record"
@@ -1741,6 +1742,7 @@ function buildCampaignReadiness(state: LedgerState, campaignId: string): Campaig
   const sentMessages = messages.filter((message) => message.status === "sent").length;
   const blockedQualityReviews = qualityReviews.filter((review) => review.status === "blocked").length;
   const pendingApprovedMessages = messages.filter((message) => message.status === "approved").length;
+  const unresolvedMentorCount = deliverySafetySnapshot(state).blockedMentorIds.filter(id => mentorIds.has(id)).length;
   const remainingSourceCandidates = sourceRecords.reduce((sum, source) => {
     if (source.status === "planned" || source.status === "skipped") return sum;
     return sum + Math.max(0, source.resultsFound - source.importedCount);
@@ -1826,15 +1828,15 @@ function buildCampaignReadiness(state: LedgerState, campaignId: string): Campaig
     {
       id: "manual-delivery",
       label: "Manual delivery",
-      status: approvedMessages && pendingApprovedMessages === 0 && sentMessages > 0 ? "complete" : approvedMessages ? "attention" : "attention",
+      status: unresolvedMentorCount ? "blocked" : approvedMessages && pendingApprovedMessages === 0 && sentMessages > 0 ? "complete" : "attention",
       completed: sentMessages,
       total: Math.max(1, approvedMessages),
-      detail: pendingApprovedMessages
+      detail: unresolvedMentorCount ? `${unresolvedMentorCount} mentor profile(s) have unresolved delivery. Reconcile before further outreach.` : pendingApprovedMessages
         ? `${pendingApprovedMessages} approved message${pendingApprovedMessages === 1 ? "" : "s"} need manual delivery evidence.`
         : sentMessages
           ? `${sentMessages} approved message${sentMessages === 1 ? "" : "s"} confirmed sent manually.`
           : "Approve and manually confirm at least one message before measuring outreach results.",
-      nextActionType: pendingApprovedMessages ? "confirm_manual_send" : null,
+      nextActionType: unresolvedMentorCount ? "resolve_uncertain_delivery" : pendingApprovedMessages ? "confirm_manual_send" : null,
     },
     {
       id: "response-outcomes",
@@ -1888,6 +1890,7 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
     : state.campaigns.filter((campaign) => campaign.status !== "archived");
   const currentTime = Date.now();
   const relatedProfiles = indexMentorRelationships(state.mentorProfiles);
+  const unresolvedMentors = new Set(deliverySafetySnapshot(state).blockedMentorIds);
 
   const pushAction = (action: Omit<NextActionRecommendation, "createdFrom">) => {
     actions.push({ ...action, createdFrom: "derived_from_ledger" });
@@ -2004,6 +2007,13 @@ function buildNextActionRecommendations(state: LedgerState, campaignId?: string)
     }
 
     for (const mentor of mentors) {
+      if (unresolvedMentors.has(mentor.id)) {
+        pushAction({ id: `action:resolve-delivery:${mentor.id}`, campaignId: campaign.id, mentorProfileId: mentor.id,
+          messageDraftId: null, followUpId: null, responseId: null, priority: "high", type: "resolve_uncertain_delivery",
+          title: `Resolve uncertain delivery for ${mentor.name}`, description: "An attempt for this identity remains unconfirmed, possibly in another campaign.",
+          recommendedAction: "Check the platform and resolve the existing attempt in Review. Do not resend while uncertain.", dueAt: null });
+        continue;
+      }
       const assessment = state.matchAssessments.find((item) => item.mentorProfileId === mentor.id);
       const mentorMessages = messages.filter((message) => message.mentorProfileId === mentor.id);
       const mentorResponses = responses.filter((response) => response.mentorProfileId === mentor.id);
@@ -2910,9 +2920,40 @@ function mentorDoNotContactReason(state: LedgerState, mentor: MentorProfile) {
   return "";
 }
 
-function mentorContactBlock(state: LedgerState, mentor: MentorProfile) {
+function unresolvedSendForIdentity(state: LedgerState, mentor: MentorProfile, ignoreAttemptId?: string) {
+  const profileUrl = normalize(mentor.profileUrl || "");
+  const relatedIds = new Set(state.mentorProfiles.filter((profile) =>
+    profile.mentorIdentityId === mentor.mentorIdentityId || (profileUrl && normalize(profile.profileUrl || "") === profileUrl)
+  ).map((profile) => profile.id));
+  return state.messageSendAttempts.find((attempt) => attempt.status === "uncertain" && attempt.id !== ignoreAttemptId && relatedIds.has(attempt.mentorProfileId));
+}
+
+function deliverySafetySnapshot(state: LedgerState) {
+  const unresolved = state.messageSendAttempts.filter((attempt) => attempt.status === "uncertain");
+  if (!unresolved.length) return { uncertainAttempts: [], blockedMentorIds: [] };
+  const mentors = new Map(state.mentorProfiles.map((mentor) => [mentor.id, mentor]));
+  const campaigns = new Map(state.campaigns.map((campaign) => [campaign.id, campaign]));
+  const drafts = new Map(state.messageDrafts.map((draft) => [draft.id, draft]));
+  const identities = new Set<string>(), urls = new Set<string>();
+  const uncertainAttempts = unresolved.map((attempt) => {
+    const mentor = mentors.get(attempt.mentorProfileId);
+    if (mentor) {
+      identities.add(mentor.mentorIdentityId);
+      const url = normalize(mentor.profileUrl || "");
+      if (url) urls.add(url);
+    }
+    return { ...attempt, mentorName: mentor?.name || "Unknown mentor", campaignTitle: campaigns.get(attempt.campaignId)?.title || "Unknown campaign", subject: drafts.get(attempt.messageDraftId)?.subject || "" };
+  });
+  const blockedMentorIds = state.mentorProfiles.filter((mentor) =>
+    identities.has(mentor.mentorIdentityId) || urls.has(normalize(mentor.profileUrl || ""))
+  ).map((mentor) => mentor.id);
+  return { uncertainAttempts, blockedMentorIds };
+}
+
+function mentorContactBlock(state: LedgerState, mentor: MentorProfile, resolvingAttemptId?: string) {
   const doNotContactReason = mentorDoNotContactReason(state, mentor);
   if (doNotContactReason) return doNotContactReason;
+  if (unresolvedSendForIdentity(state, mentor, resolvingAttemptId)) return "Uncertain delivery exists for this mentor identity. Check the platform and resolve the existing attempt before further outreach.";
   const relatedIds = relatedMentorProfileIds(state, mentor);
 
   const cooldownMs = state.settings.outreachCooldownDays * 24 * 60 * 60 * 1000;
@@ -3361,6 +3402,7 @@ export function registerLedgerRoutes(app: Express) {
       projects: state.projects,
       campaigns: state.campaigns,
       selectedCampaignId,
+      deliverySafety: deliverySafetySnapshot(state),
       details: auditDetail === "summary" && details ? { ...details, auditEvents: details.auditEvents.map(auditEventSummary) } : details,
       health: {
         ok: true,
@@ -3882,6 +3924,9 @@ export function registerLedgerRoutes(app: Express) {
     const nextSubject = String(req.body?.subject ?? draft.subject);
     const nextBody = String(req.body?.body ?? draft.body);
     const contentChanged = nextSubject !== draft.subject || nextBody !== draft.body;
+    if (contentChanged && state.messageSendAttempts.some((attempt) => attempt.messageDraftId === draft.id && attempt.status === "uncertain")) {
+      return jsonError(res, 409, "Resolve uncertain delivery before changing the approved content");
+    }
     draft.subject = nextSubject;
     draft.body = nextBody;
     if (contentChanged && (draft.status === "approved" || draft.status === "rejected")) {
@@ -3946,6 +3991,9 @@ export function registerLedgerRoutes(app: Express) {
     const draft = requireMessage(state, routeId(req));
     if (!draft) return jsonError(res, 404, "Message draft not found");
     if (draft.status === "sent") return jsonError(res, 409, "Sent messages cannot be rejected");
+    if (state.messageSendAttempts.some((attempt) => attempt.messageDraftId === draft.id && attempt.status === "uncertain")) {
+      return jsonError(res, 409, "Resolve uncertain delivery before rejecting this message");
+    }
     const decidedAt = now();
     draft.status = "rejected";
     draft.updatedAt = decidedAt;
@@ -4018,6 +4066,7 @@ export function registerLedgerRoutes(app: Express) {
     if (!campaign) return jsonError(res, 404, "Campaign not found");
     const createdAt = now();
     const priorAttempts = state.messageSendAttempts.filter((item) => item.messageDraftId === draft.id);
+    if (priorAttempts.some((attempt) => attempt.status === "uncertain")) return jsonError(res, 409, "Resolve the existing uncertain attempt instead of recording another attempt");
     const attemptStatus: SendStatus = req.body?.status === "failed"
       ? "failed"
       : req.body?.status === "uncertain"
@@ -4128,14 +4177,18 @@ export function registerLedgerRoutes(app: Express) {
     if (!draft || !mentor || !campaign) return jsonError(res, 409, "Send attempt references are incomplete");
     const before = { ...attempt };
     if (resolution === "failed") {
+      const note = String(req.body?.note || "").trim();
+      if (!note) return jsonError(res, 400, "A verification note is required to resolve delivery as failed");
       attempt.status = "failed";
-      attempt.errorMessage = String(req.body?.note || attempt.errorMessage || "Operator resolved as failed");
+      attempt.errorMessage = note;
       attempt.finishedAt = now();
       audit(state, "resolved_uncertain_send_as_failed", "messageSendAttempt", attempt.id, attempt, { beforeState: before, riskLevel: "high" });
       return { attempt, draft };
     }
     if (outboundIsPaused(state)) return jsonError(res, 423, "Outbound send confirmation is paused by the operator");
-    if (mentorContactBlock(state, mentor)) return jsonError(res, 409, "Send resolution is blocked for this mentor");
+    if (draft.status !== "approved" || !approvedSnapshotMatchesDraft(state, draft)) return jsonError(res, 409, "Original approved content must be unchanged before confirming uncertain delivery");
+    if (mentorContactBlock(state, mentor, attempt.id)) return jsonError(res, 409, "Send resolution is blocked for this mentor");
+    if (sentDraftForMentorPerson(state, draft)) return jsonError(res, 409, "Duplicate outreach guard: this identity already has confirmed outreach in this campaign");
     const evidence = String(req.body?.deliveryEvidence || "").trim();
     if (!evidence) return jsonError(res, 400, "Manual delivery evidence is required");
     attempt.status = "confirmed_sent";

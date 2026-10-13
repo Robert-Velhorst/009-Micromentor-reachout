@@ -64,7 +64,7 @@ MARO cannot:
 - charge a customer or create an external invoice;
 - act as a multi-user SaaS service with application-level accounts or RBAC.
 
-This boundary is a safety feature. A message is not recorded as sent until the operator supplies delivery evidence or explicitly records an uncertain attempt.
+This boundary is a safety feature. A message is recorded as sent only after the operator supplies delivery evidence. Recording uncertainty leaves it unconfirmed and blocks further outreach for the matching identity until explicitly resolved.
 
 ## How The Workflow Works
 
@@ -148,6 +148,25 @@ The practical operator flow is:
 - Records confirmed, failed, or uncertain delivery attempts.
 - Never turns a failed or uncertain attempt into fake success.
 - Requires uncertainty to be resolved before retrying.
+
+If a manual send may have happened but you cannot verify the result, use **Record
+uncertain delivery** in Review and describe what is unknown. MARO blocks new
+drafts, approvals, handoff packages and send confirmations for the same mentor
+identity or matching nonempty profile URL across campaigns. The original approved
+message cannot be edited or rejected while its attempt is unresolved.
+
+In **Uncertain deliveries**, check the actual platform, choose **Confirmed sent**
+or **Not sent after verification**, enter evidence/a verification note, and tick
+the explicit verification checkbox. The latter leaves the draft approved; the
+former records the original attempt as sent and schedules one follow-up. Unknown
+is not failure: do not select "not sent" merely to remove a block. On a failed
+save, refresh before retrying; MARO retains your note while the outcome is unknown.
+These controls are available in English and Dutch. See the
+[validation and limitations](docs/UNCERTAIN_DELIVERY_VALIDATION.md).
+
+Already copied text or offline extension packages cannot be remotely revoked.
+Do not use them while delivery is uncertain. MARO does not query MicroMentor to
+verify delivery automatically.
 
 ### Responses, follow-ups, and outcomes
 
@@ -918,7 +937,7 @@ Use the extension's copy fallback and paste manually when provider form structur
 - The HAI connector is read-only and must be enabled explicitly.
 - Basic Auth protects an ngrok tunnel but is not a multi-user authorization system.
 - The Language/Taal menu saves the workspace preference and translates the header, tabs, mentor list/manual entry/details, timeline categories, shared privacy buttons, CSV intake, campaign/project forms, source/discovery controls, pagination, setup/pause notices, backup/recovery controls and fallback pages. It preserves open draft fields when changing language; stored data and CSV/status values are not translated. Generated timeline text, readiness/runtime panels, recommendations, review/response/billing tabs, server messages and the extension remain English; this is not a fully translated Dutch release. See [localization coverage](docs/LOCALIZATION_VALIDATION.md).
-- Uncertain delivery is shown separately from failed delivery in the mentor timeline. Complete operator reconciliation and an identity-wide block on new handoffs while delivery is unresolved remain production blockers; do not treat the timeline warning as an enforced resend safeguard. See [production readiness](docs/PRODUCTION_READINESS.md).
+- Uncertain delivery has a cross-campaign identity/URL guard and explicit operator reconciliation in Review. Synthetic API/component/browser checks cover both outcomes and controlled post-save acknowledgement loss; installed-extension acceptance, live-ngrok outages and a live pilot remain open. Existing clipboard text/offline packages cannot be revoked. See [delivery validation](docs/UNCERTAIN_DELIVERY_VALIDATION.md) and [production readiness](docs/PRODUCTION_READINESS.md).
 - Search and filtering are suitable for the current local-workspace scale; server-side pagination is a future large-dataset enhancement.
 - Follow-up reminders appear in MARO's queues; there is no operating-system push notification service.
 - Local rate-limit and idempotency caches reset when the single Node process restarts.

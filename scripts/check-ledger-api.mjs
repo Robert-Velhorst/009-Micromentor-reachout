@@ -1052,7 +1052,7 @@ try {
 
   const safetyMentor = await api(`/api/campaigns/${campaignId}/mentors`, {
     method: "POST",
-    body: JSON.stringify({ name: "Safety Test", company: "MARO QA", headline: "Operations mentor" }),
+    body: JSON.stringify({ name: "Safety Test", company: "MARO QA", headline: "Operations mentor", profileUrl: "https://example.com/safety-identity" }),
   });
   const safetyDraft = await api(`/api/campaigns/${campaignId}/messages`, {
     method: "POST",
@@ -1062,6 +1062,18 @@ try {
     method: "POST",
     body: JSON.stringify({ decisionReason: "Adversarial safety test" }),
   });
+  const safetyCampaign = (await api("/api/campaigns", { method: "POST", body: JSON.stringify({ projectId: projectResult.project.id, title: "Cross-campaign reconciliation", goal: "Verify uncertain-delivery identity boundaries" }) })).campaign;
+  const crossProfiles = [];
+  for (const input of [
+    { name: "Safety Test", company: "MARO QA" },
+    { name: "URL-only safety alias", company: "Different company", profileUrl: "https://example.com/safety-identity" },
+    { name: "Unrelated delivery control", company: "Different identity" },
+  ]) {
+    const mentor = (await api(`/api/campaigns/${safetyCampaign.id}/mentors`, { method: "POST", body: JSON.stringify(input) })).mentor;
+    const draft = (await api(`/api/campaigns/${safetyCampaign.id}/messages`, { method: "POST", body: JSON.stringify({ mentorProfileId: mentor.id }) })).draft;
+    await api(`/api/messages/${draft.id}/approve`, { method: "POST", body: JSON.stringify({ decisionReason: "Synthetic identity boundary" }) });
+    crossProfiles.push({ mentor, draft });
+  }
   await api("/api/workspace/settings", {
     method: "PATCH",
     body: JSON.stringify({ outboundPaused: true, firstRunCompleted: true }),
@@ -1084,6 +1096,29 @@ try {
   assert(uncertainEntry?.detail === "Delivery is unconfirmed. Check the platform before resolving this attempt; do not resend while uncertain.", "Timeline must require reconciliation instead of encouraging retry");
   assert(!uncertainEntry.detail.includes("Browser closed"), "Uncertain delivery context must remain behind privacy controls");
   assert(uncertainEntry.sensitiveText === "Delivery uncertainty: Browser closed before confirmation", "Timeline must preserve uncertainty context without calling it failure");
+  await api("/api/workspace/settings", { method: "PATCH", body: JSON.stringify({ outreachCooldownDays: 0 }) });
+  const deliverySafety = (await api(`/api/dashboard?campaignId=${safetyCampaign.id}&auditDetail=summary`)).deliverySafety;
+  deepStrictEqual([...deliverySafety.blockedMentorIds].sort(), [safetyMentor.mentor.id, ...crossProfiles.slice(0, 2).map(item => item.mentor.id)].sort());
+  assert(deliverySafety.uncertainAttempts.some(item => item.id === uncertain.attempt.id && item.campaignId === campaignId && item.mentorName === "Safety Test"), "Cross-campaign reconciliation must expose the original attempt");
+  const blockedCampaign = await api(`/api/campaigns/${safetyCampaign.id}`);
+  assert(blockedCampaign.readiness.items.find(item => item.id === "manual-delivery")?.status === "blocked", "Campaign readiness must reflect unresolved delivery");
+  for (const { mentor } of crossProfiles.slice(0, 2)) {
+    deepStrictEqual(blockedCampaign.nextActions.filter(item => item.mentorProfileId === mentor.id).map(item => item.type), ["resolve_uncertain_delivery"], "Recommendations must request reconciliation, not more outreach");
+  }
+  const ledgerBeforeDeniedOutreach = fs.readFileSync(ledgerFile);
+  for (const { mentor, draft } of crossProfiles.slice(0, 2)) {
+    await expectFailure(`/api/messages/${draft.id}/handoff`, { method: "POST" }, 409);
+    await expectFailure(`/api/messages/${draft.id}/approve`, { method: "POST" }, 409);
+    await expectFailure(`/api/messages/${draft.id}/send-attempt`, { method: "POST", body: JSON.stringify({ deliveryEvidence: "Must not bypass uncertainty" }) }, 409);
+    await expectFailure(`/api/campaigns/${safetyCampaign.id}/messages`, { method: "POST", body: JSON.stringify({ mentorProfileId: mentor.id }) }, 409);
+  }
+  deepStrictEqual(fs.readFileSync(ledgerFile), ledgerBeforeDeniedOutreach, "Denied cross-campaign outreach must not persist changes");
+  await api(`/api/messages/${crossProfiles[2].draft.id}/handoff`, { method: "POST" });
+  await expectFailure(`/api/messages/${safetyDraft.draft.id}/handoff`, { method: "POST" }, 409);
+  await expectFailure(`/api/messages/${safetyDraft.draft.id}/send-attempt`, { method: "POST", body: JSON.stringify({ deliveryEvidence: "Must resolve existing uncertainty" }) }, 409);
+  await expectFailure(`/api/messages/${safetyDraft.draft.id}`, { method: "PATCH", body: JSON.stringify({ body: "Changed after ambiguous delivery" }) }, 409);
+  await expectFailure(`/api/messages/${safetyDraft.draft.id}/reject`, { method: "POST" }, 409);
+  await expectFailure(`/api/send-attempts/${uncertain.attempt.id}/resolve`, { method: "POST", body: JSON.stringify({ resolution: "failed", note: " " }) }, 400);
   const resolved = await api(`/api/send-attempts/${uncertain.attempt.id}/resolve`, {
     method: "POST",
     body: JSON.stringify({ resolution: "failed", note: "No delivery evidence" }),
@@ -1092,6 +1127,26 @@ try {
   const resolvedEntry = (await api(`/api/mentors/${uncertain.attempt.mentorProfileId}/timeline`)).relationshipTimeline.entries.find((entry) => entry.id === `send:${uncertain.attempt.id}`);
   assert(resolvedEntry?.title === "Manual send failed" && resolvedEntry.tone === "danger", "Timeline must reflect a resolved failure");
   console.log("PASS delivery timeline: uncertainty is distinct from failed delivery, private context retained and resolution reflected");
+  await api(`/api/messages/${safetyDraft.draft.id}/handoff`, { method: "POST" });
+  assert(!(await api("/api/dashboard")).deliverySafety.blockedMentorIds.length, "Explicit failed resolution must release uncertainty blocks");
+  const secondUncertain = await api(`/api/messages/${safetyDraft.draft.id}/send-attempt`, { method: "POST", body: JSON.stringify({ status: "uncertain", errorMessage: "Synthetic second ambiguous attempt" }) });
+  const uncertainBackup = await api("/api/workspace/backup", { method: "POST" });
+  const changedBackup = structuredClone(uncertainBackup);
+  changedBackup.ledger.messageDrafts.find(item => item.id === safetyDraft.draft.id).body += " changed legacy content";
+  await api("/api/workspace/restore", { method: "POST", body: JSON.stringify({ backupJson: JSON.stringify(changedBackup), confirm: true }) });
+  await expectFailure(`/api/send-attempts/${secondUncertain.attempt.id}/resolve`, { method: "POST", body: JSON.stringify({ resolution: "confirmed_sent", deliveryEvidence: "Synthetic proof" }) }, 409);
+  await api("/api/workspace/restore", { method: "POST", body: JSON.stringify({ backupJson: JSON.stringify(uncertainBackup), confirm: true }) });
+  await expectFailure(`/api/messages/${crossProfiles[0].draft.id}/handoff`, { method: "POST" }, 409);
+  await expectFailure(`/api/send-attempts/${secondUncertain.attempt.id}/resolve`, { method: "POST", body: JSON.stringify({ resolution: "confirmed_sent", deliveryEvidence: " " }) }, 400);
+  await api("/api/workspace/settings", { method: "PATCH", body: JSON.stringify({ outboundPaused: true }) });
+  await expectFailure(`/api/send-attempts/${secondUncertain.attempt.id}/resolve`, { method: "POST", body: JSON.stringify({ resolution: "confirmed_sent", deliveryEvidence: "Synthetic proof" }) }, 423);
+  await api("/api/workspace/settings", { method: "PATCH", body: JSON.stringify({ outboundPaused: false }) });
+  const confirmedResolution = await api(`/api/send-attempts/${secondUncertain.attempt.id}/resolve`, { method: "POST", body: JSON.stringify({ resolution: "confirmed_sent", deliveryEvidence: "Verified synthetic platform evidence" }) });
+  assert(confirmedResolution.draft.status === "sent" && confirmedResolution.attempt.status === "confirmed_sent", "Verified resolution must confirm the original attempt");
+  await expectFailure(`/api/send-attempts/${secondUncertain.attempt.id}/resolve`, { method: "POST", body: JSON.stringify({ resolution: "confirmed_sent", deliveryEvidence: "Duplicate resolution" }) }, 409);
+  const resolvedCampaign = await api(`/api/campaigns/${campaignId}`);
+  assert(resolvedCampaign.followUps.filter(item => item.messageDraftId === safetyDraft.draft.id).length === 1, "Resolution replay must not duplicate follow-up plans");
+  console.log("PASS uncertain delivery: identity and URL aliases blocked across campaigns at zero cooldown; unrelated handoff allowed; private history, frozen approval, restore, verification, pause and single resolution retained");
   await api(`/api/mentors/${safetyMentor.mentor.id}`, {
     method: "PATCH",
     body: JSON.stringify({ doNotContact: true, doNotContactReason: "QA opt-out" }),

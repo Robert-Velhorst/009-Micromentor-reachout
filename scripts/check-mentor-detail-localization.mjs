@@ -86,6 +86,9 @@ for (const locale of ["en", "nl"]) {
   }
   const expectedDate = new Intl.DateTimeFormat(locale === 'nl' ? 'nl-NL' : 'en-GB', { month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' }).format(new Date('2026-10-13T08:00:00Z'));
   assert.ok(hidden.html.includes(expectedDate));
+  const mixedAttempts = render(locale, 'hidden', {sendAttempts: ['failed', 'uncertain', 'confirmed_sent'].map((status, index) => ({id: 'attempt-' + index, messageDraftId: 'draft-1', status, deliveryEvidence: ''}))});
+  assert.ok(mixedAttempts.html.includes(locale === 'nl' ? 'Verzendpogingen' : 'Send attempts'), 'Attempt count must not imply confirmed sends');
+  assert.match(mixedAttempts.html, />3<\/div>/, 'All attempt outcomes remain counted');
 }
 const dutch = render('nl').html;
 for (const label of ['Mentordetails', 'Contacttijdlijn', 'Onderbouwing geschiktheid', 'Verzendbewijs verborgen', 'Reactietekst verborgen', 'Interne notities verborgen', 'Tonen', 'Meer informatie', 'Gepland', 'Ingepland', 'Goedgekeurd', '75,5%']) assert.ok(dutch.includes(label), label);

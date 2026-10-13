@@ -305,6 +305,7 @@ export type NextActionRecommendation = {
     | "fix_blocked_draft"
     | "review_draft"
     | "confirm_manual_send"
+    | "resolve_uncertain_delivery"
     | "follow_up_due"
     | "record_response_outcome"
     | "generate_cost_record"
@@ -547,6 +548,11 @@ export type CampaignDetails = {
   auditEvents: AuditEvent[];
 };
 
+export type DeliverySafety = {
+  uncertainAttempts: Array<MessageSendAttempt & { mentorName: string; campaignTitle: string; subject: string }>;
+  blockedMentorIds: string[];
+};
+
 export type DashboardSnapshot = {
   summary: LedgerSummary;
   projects: OutreachProject[];
@@ -555,6 +561,7 @@ export type DashboardSnapshot = {
   details: CampaignDetails | null;
   health: HealthStatus;
   haiStatus: HaiIntegrationStatus;
+  deliverySafety: DeliverySafety;
 };
 
 export type UsageReport = {
