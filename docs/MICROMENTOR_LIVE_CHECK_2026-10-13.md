@@ -27,8 +27,15 @@ every platform feature or the complete installed-extension workflow.
   parameters. This matches the existing selector fallback for a sole visible
   textarea, but does not prove the installed extension can inject into it.
 - Opened the Inbox landing view. The app exposed Chats, Invites and Archived
-  chats navigation, and received/sent invite tabs. No chat or invite content was
-  opened or copied. This confirms navigation only, not chat/invite workflows.
+  chats navigation, and received/sent invite tabs. In a later Chrome-profile
+  check, navigating to `/inbox/chats` automatically selected one existing
+  conversation. Its accessibility snapshot unexpectedly included conversation
+  text; I did not transcribe, quote, copy, or use that text, and stopped using
+  accessibility snapshots. A metadata-only DOM check confirmed the selected
+  conversation's composer is one enabled `TEXTAREA` with accessible label
+  `Write a message...` and no `id`, `name` or placeholder. No text was entered
+  or sent.
+  This is editor-structure evidence only, not acceptance of inbox workflows.
 - Opened **Trainings**, which launched `academy.micromentor.org/courses` in a
   separate tab. The Academy overview exposed Overview/Ongoing/Completed views
   and five recommended modules; the account showed zero ongoing and completed
