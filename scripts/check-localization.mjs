@@ -9,6 +9,7 @@ import "./check-campaign-localization.mjs";
 import "./check-mentor-detail-localization.mjs";
 import "./check-delivery-controls.mjs";
 import "./check-dashboard-refresh.mjs";
+import "./check-navigation-completion.mjs";
 
 const require = createRequire(new URL("../package.json", import.meta.url));
 const { outputFiles } = await build({
@@ -78,14 +79,14 @@ const homeText = fs.readFileSync(new URL("../client/src/pages/Home.tsx", import.
 const home = ts.createSourceFile("Home.tsx", homeText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const handlers = [];
 function visit(node) {
-  if (ts.isVariableDeclaration(node) && ["loadLedger", "updateLocale", "withLocaleWrite", "restoreWorkspace", "resetWorkspace", "mutate"].includes(node.name.getText(home))) {
+  if (ts.isVariableDeclaration(node) && ["captureView", "refreshAfterChange", "reportActionFailure", "loadLedger", "updateLocale", "withLocaleWrite", "restoreWorkspace", "resetWorkspace", "mutate"].includes(node.name.getText(home))) {
     assert.ok(node.initializer && ts.isArrowFunction(node.initializer));
     handlers.push(`const ${node.name.getText(home)} = ${node.initializer.getText(home)};`);
   }
   ts.forEachChild(node, visit);
 }
 visit(home);
-assert.equal(handlers.length, 6);
+assert.equal(handlers.length, 9);
 const handlerCode = ts.transpileModule(handlers.join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 function deferred() {
   let resolve, reject;
@@ -107,6 +108,9 @@ function fixture() {
     localeRevision: { current: 0 },
     localeWritesPending: { current: 0 },
     ledgerReadRequest: { current: 0 },
+    viewRevision: { current: 0 },
+    setBackgroundNotice: (...args) => events.push(['setBackgroundNotice', ...args]),
+    setUsageReport: (...args) => events.push(['setUsageReport', ...args]),
     ledgerApi: {
       readState: () => ({revision:0,pendingWrites:0}),
       dashboard: async () => { events.push(["dashboard"]); return {}; },

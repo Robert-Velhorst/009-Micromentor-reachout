@@ -1,5 +1,14 @@
 # Codex Worklog
 
+## 2026-10-13 Navigation After Slow Actions
+
+1. Reproduced an old mutation callback starting a new load for its captured campaign after navigation. Prior request-order protection could not reject this new request. Red evidence: `artifacts/check-navigation-before-2026-10-13.log`.
+2. Scoped action completion to the originating view revision. Tab/campaign/recommendation navigation and campaign creation supersede old callbacks. Guarded form/report resets and post-write refreshes preserve newer views; notices retain successful/unknown outcomes. Delivery failures still propagate to the reconciliation controls. Writes are not cancelled or retried.
+3. Added actual-handler tests for current/stale mutations, mentor/project/campaign forms, billing reports, late action navigation, delivery failures, campaign creation superseding an old save and navigation during an automatic refresh. Existing loading tests now reject obsolete automatic errors as well as snapshots. The 345-entry localization gate includes these regressions.
+4. Browser tests on disposable encrypted data verified a held successful acknowledgement, a lost HTTP 200 acknowledgement, and an old automatic refresh arriving after campaign B. New tabs, campaign choice and unsaved input survived. Explicit refresh recovered saved projects without duplicate writes. Final rebuilt assets passed ordinary form reset and the Dutch delayed-save case. Interception was removed and the owned tab/server stopped; no provider traffic or public tunnel.
+5. Full Windows release gate passed in `artifacts/release-check-navigation-2026-10-13.log`, including installer upgrades and recovery with an independent key. The unsigned installer is 33,679,360 bytes, SHA-256 `B8049F7DFB3C33370AA68E241AC8587598F69F1B09C1E6C918305D8E7ADF9BBE`. Client JavaScript is 103.54 kB gzip, 0.55 kB above the predecessor; no sustained-performance claim.
+6. README and validation/readiness evidence document the exact scope. Cross-window synchronization, same-view concurrent edits, comprehensive visual/accessibility acceptance and the broader live/clean-machine/security/distribution gates remain open. Predecessor `88bb0f2` CI was still queued when checked; the pushed revision requires its own successful CI.
+
 ## 2026-10-13 Dashboard Read Consistency
 
 1. Reproduced two real regressions: an older dashboard completion replaced newer campaign/safety state and erased a newly typed draft; a post-write dashboard GET reused an older in-flight response. The pre-fix failures are in `artifacts/check-dashboard-refresh-before-2026-10-13.log` and `artifacts/check-read-epoch-before-2026-10-13.log`.

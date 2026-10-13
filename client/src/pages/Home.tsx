@@ -445,6 +445,7 @@ export default function Home() {
   const localeRevision = useRef(0);
   const localeWritesPending = useRef(0);
   const ledgerReadRequest = useRef(0);
+  const viewRevision = useRef(0);
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
   const [projects, setProjects] = useState<OutreachProject[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -454,6 +455,7 @@ export default function Home() {
   const blockedDeliveryMentors = useMemo(() => new Set(deliverySafety.blockedMentorIds), [deliverySafety]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [backgroundNotice, setBackgroundNotice] = useState<WorkspaceNoticeValue | null>(null);
   const [query, setQuery] = useState("");
   const [projectForm, setProjectForm] = useState<ProjectForm>(defaultProjectForm);
   const [projectEditForm, setProjectEditForm] = useState<ProjectForm>(defaultProjectForm);
@@ -498,7 +500,12 @@ export default function Home() {
   const [sourceEdits, setSourceEdits] = useState<Record<string, SourceForm>>({});
   const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryNotice | null>(null);
 
-  const loadLedger = async (campaignId?: string, options: { refreshRuntime?: boolean } = {}) => {
+  const captureView = () => {
+    const revision = viewRevision.current;
+    return () => revision === viewRevision.current;
+  };
+
+  const loadLedger = async (campaignId?: string, options: { refreshRuntime?: boolean; isCurrentView?: () => boolean } = {}) => {
     const requestId = ++ledgerReadRequest.current;
     const readState = ledgerApi.readState();
     const readLocaleRevision = localeRevision.current;
@@ -512,6 +519,9 @@ export default function Home() {
         ledgerApi.workspaceSettings(),
       ]);
       if (requestId !== ledgerReadRequest.current) return;
+      if (options.isCurrentView && !options.isCurrentView()) {
+        return;
+      }
       const currentReadState = ledgerApi.readState();
       if (readState.revision !== currentReadState.revision || readState.pendingWrites || currentReadState.pendingWrites) {
         setError(t("refresh.changed"));
@@ -521,6 +531,7 @@ export default function Home() {
       setProjects(snapshot.projects);
       setCampaigns(snapshot.campaigns);
       setActiveCampaignId(snapshot.selectedCampaignId);
+      if (snapshot.selectedCampaignId !== activeCampaignId) setUsageReport(null);
       setDetails(snapshot.details);
       setDeliverySafety(snapshot.deliverySafety);
       setHealthStatus(snapshot.health);
@@ -533,10 +544,43 @@ export default function Home() {
       }
       setEnvironmentOutboundPause(settingsResult.environmentOutboundPause);
       setDraftEdits({});
+      setBackgroundNotice(null);
     } catch (err) {
-      if (requestId === ledgerReadRequest.current) setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
+      if (requestId === ledgerReadRequest.current && (!options.isCurrentView || options.isCurrentView())) setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
     } finally {
       if (requestId === ledgerReadRequest.current) setLoading(false);
+    }
+  };
+
+  const navigateToTab = (tab: LedgerTab) => {
+    viewRevision.current += 1;
+    setActiveTab(tab);
+  };
+  const navigateToCampaign = (campaignId: string) => {
+    viewRevision.current += 1;
+    return loadLedger(campaignId);
+  };
+  const refreshAfterChange = async (isCurrentView: () => boolean, campaignId = activeCampaignId) => {
+    if (!isCurrentView()) {
+      setBackgroundNotice({ message: "navigation.saved" });
+      return;
+    }
+    await loadLedger(campaignId, { isCurrentView });
+    if (!isCurrentView()) setBackgroundNotice({ message: "navigation.saved" });
+  };
+  const reportActionFailure = (err: unknown, fallback: string, isCurrentView: () => boolean) => {
+    const message = err instanceof Error ? err.message : fallback;
+    if (isCurrentView()) setError(message);
+    else setBackgroundNotice({ message: "navigation.failed", details: message });
+  };
+  const submitDeliveryChange = async (action: () => Promise<unknown>) => {
+    const isCurrentView = captureView();
+    try {
+      await action();
+      await refreshAfterChange(isCurrentView);
+    } catch (err) {
+      if (!isCurrentView()) reportActionFailure(err, "Delivery result could not be confirmed", isCurrentView);
+      throw err;
     }
   };
 
@@ -729,19 +773,21 @@ export default function Home() {
   const progress = campaign?.messagesDrafted ? (campaign.messagesSent / campaign.messagesDrafted) * 100 : 0;
   const strongFitThreshold = campaignFitThreshold(campaign);
 
-  const mutate = async (action: () => Promise<unknown>) => {
+  const mutate = async (action: (isCurrentView: () => boolean) => Promise<unknown>) => {
+    const isCurrentView = captureView();
     setError("");
     try {
-      await action();
-      await loadLedger(activeCampaignId);
+      await action(isCurrentView);
+      await refreshAfterChange(isCurrentView);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Action failed");
+      reportActionFailure(err, "Action failed", isCurrentView);
     }
   };
 
   const updateSafetySettings = (payload: Partial<WorkspaceSettings>) =>
-    mutate(async () => {
+    mutate(async (isCurrentView) => {
       const result = await ledgerApi.updateWorkspaceSettings(payload);
+      if (!isCurrentView()) return;
       setWorkspaceSettings(result.settings);
       setEnvironmentOutboundPause(result.environmentOutboundPause);
     });
@@ -764,6 +810,8 @@ export default function Home() {
   });
 
   const createCampaign = async () => {
+    viewRevision.current += 1;
+    const isCurrentView = captureView();
     setError("");
     try {
       const result = await ledgerApi.createCampaign({
@@ -782,11 +830,13 @@ export default function Home() {
           minimumFitScore: Number(campaignForm.minimumFitScore) || 70,
         },
       });
-      setCampaignForm(defaultCampaignForm);
-      setActiveCampaignId(result.campaign.id);
-      await loadLedger(result.campaign.id);
+      if (isCurrentView()) {
+        setCampaignForm(defaultCampaignForm);
+        setActiveCampaignId(result.campaign.id);
+      }
+      await refreshAfterChange(isCurrentView, result.campaign.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create campaign");
+      reportActionFailure(err, "Unable to create campaign", isCurrentView);
     }
   };
 
@@ -813,7 +863,7 @@ export default function Home() {
     });
 
   const recordSourceSearch = () =>
-    mutate(async () => {
+    mutate(async (isCurrentView) => {
       if (!activeCampaignId) throw new Error("Select a campaign first");
       await ledgerApi.createSourceRecord(activeCampaignId, {
         name: sourceForm.name.trim(),
@@ -824,13 +874,14 @@ export default function Home() {
         importedCount: Number(sourceForm.importedCount) || 0,
         notes: sourceForm.notes.trim(),
       });
-      setSourceForm(defaultSourceForm);
+      if (isCurrentView()) setSourceForm(defaultSourceForm);
     });
 
   const applyDiscoveryPlan = () =>
-    mutate(async () => {
+    mutate(async (isCurrentView) => {
       if (!activeCampaignId) throw new Error("Select a campaign first");
       const result = await ledgerApi.applyDiscoveryPlan(activeCampaignId);
+      if (!isCurrentView()) return;
       setDiscoveryStatus(
         result.createdSources.length
           ? { message: "source.added", count: result.createdSources.length }
@@ -864,14 +915,17 @@ export default function Home() {
     });
 
   const createProject = async () => {
+    const isCurrentView = captureView();
     setError("");
     try {
       const result = await ledgerApi.createProject(projectForm);
-      setProjectForm(defaultProjectForm);
-      setCampaignForm((current) => ({ ...current, projectId: result.project.id }));
-      await loadLedger(activeCampaignId);
+      if (isCurrentView()) {
+        setProjectForm(defaultProjectForm);
+        setCampaignForm((current) => ({ ...current, projectId: result.project.id }));
+      }
+      await refreshAfterChange(isCurrentView);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create project");
+      reportActionFailure(err, "Unable to create project", isCurrentView);
     }
   };
 
@@ -885,17 +939,17 @@ export default function Home() {
     });
 
   const addMentor = () =>
-    mutate(async () => {
+    mutate(async (isCurrentView) => {
       if (!activeCampaignId) throw new Error("Select a campaign first");
       await ledgerApi.addMentor(activeCampaignId, {
         ...mentorForm,
         sourceRecordId: details?.sourceRecords.some((source) => source.id === mentorForm.sourceRecordId) ? mentorForm.sourceRecordId : undefined,
       });
-      setMentorForm(defaultMentorForm);
+      if (isCurrentView()) setMentorForm(defaultMentorForm);
     });
 
   const recordResponse = (mentor: MentorProfile) =>
-    mutate(async () => {
+    mutate(async (isCurrentView) => {
       const message = sentMessages.find((item) => item.mentorProfileId === mentor.id) || null;
       await ledgerApi.recordResponse({
         campaignId: mentor.campaignId,
@@ -905,7 +959,7 @@ export default function Home() {
         body: responseText[mentor.id] || "",
         nextAction: "Review response and decide whether to continue, close, or schedule a follow-up.",
       });
-      setResponseText((current) => ({ ...current, [mentor.id]: "" }));
+      if (isCurrentView()) setResponseText((current) => ({ ...current, [mentor.id]: "" }));
     });
 
   const saveMentorEdit = (mentor: MentorProfile) =>
@@ -918,7 +972,7 @@ export default function Home() {
     });
 
   const recordOutcome = (mentor: MentorProfile) =>
-    mutate(async () => {
+    mutate(async (isCurrentView) => {
       await ledgerApi.recordOutcome({
         campaignId: mentor.campaignId,
         mentorProfileId: mentor.id,
@@ -926,43 +980,49 @@ export default function Home() {
         summary: outcomeText[mentor.id] || "",
         valueLevel: "medium",
       });
-      setOutcomeText((current) => ({ ...current, [mentor.id]: "" }));
+      if (isCurrentView()) setOutcomeText((current) => ({ ...current, [mentor.id]: "" }));
     });
 
   const loadUsageReport = async () => {
     if (!activeCampaignId) return;
+    const isCurrentView = captureView();
     setError("");
     try {
-      setUsageReport(await ledgerApi.usageReport(activeCampaignId));
+      const report = await ledgerApi.usageReport(activeCampaignId);
+      if (isCurrentView()) setUsageReport(report);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load usage report");
+      reportActionFailure(err, "Unable to load usage report", isCurrentView);
     }
   };
 
   const generateInvoiceReport = async () => {
     if (!activeCampaignId) return;
+    const isCurrentView = captureView();
     setError("");
     try {
       const result = await ledgerApi.generateInvoice(activeCampaignId);
-      setUsageReport(result.usageReport);
-      await loadLedger(activeCampaignId);
+      if (isCurrentView()) setUsageReport(result.usageReport);
+      await refreshAfterChange(isCurrentView);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to generate invoice report");
+      reportActionFailure(err, "Unable to generate invoice report", isCurrentView);
     }
   };
 
   const importMentorCsv = (preview: boolean) =>
-    mutate(async () => {
+    mutate(async (isCurrentView) => {
       if (!activeCampaignId) throw new Error("Select a campaign first");
       const sourceRecordId = details?.sourceRecords.some((source) => source.id === csvSourceRecordId) ? csvSourceRecordId : undefined;
       const result = await ledgerApi.importMentorCsv(activeCampaignId, csvText, preview, compactColumnMap(csvColumnMap), sourceRecordId);
-      setCsvImportResult(result);
+      if (isCurrentView()) setCsvImportResult(result);
     });
 
   const openNextAction = async (action: NextActionRecommendation) => {
+    viewRevision.current += 1;
+    const isCurrentView = captureView();
     if (action.campaignId && action.campaignId !== activeCampaignId) {
-      await loadLedger(action.campaignId);
+      await loadLedger(action.campaignId, { isCurrentView });
     }
+    if (!isCurrentView()) return;
 
     if (action.mentorProfileId) {
       setSelectedMentorId(action.mentorProfileId);
@@ -1004,25 +1064,27 @@ export default function Home() {
 
   const exportMentorCsv = async () => {
     if (!activeCampaignId) return;
+    const isCurrentView = captureView();
     setError("");
     try {
       const result = await ledgerApi.exportMentorCsv(activeCampaignId);
       downloadText(result.filename, result.csv, "text/csv;charset=utf-8");
-      await loadLedger(activeCampaignId);
+      await refreshAfterChange(isCurrentView);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to export mentor CSV");
+      reportActionFailure(err, "Unable to export mentor CSV", isCurrentView);
     }
   };
 
   const exportCampaignHistoryCsv = async () => {
     if (!activeCampaignId) return;
+    const isCurrentView = captureView();
     setError("");
     try {
       const result = await ledgerApi.exportCampaignHistoryCsv(activeCampaignId);
       downloadText(result.filename, result.csv, "text/csv;charset=utf-8");
-      await loadLedger(activeCampaignId);
+      await refreshAfterChange(isCurrentView);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to export campaign history CSV");
+      reportActionFailure(err, "Unable to export campaign history CSV", isCurrentView);
     }
   };
 
@@ -1168,17 +1230,20 @@ export default function Home() {
   };
 
   const downloadWorkspaceBackup = async () => {
+    const isCurrentView = captureView();
     setError("");
     setWorkspaceStatus(null);
     try {
       const backup = await ledgerApi.workspaceBackup();
       const filename = `maro-workspace-backup-${new Date().toISOString().slice(0, 10)}.json`;
       downloadText(filename, JSON.stringify(backup, null, 2), "application/json;charset=utf-8");
-      setWorkspacePreview(backup.summary);
-      setWorkspaceStatus({ message: "workspace.exported" });
-      await loadLedger(activeCampaignId);
+      if (isCurrentView()) {
+        setWorkspacePreview(backup.summary);
+        setWorkspaceStatus({ message: "workspace.exported" });
+      }
+      await refreshAfterChange(isCurrentView);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("workspace.exportFailed"));
+      reportActionFailure(err, t("workspace.exportFailed"), isCurrentView);
     }
   };
 
@@ -1219,24 +1284,28 @@ export default function Home() {
 
   const restoreWorkspace = async () => {
     if (!window.confirm(t("workspace.restoreConfirm"))) return;
+    const isCurrentView = captureView();
     setError("");
     setWorkspaceStatus(null);
     try {
       const result = await withLocaleWrite(() => ledgerApi.restoreWorkspace(workspaceBackupText));
-      setWorkspacePreview(result.summary);
-      setWorkspaceStatus({ message: "workspace.restored" });
-      setActiveCampaignId("");
-      await loadLedger("");
+      if (isCurrentView()) {
+        setWorkspacePreview(result.summary);
+        setWorkspaceStatus({ message: "workspace.restored" });
+        setActiveCampaignId("");
+      }
+      await refreshAfterChange(isCurrentView, "");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("workspace.restoreFailed"));
+      reportActionFailure(err, t("workspace.restoreFailed"), isCurrentView);
     }
   };
 
   const resetWorkspace = async (scope: "queue" | "mentors" | "workspace") => {
     const confirmation = scope === "queue" ? "workspace.resetQueueConfirm" : scope === "mentors" ? "workspace.resetMentorsConfirm" : "workspace.resetAllConfirm";
     if (!window.confirm(t(confirmation))) return;
-    await mutate(async () => {
+    await mutate(async (isCurrentView) => {
       const result = await withLocaleWrite(() => ledgerApi.resetWorkspace(scope));
+      if (!isCurrentView()) return;
       setWorkspacePreview(result.summary);
       setWorkspaceStatus({ message: "workspace.reset" });
     });
@@ -1275,6 +1344,7 @@ export default function Home() {
       </header>
 
       <main lang="en" className="container py-5">
+        {backgroundNotice ? <div className="mb-4"><WorkspaceNotice notice={backgroundNotice} /></div> : null}
         {error ? (
           <div className="mb-4 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             <AlertTriangle className="h-4 w-4" />
@@ -1367,7 +1437,7 @@ export default function Home() {
                 <select
                   aria-label={t("campaign.active")}
                   value={activeCampaignId}
-                  onChange={(event) => void loadLedger(event.target.value)}
+                  onChange={(event) => void navigateToCampaign(event.target.value)}
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                   disabled={!campaigns.length}
                 >
@@ -1551,9 +1621,9 @@ export default function Home() {
 
         {deliverySafety.uncertainAttempts.length ? <div lang={locale} role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <span>{t("delivery.title")}: {number(deliverySafety.uncertainAttempts.length)}</span>
-          <Button variant="outline" onClick={() => setActiveTab("review")}><AlertTriangle className="h-4 w-4"/>{t("delivery.open")}</Button>
+          <Button variant="outline" onClick={() => navigateToTab("review")}><AlertTriangle className="h-4 w-4"/>{t("delivery.open")}</Button>
         </div> : null}
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as LedgerTab)} className="mt-5 gap-4">
+        <Tabs value={activeTab} onValueChange={(value) => navigateToTab(value as LedgerTab)} className="mt-5 gap-4">
           <div className="overflow-x-auto">
             <TabsList lang={locale} className="h-10 rounded-md">
               <TabsTrigger value="ledger" className="rounded-md">
@@ -1606,7 +1676,7 @@ export default function Home() {
                       {campaigns.map((item) => (
                         <tr key={item.id} className={item.id === activeCampaignId ? "bg-muted/30" : ""}>
                           <td className="px-4 py-3">
-                            <button className="text-left font-medium" onClick={() => void loadLedger(item.id)}>
+                            <button className="text-left font-medium" onClick={() => void navigateToCampaign(item.id)}>
                               {item.title}
                             </button>
                             <div className="text-xs text-muted-foreground">
@@ -1820,7 +1890,7 @@ export default function Home() {
                           onClick={() => {
                             setSourceFilterId(source.id);
                             setQuery("");
-                            setActiveTab("mentors");
+                            navigateToTab("mentors");
                           }}
                         >
                           {t("source.viewMentors")}
@@ -2319,8 +2389,7 @@ export default function Home() {
                   onRefresh={() => loadLedger()}
                   onSubmit={async (resolution, note) => {
                     if (resolution === "uncertain") return;
-                    await ledgerApi.resolveSendAttempt(attempt.id, resolution, resolution === "confirmed_sent" ? note : "", resolution === "failed" ? note : "");
-                    await loadLedger();
+                    await submitDeliveryChange(() => ledgerApi.resolveSendAttempt(attempt.id, resolution, resolution === "confirmed_sent" ? note : "", resolution === "failed" ? note : ""));
                   }} />
               </div>)}
             </section> : null}
@@ -2462,8 +2531,7 @@ export default function Home() {
                     onRefresh={() => loadLedger()}
                     onSubmit={async (_resolution, note) => {
                       setDeliverySafety(current => ({ ...current, blockedMentorIds: [...current.blockedMentorIds, message.mentorProfileId] }));
-                      await ledgerApi.recordUncertainSendAttempt(message.id, note);
-                      await loadLedger();
+                      await submitDeliveryChange(() => ledgerApi.recordUncertainSendAttempt(message.id, note));
                     }} />
                 </div>
               );
@@ -2707,7 +2775,7 @@ export default function Home() {
                       {followUp.status === "scheduled" ? (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {linkedDraft && linkedDraft.status !== "rejected" ? (
-                            <Button variant="outline" className="rounded-md" onClick={() => setActiveTab("review")}>
+                            <Button variant="outline" className="rounded-md" onClick={() => navigateToTab("review")}>
                               <ClipboardCheck className="h-4 w-4" />
                               Review draft
                             </Button>

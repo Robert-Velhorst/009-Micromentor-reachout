@@ -123,7 +123,7 @@ assert.match(button(empty, 'Project aanmaken'), /disabled=""/);
 // Exercise the actual callbacks; opening is owned by the native link, never a second popup.
 const scope = { status: null, count: 2, clipboardFails: false, activeCampaignId: 'campaign-1' };
 scope.setDiscoveryStatus = value => { scope.status = value; };
-scope.mutate = action => action();
+scope.mutate = action => action(()=>true);
 scope.ledgerApi = { applyDiscoveryPlan: async id => { assert.equal(id, 'campaign-1'); return { createdSources: Array(scope.count).fill({}) }; } };
 scope.copyTextToClipboard = async text => { assert.equal(text, 'private prepared query'); if (scope.clipboardFails) throw new Error('fixture'); };
 scope.window = { open: () => assert.fail('opening the link must not also invoke window.open') };

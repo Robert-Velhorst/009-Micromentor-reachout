@@ -504,8 +504,8 @@ separate endpoints. Scope is one mounted app/client module: writes from another
 browser window or an external client are not broadcast to it. User changes to
 forms during an otherwise valid explicit refresh retain the existing refresh
 semantics; this patch protects stale results, not every unsaved-form workflow.
-New refreshes intentionally issued by an older mutation callback and cross-window
-coordination remain separate acceptance cases.
+New refreshes intentionally issued by an older mutation callback are covered in
+the next section. Cross-window coordination remains a separate acceptance case.
 
 Built production assets were also checked in a fresh synthetic encrypted
 workspace at `http://127.0.0.1:54101/` on 2026-10-13. Response-stage browser
@@ -538,3 +538,63 @@ scenarios, actual handler tests, installer upgrades and independent-key recovery
 Client JavaScript is 369.69 kB / 102.99 kB gzip, 0.23 kB compressed above the
 preceding build. This is bundle measurement, not sustained CPU/RAM or latency
 acceptance. The current unsigned installer hash is in `PRODUCTION_READINESS.md`.
+
+## Navigation after slow actions
+
+On 2026-10-13, `scripts/check-navigation-completion.mjs` reproduced an older
+mutation callback starting a fresh read of its captured campaign after the user
+had changed views. The prior request-order guard could not reject this newer read.
+Pre-fix evidence: `artifacts/check-navigation-before-2026-10-13.log`.
+
+Home now captures a view revision for action completion. Explicit tab/campaign
+navigation, recommended-action navigation and creating a campaign advance that
+revision. An obsolete completion does not refresh its captured campaign or reset
+the guarded form/report state. A status notice reports successful completion or
+an unconfirmed result; the domain write is not cancelled or retried. An automatic
+refresh already in flight also checks the view before applying either data or
+errors. Delivery-control failures still reject their promise so the existing
+uncertain-outcome protection remains effective. Successful campaign hydration
+clears a different campaign's usage report.
+
+The actual-handler tests cover old/current-view mutations, mentor entry, project
+and campaign creation, invoice generation, usage reads, stale failures, delivery
+failure propagation, late recommended-action navigation, view changes during an
+automatic refresh, and campaign creation superseding an older save. The loading
+handler suite also covers stale automatic-refresh success and failure. Both run
+through the existing localization, test and release gates.
+
+Browser checks used built assets with a fresh encrypted synthetic workspace on
+`http://127.0.0.1:59193/`. Response-stage interception affected only local API
+Fetch requests:
+
+- Held a successful project-save acknowledgement, switched to Billing and typed
+  an unsaved campaign title. Releasing the response retained the tab and input,
+  displayed the completion notice, and retained the project-entry form on return.
+- Failed another HTTP 200 acknowledgement with `ConnectionClosed` after switching
+  tabs. The unknown-result notice appeared without navigation or input loss.
+  Explicit refresh exposed both saved project names, each once, without retry.
+- Held the automatic dashboard response after saving in campaign A, selected B
+  and released B's response first. After typing an unsaved B title, releasing A's
+  response preserved B and its edit and displayed a completion notice.
+- On the final rebuilt assets, normal project creation cleared the submitted form
+  and selected its saved project. The delayed-save/tab-switch/input-preservation
+  case also passed with the Dutch interface and Dutch completion notice.
+- Interception was cleared, the temporary tab closed and the owned server stopped.
+  No warning/error console entries were returned at the final check.
+
+This is single-client DOM/interaction and handler evidence, not screenshot,
+installed-extension, real-ngrok, physical-outage or cross-window acceptance.
+Same-view concurrent edits and file/clipboard callbacks are not comprehensively
+protected by this revision guard. An explicit refresh retains its normal form
+reset semantics. A campaign read overlapping a pending write can still request
+explicit reconciliation rather than applying a potentially inconsistent snapshot.
+There is no additional dependency, poller or persisted state; the client bundle
+is 371.05 kB / 103.54 kB gzip, 0.55 kB compressed above the prior build. This is not
+a sustained CPU, memory or latency measurement.
+
+The full pinned-runtime Windows release gate passed in
+`artifacts/release-check-navigation-2026-10-13.log`, including zero reported
+dependency vulnerabilities, both TypeScript checks, the existing encrypted API,
+36 client HTTP scenarios, storage/recovery tests, 29 source-launcher cases,
+32 packaged Windows checks, installed upgrades and fresh-key recovery. The current
+unsigned installer hash is recorded in `PRODUCTION_READINESS.md`.

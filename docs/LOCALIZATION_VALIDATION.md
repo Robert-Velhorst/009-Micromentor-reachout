@@ -11,7 +11,7 @@ does not reload the dashboard, replace message draft edits, change privacy mode,
 or replace unsaved safety-setting fields. There is no translation service, extra
 runtime dependency, background polling or automatic retry.
 
-The paired catalog currently contains 343 messages covering:
+The paired catalog currently contains 345 messages covering:
 
 - Header, privacy controls, refresh, setup and outbound-pause notices.
 - Six navigation tabs and mentor pagination, including accessible names and
@@ -78,6 +78,11 @@ cross-window synchronization; see [dashboard consistency](OPERATIONAL_VALIDATION
   language-triggered draft reload, preservation of an unsaved cooldown, both
   refresh completion orders, overlapping writes, failure cleanup, explicit
   reconciliation and restore/reset refreshes.
+- Actual navigation-completion handlers also verify late writes cannot reload an
+  older campaign, reset guarded input or replace a newer usage report after a
+  view change. Late failures remain visible and delivery errors still propagate.
+  English/Dutch completion feedback was checked in a synthetic browser workspace;
+  see [navigation evidence](OPERATIONAL_VALIDATION.md#navigation-after-slow-actions).
 - `npm run check:client-requests` now has 36 real, isolated HTTP scenarios. Six
   cover settings reads across successful or uncertain settings/restore/reset
   writes. These caught stale request sharing before the fix. Timer and connection

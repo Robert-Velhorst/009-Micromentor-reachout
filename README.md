@@ -702,6 +702,14 @@ not synchronization between separate windows or a guarantee that every unsaved
 form survives an otherwise valid explicit refresh. See
 [consistency tests and limits](docs/OPERATIONAL_VALIDATION.md#dashboard-read-consistency).
 
+If you switch tabs or campaigns while saving, the requested save still completes,
+but its late callback does not reload the old campaign or clear the new view's
+form inputs. MARO shows a completion notice, or an unknown-result warning if the
+acknowledgement fails. Refresh when ready to reconcile the saved state before
+retrying. Usage reports are scoped to the view that requested them. This does not
+provide cross-window synchronization or protect every edit made without changing
+views. See [navigation checks](docs/OPERATIONAL_VALIDATION.md#navigation-after-slow-actions).
+
 ### Workspace backups
 
 Portable backups use:
