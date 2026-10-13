@@ -60,6 +60,19 @@ with status zero despite MARO failing. The launcher now requires an IPC listenin
 confirmation from its own child. It stops owned children on errors, exits and
 interruption, and waits for their closure before returning.
 
+On 2026-10-13, Linux CI for the Explore route change failed in the final shutdown
+fixture with `EADDRINUSE` before discovery. Windows and the earlier local release
+passed. Inspection found that the test released its MARO port reservation before
+allocating the inspector port, allowing the inspector to reclaim it. The original
+failure did not log the inspector port, so the identity of that run's competing
+listener cannot be proved from its log. The fixture now retains the reservation
+until the inspector is listening, asserts the ports differ, and reports both ports
+on failure. The reservation invariant failed against the old ordering; the focused
+shutdown case passes with the corrected ordering. Inspector startup is also inside
+the fixture's cleanup boundary. Production launcher code, deadlines and the
+occupied-port rejection test are unchanged; an unrelated external process can
+still race after the final reservation release and must cause a failure.
+
 Tests cover occupied ports, successful and dedicated-endpoint startup, version
 probe timeout/cancellation, ngrok and MARO exits, stalled inspector headers and
 bodies, fallback after a stalled or HTTP-error inspector, wrong endpoint name,

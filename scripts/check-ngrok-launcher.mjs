@@ -55,7 +55,6 @@ async function scenario(name, { occupied = false, agentMode = "running", inspect
   const directory = fs.mkdtempSync(path.join(artifacts, "ngrok-launcher-test-"));
   const portOwner = http.createServer((_req, res) => res.end("Unrelated service"));
   const port = await listen(portOwner);
-  if (!occupied) await close(portOwner);
   let launcher;
   let output = "";
   const children = [];
@@ -90,8 +89,13 @@ async function scenario(name, { occupied = false, agentMode = "running", inspect
     if (inspectorMode === "invalid-json") { res.end("not JSON"); return; }
     res.end(JSON.stringify({ endpoints: [endpoint] }));
   });
-  const inspectorPort = await listen(inspector);
+  let inspectorPort;
   try {
+    // The inspector must not reclaim the port probed for the child server.
+    assert.equal(portOwner.listening, true, "Keep the MARO port reserved while allocating the inspector port");
+    inspectorPort = await listen(inspector);
+    assert.notEqual(inspectorPort, port, "The inspector must not occupy the MARO fixture port");
+    if (!occupied) await close(portOwner);
     launcher = spawn(process.execPath, ["--expose-gc", "--require", preload, "scripts/ngrok.mjs"], {
       cwd: root, windowsHide: true, stdio: ["ignore", "pipe", "pipe", "ipc"],
       env: {
@@ -215,7 +219,7 @@ async function scenario(name, { occupied = false, agentMode = "running", inspect
     passed++;
   } catch (error) {
     console.error(JSON.stringify({
-      scenario: name, launcherOutput: output, inspectorRequests,
+      scenario: name, port, inspectorPort, launcherOutput: output, inspectorRequests,
       children: children.map(({ kind, pid }) => ({ kind, pid, closed: closedPids.has(pid) })),
     }));
     throw error;

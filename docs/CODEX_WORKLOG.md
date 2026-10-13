@@ -1,5 +1,12 @@
 # Codex Worklog
 
+## 2026-10-13 Launcher Fixture Port Reservation
+
+1. Linux CI run `38370979987` failed in the last ngrok shutdown fixture with `EADDRINUSE` before discovery; its Windows release job passed. The route and localization tests had passed on Linux. The failed run remains recorded rather than treated as accepted.
+2. Found an allocation race in the test setup: it released the planned MARO port before selecting the inspector port. Kept that reservation until the inspector is listening, added held-reservation/distinct-port assertions and included both ports in failure diagnostics. The original CI log does not identify the competing listener, so the exact collision owner is not asserted.
+3. The new reservation invariant failed on the old ordering. With the corrected ordering, the focused persistent-cleanup-on-stop case passed. Inspector allocation is now inside the cleanup boundary. No production launcher code, timeout or failure assertion was relaxed, and no provider connection was opened.
+4. All 29 local process scenarios passed in `artifacts/check-ngrok-port-reservation-2026-10-13.log`, including occupied-port rejection and shutdown cleanup. This test-only patch does not change the installed application payload or the local installer hash.
+
 ## 2026-10-13 Current MicroMentor Discovery Route
 
 1. Read-only live navigation from the authenticated Home page through the visible Explore button confirmed `https://app.micromentor.org/explore` with mentor results. Home exposed no WebMCP tools. Flutter accessibility required Enter on its visible accessibility placeholder; no page script, provider API, inbox or messaging action was used.
