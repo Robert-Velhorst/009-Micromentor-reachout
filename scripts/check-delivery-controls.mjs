@@ -44,8 +44,8 @@ vm.runInNewContext(outputFiles[0].text, moduleContext);
 const { render } = moduleContext.module.exports;
 for (const blocked of [false, true]) {
   const result = moduleContext.module.exports.renderReview(blocked);
-  for (const label of ['Copy approved message', 'Copy for extension']) assert.equal(result.buttons.find(button => button.name === label)?.disabled, blocked);
-  assert.equal(result.buttons.find(button => button.name === 'Open profile')?.disabled, false, 'Operator must still be able to inspect the platform');
+  for (const label of ['Goedgekeurd bericht kopieren', 'Kopieren voor extensie']) assert.equal(result.buttons.find(button => button.name === label)?.disabled, blocked);
+  assert.equal(result.buttons.find(button => button.name === 'Profiel openen')?.disabled, false, 'Operator must still be able to inspect the platform');
   assert.equal(result.html.includes('STALE APPROVED FALLBACK'), !blocked);
   assert.equal(result.html.includes('De verzending naar deze mentoridentiteit is nog onzeker'), blocked);
 }

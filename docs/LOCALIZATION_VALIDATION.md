@@ -11,7 +11,7 @@ does not reload the dashboard, replace message draft edits, change privacy mode,
 or replace unsaved safety-setting fields. There is no translation service, extra
 runtime dependency, background polling or automatic retry.
 
-The paired catalog currently contains 345 messages covering:
+The paired catalog currently contains 442 messages covering:
 
 - Header, privacy controls, refresh, setup and outbound-pause notices.
 - Six navigation tabs and mentor pagination, including accessible names and
@@ -204,18 +204,66 @@ the isolated workspace `http://127.0.0.1:54146/`:
 - Closed the owned tab and stopped the temporary server. These are interaction
   and DOM checks, not screenshot, mobile or screen-reader acceptance.
 
+## Review, response and billing increment
+
+On 2026-10-13, 97 paired messages added the review queue, message-quality controls,
+manual handoff controls, recorded-response/results panels, outcome selectors,
+follow-up queue and local billing/invoice controls. Known stored status codes are
+mapped to labels without changing their values. Response filters expose their
+selected state. Draft, proof, failure-note, response and outcome fields have
+accessible names; privacy buttons have names/tooltips. New failed-attempt notes
+now follow privacy mode, with an explicit reveal/hide control.
+
+`scripts/check-workflow-localization.mjs` renders the actual three Home tab
+subtrees and their real review/quality/privacy components. Both locales cover
+empty, ordinary, blocked, edited and privacy-hidden states. Assertions verify
+unchanged escaped subject/body and form data, all response/outcome enum values,
+copy/approval/confirmation guards, exact callback IDs, input names, local money
+formatting and eight-decimal resource precision. It runs in the existing locale,
+test and release gates. Existing delivery-control tests now assert Dutch copy
+labels while retaining their safety expectations.
+
+Built assets were checked in a disposable encrypted browser workspace at
+`http://127.0.0.1:53075/`:
+
+- Added a synthetic mentor and created a draft. An unsaved subject survived
+  switching from English to Dutch; local approval saved that exact subject.
+- The failed-attempt note was a password field in privacy mode. Revealing it
+  showed the exact synthetic text, which survived another language switch.
+  No failed attempt or actual send was submitted in this browser check.
+- A `more_info` response selection and typed reply survived the English-to-Dutch
+  switch. The Dutch save command stored the reply, cleared its entry field and
+  rendered the persisted text behind the existing reveal control.
+- The Dutch cost-record and invoice commands produced one local record/report;
+  resource values displayed eight decimals with commas. After reload, the Dutch
+  preference and invoice number remained. No payment or provider request occurred.
+- Requested a 390x844 viewport, but DOM inspection reported width 780. At that
+  observed width, the billing/review buttons did not overflow and the document
+  width was 749. This is not 390px/mobile or visual acceptance. The override was
+  reset, no warning/error console entries were returned, and the tab/server closed.
+
+The bundle is 381.26 kB / 105.63 kB gzip, an additional 2.09 kB compressed over the
+navigation fix. No dependency or translation request was added. These are bundle
+and functional observations, not sustained CPU/RAM or screen-reader acceptance.
+The full pinned-runtime Windows release gate passed in
+`artifacts/release-check-workflow-locale-2026-10-13.log`, including dependency audit,
+contracts, existing API/connection/storage/launcher regressions and installed
+upgrade/recovery. The unsigned installer hash is in `PRODUCTION_READINESS.md`.
+
 ## Remaining work
 
 The uncertainty increment adds actual-component and submission-handler tests in
 `scripts/check-delivery-controls.mjs`. Both synthetic resolution paths, locale
 preservation, copy blocking and failed-note reveal/hide were checked in the
-browser; see [delivery evidence](UNCERTAIN_DELIVERY_VALIDATION.md). Most other
-review controls remain English. The mentor-detail count is explicitly labeled
+browser; see [delivery evidence](UNCERTAIN_DELIVERY_VALIDATION.md). Review controls
+are now covered as described above. The mentor-detail count is explicitly labeled
 Send attempts / Verzendpogingen because it includes non-confirmed outcomes.
 
-Review/response/billing tabs, readiness/runtime panels, generated timeline
-titles/details, recommendations, server errors, remaining date/currency consistency and the extension still
-need translation. Operator-entered mentor data and approved message text must not
+Readiness/runtime/audit panels, generated timeline titles/details, recommendations,
+clipboard/profile handoff notices, server errors, remaining date/currency consistency
+outside the billing panels, generated quality/measurement explanations and the
+extension still need translation. Remaining English generated notices in the new
+panels carry English language metadata. Operator-entered data and approved text must not
 be machine-translated merely because the interface language changes.
 
 Complete keyboard, real screen-reader, narrow-screen and visual acceptance.

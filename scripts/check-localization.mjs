@@ -10,6 +10,7 @@ import "./check-mentor-detail-localization.mjs";
 import "./check-delivery-controls.mjs";
 import "./check-dashboard-refresh.mjs";
 import "./check-navigation-completion.mjs";
+import "./check-workflow-localization.mjs";
 
 const require = createRequire(new URL("../package.json", import.meta.url));
 const { outputFiles } = await build({

@@ -2,6 +2,7 @@ import { mentorEn, mentorNl } from "./mentorMessages";
 import { campaignEn, campaignNl } from "./campaignMessages";
 import { mentorDetailEn, mentorDetailNl } from "./mentorDetailMessages";
 import { deliveryEn, deliveryNl } from "./deliveryMessages";
+import { workflowEn, workflowNl } from "./workflowMessages";
 
 export type Locale = "en" | "nl";
 
@@ -10,6 +11,7 @@ const en = {
   ...campaignEn,
   ...mentorDetailEn,
   ...deliveryEn,
+  ...workflowEn,
   "language.label": "Language",
   "language.saving": "Saving language...",
   "language.failed": "The saved language could not be confirmed. Your open drafts are unchanged. Save your work before refreshing to check the saved preference.",
@@ -88,6 +90,7 @@ const nl: Record<MessageKey, string> = {
   ...campaignNl,
   ...mentorDetailNl,
   ...deliveryNl,
+  ...workflowNl,
   "language.label": "Taal",
   "language.saving": "Taal opslaan...",
   "language.failed": "De opgeslagen taal kon niet worden bevestigd. Je open concepten zijn ongewijzigd. Bewaar je werk voordat je vernieuwt om de opgeslagen voorkeur te controleren.",

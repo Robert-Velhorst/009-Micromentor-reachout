@@ -1,5 +1,15 @@
 # Codex Worklog
 
+## 2026-10-13 Review, Response And Billing Localization
+
+1. Added 97 paired messages (442 total) for review, message quality, manual handoff controls, response/result filters, follow-ups and local cost/invoice reports. Reused existing typed status labels; persisted enums, approved content, exact API IDs and audit notes remain unchanged. Billing formats follow the locale and resource values retain eight decimal places.
+2. Added accessible input names and privacy-button names/tooltips. Fixed a new failed-attempt note remaining visibly readable in privacy mode by adding masking and explicit reveal/hide. Renamed Response inbox to Recorded responses so the local records do not imply a connected provider inbox.
+3. Added actual-tab/component tests for both languages, ordinary/empty/blocked/edited/hidden states, record escaping, unchanged enums and edits, approval/copy/confirmation guards, precise amounts and action callbacks. Existing delivery-control tests retain safety assertions with Dutch labels. All locale tests pass.
+4. Browser tests in a fresh encrypted workspace verified draft subject, failure note and response classification/body survive language changes. Local approval retained the exact subject; the Dutch response command saved the exact reply behind privacy controls. Cost and invoice generation worked with local decimal notation, and the Dutch preference/invoice survived reload. No actual sending, provider calls or payments occurred. The owned tab/server were stopped and no warning/error logs were returned.
+5. A 390x844 viewport request yielded an observed width of 780, so the non-overflowing controls at that width are not mobile or visual acceptance. Reset the override. Generated explanations, handoff notices, other operational panels and the extension remain translation work.
+6. Full pinned-runtime Windows release gate passed in `artifacts/release-check-workflow-locale-2026-10-13.log`, including audit, contracts, 36 client scenarios, storage tests, 29 source-launcher cases, 32 Windows function checks, installed upgrades and fresh-key recovery. Installer: 33,681,408 bytes, unsigned, SHA-256 `78AE90BEA98CDA1A7ABA4D615825A8D3AAE375E323A71DE621619509DC867F07`. The 105.63 kB gzip bundle adds 2.09 kB; no new dependency, poller or translation request.
+7. Updated README and acceptance evidence. Predecessor `d12b681` CI remained queued when checked; this new revision needs its own successful CI. No main merge or public release. Whole-product production readiness remains open.
+
 ## 2026-10-13 Navigation After Slow Actions
 
 1. Reproduced an old mutation callback starting a new load for its captured campaign after navigation. Prior request-order protection could not reject this new request. Red evidence: `artifacts/check-navigation-before-2026-10-13.log`.

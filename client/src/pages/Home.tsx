@@ -204,12 +204,15 @@ const defaultMentorForm: MentorForm = {
 const sampleCsv = `name,company,headline,bio,skills,industries,location,profileUrl,notes
 Ada Lovelace Labs,Analytical Engine Co,Automation advisor,"Helps founders design practical automation workflows","automation, operations",Technology,London,https://example.com/ada,Strong operations angle`;
 
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("nl-NL", {
+const formatCurrency = (value: number, locale: Locale = "nl") =>
+  new Intl.NumberFormat(locale === "nl" ? "nl-NL" : "en-GB", {
     style: "currency",
     currency: "EUR",
     maximumFractionDigits: value < 1 ? 4 : 2,
   }).format(value || 0);
+
+const formatResourceAmount = (value: number, locale: Locale) =>
+  value.toLocaleString(locale === "nl" ? "nl-NL" : "en-GB", { minimumFractionDigits: 8, maximumFractionDigits: 8 });
 
 const formatDate = (value: string, locale: Locale = "en") =>
   new Intl.DateTimeFormat(locale === "nl" ? "nl-NL" : "en-GB", {
@@ -2376,7 +2379,7 @@ export default function Home() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="review" className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <TabsContent lang={locale} value="review" className="grid gap-4 xl:grid-cols-[1fr_1fr]">
             {deliverySafety.uncertainAttempts.length ? <section lang={locale} aria-label={t("delivery.title")} className="space-y-3 border-y py-4 xl:col-span-2">
               <h2 className="text-lg font-semibold">{t("delivery.title")} ({number(deliverySafety.uncertainAttempts.length)})</h2>
               <p className="text-sm text-amber-800">{t("delivery.warning")}</p>
@@ -2394,7 +2397,7 @@ export default function Home() {
               </div>)}
             </section> : null}
             <ReviewColumn
-              title="Needs review"
+              title={t("review.pending")}
               messages={pendingReview}
               blockedMentorIds={blockedDeliveryMentors}
               details={details}
@@ -2421,7 +2424,7 @@ export default function Home() {
                         void mutate(() => ledgerApi.updateDraft(message.id, draftEdits[message.id] || { subject: message.subject, body: message.body }))
                       }
                     >
-                      Save edit
+                      {t("review.save")}
                     </Button>
                     <Button
                       className="rounded-md"
@@ -2437,17 +2440,17 @@ export default function Home() {
                       disabled={quality?.status === "blocked"}
                     >
                       <Check className="h-4 w-4" />
-                      Approve
+                      {t("review.approve")}
                     </Button>
                     <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.rejectDraft(message.id, "Rejected in command center"))}>
-                      Reject
+                      {t("review.reject")}
                     </Button>
                   </div>
                 );
               }}
             />
             <ReviewColumn
-              title="Approved, awaiting manual send confirmation"
+              title={t("review.approved")}
               messages={approvedMessages}
               blockedMentorIds={blockedDeliveryMentors}
               details={details}
@@ -2470,7 +2473,7 @@ export default function Home() {
                 <div className="space-y-2">
                   {hasUnsavedEdit ? (
                     <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-                      This approved message has unsaved changes. Save it to return the message to review, then approve the new content.
+                      {t("review.unsaved")}
                     </div>
                   ) : null}
                   <Button
@@ -2479,14 +2482,15 @@ export default function Home() {
                     onClick={() => void mutate(() => ledgerApi.updateDraft(message.id, edit || { subject: message.subject, body: message.body }))}
                     disabled={!hasUnsavedEdit}
                   >
-                    Save edit and return to review
+                    {t("review.return")}
                   </Button>
                   <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                     <Input
                       type={privacyMode && !isSensitiveVisible(`send-evidence:${message.id}`) ? "password" : "text"}
                       value={sendEvidence[message.id] || ""}
                       onChange={(event) => setSendEvidence((current) => ({ ...current, [message.id]: event.target.value }))}
-                      placeholder="Paste manual send evidence"
+                      aria-label={`${t("review.evidence")}: ${message.subject}`}
+                      placeholder={t("review.evidence")}
                       className="rounded-md"
                     />
                     <Button
@@ -2497,6 +2501,8 @@ export default function Home() {
                           ? hideSensitive(`send-evidence:${message.id}`)
                           : revealSensitive(`send-evidence:${message.id}`)
                       }
+                      aria-label={`${t(isSensitiveVisible(`send-evidence:${message.id}`) ? "sensitive.hide" : "sensitive.reveal")}: ${t("review.evidence")}`}
+                      title={t(isSensitiveVisible(`send-evidence:${message.id}`) ? "sensitive.hide" : "sensitive.reveal")}
                     >
                       {isSensitiveVisible(`send-evidence:${message.id}`) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
@@ -2507,22 +2513,30 @@ export default function Home() {
                     disabled={!sendEvidence[message.id]?.trim() || hasUnsavedEdit || blockedDeliveryMentors.has(message.mentorProfileId)}
                   >
                     <Send className="h-4 w-4" />
-                    Confirm manually sent
+                    {t("review.confirm")}
                   </Button>
-                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
                     <Input
+                      type={privacyMode && !isSensitiveVisible(`send-failure:${message.id}`) ? "password" : "text"}
                       value={sendFailureNotes[message.id] || ""}
                       onChange={(event) => setSendFailureNotes((current) => ({ ...current, [message.id]: event.target.value }))}
-                      placeholder="Record failed manual attempt"
+                      aria-label={`${t("review.failure")}: ${message.subject}`}
+                      placeholder={t("review.failure")}
                       className="rounded-md"
                     />
+                    <Button variant="outline" className="rounded-md"
+                      aria-label={`${t(isSensitiveVisible(`send-failure:${message.id}`) ? "sensitive.hide" : "sensitive.reveal")}: ${t("review.failure")}`}
+                      title={t(isSensitiveVisible(`send-failure:${message.id}`) ? "sensitive.hide" : "sensitive.reveal")}
+                      onClick={() => isSensitiveVisible(`send-failure:${message.id}`) ? hideSensitive(`send-failure:${message.id}`) : revealSensitive(`send-failure:${message.id}`)}>
+                      {isSensitiveVisible(`send-failure:${message.id}`) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
                     <Button
                       variant="outline"
                       className="rounded-md border-red-200 text-red-700 hover:bg-red-50 hover:text-red-700"
                       onClick={() => void mutate(() => ledgerApi.recordFailedSendAttempt(message.id, sendFailureNotes[message.id] || ""))}
                       disabled={!sendFailureNotes[message.id]?.trim() || blockedDeliveryMentors.has(message.mentorProfileId)}
                     >
-                      Record failed
+                      {t("review.recordFailed")}
                     </Button>
                   </div>
                   <UncertainDeliveryControl privacyMode={privacyMode} revision={details}
@@ -2539,26 +2553,25 @@ export default function Home() {
             />
           </TabsContent>
 
-          <TabsContent value="responses" className="space-y-4">
+          <TabsContent lang={locale} value="responses" className="space-y-4">
             <Card className="rounded-md py-5">
               <CardHeader className="px-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <CardTitle className="text-lg">Campaign results</CardTitle>
-                    <div className="mt-1 text-sm text-muted-foreground">Response rate, booked calls, open loops, and overdue follow-ups from the persisted ledger.</div>
+                    <CardTitle className="text-lg">{t("results.title")}</CardTitle>
                   </div>
                   <Button variant="outline" className="rounded-md" onClick={() => void exportCampaignHistoryCsv()} disabled={!activeCampaignId}>
-                    Export campaign history CSV
+                    {t("intake.exportHistory")}
                   </Button>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4 px-5">
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-                  <MiniStat label="Contacted" value={details?.results.totals.contacted || 0} />
-                  <MiniStat label="Response rate" value={`${details?.results.rates.responseRate || 0}%`} />
-                  <MiniStat label="Booking rate" value={`${details?.results.rates.bookingRate || 0}%`} />
-                  <MiniStat label="Positive rate" value={`${details?.results.rates.positiveOutcomeRate || 0}%`} />
-                  <MiniStat label="Overdue follow-ups" value={details?.results.totals.overdueFollowUps || 0} />
+                  <MiniStat label={t("results.contacted")} value={number(details?.results.totals.contacted || 0)} />
+                  <MiniStat label={t("results.responseRate")} value={`${number(details?.results.rates.responseRate || 0)}%`} />
+                  <MiniStat label={t("results.bookingRate")} value={`${number(details?.results.rates.bookingRate || 0)}%`} />
+                  <MiniStat label={t("results.positiveRate")} value={`${number(details?.results.rates.positiveOutcomeRate || 0)}%`} />
+                  <MiniStat label={t("results.overdue")} value={number(details?.results.totals.overdueFollowUps || 0)} />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {resultFilters.map((filter) => (
@@ -2567,8 +2580,9 @@ export default function Home() {
                       variant={resultFilter === filter.value ? "default" : "outline"}
                       className="h-8 rounded-md px-3 text-xs"
                       onClick={() => setResultFilter(filter.value)}
+                      aria-pressed={resultFilter === filter.value}
                     >
-                      {filter.label}
+                      {t(`results.${filter.value}`)}
                     </Button>
                   ))}
                 </div>
@@ -2577,10 +2591,10 @@ export default function Home() {
                     <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
                       <tr>
                         <th className="px-4 py-3 font-medium">Mentor</th>
-                        <th className="px-4 py-3 font-medium">Latest response</th>
-                        <th className="px-4 py-3 font-medium">Outcome</th>
-                        <th className="px-4 py-3 font-medium">Follow-up</th>
-                        <th className="min-w-[520px] px-4 py-3 font-medium">Update outcome</th>
+                        <th className="px-4 py-3 font-medium">{t("results.latest")}</th>
+                        <th className="px-4 py-3 font-medium">{t("detail.outcome")}</th>
+                        <th className="px-4 py-3 font-medium">{t("detail.followUp")}</th>
+                        <th className="min-w-[520px] px-4 py-3 font-medium">{t("results.update")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -2590,49 +2604,51 @@ export default function Home() {
                             <button className="text-left font-medium" onClick={() => setSelectedMentorId(row.mentor.id)}>
                               {row.mentor.name}
                             </button>
-                            <div className="text-xs text-muted-foreground">{row.sentCount} sent messages</div>
+                            <div className="text-xs text-muted-foreground">{number(row.sentCount)} {t("results.sent")}</div>
                           </td>
                           <td className="px-4 py-3">
                             <Badge variant="outline" className="rounded-md">
-                              {row.latestResponse?.classification.replace("_", " ") || "none"}
+                              {row.latestResponse ? t(`detail.response.${row.latestResponse.classification}`) : t("results.none")}
                             </Badge>
-                            {row.awaitingOutcome ? <div className="mt-1 text-xs text-amber-700">Needs outcome decision</div> : null}
+                            {row.awaitingOutcome ? <div className="mt-1 text-xs text-amber-700">{t("results.needsOutcome")}</div> : null}
                           </td>
                           <td className="px-4 py-3">
                             <Badge variant="outline" className="rounded-md">
-                              {row.outcomeStatusValue.replace("_", " ")}
+                              {t(`detail.outcome.${row.outcomeStatusValue}`)}
                             </Badge>
                             {row.latestOutcome ? <div className="mt-1 max-w-[220px] truncate text-xs text-muted-foreground">{row.latestOutcome.summary}</div> : null}
                           </td>
                           <td className="px-4 py-3">
                             <Badge variant="outline" className={row.hasDueFollowUp ? "rounded-md border-amber-200 bg-amber-50 text-amber-700" : "rounded-md"}>
-                              {row.hasDueFollowUp ? "due" : row.latestFollowUp?.status || "none"}
+                              {row.hasDueFollowUp ? t("results.follow_up_due") : row.latestFollowUp ? t(`detail.followUp.${row.latestFollowUp.status}`) : t("results.none")}
                             </Badge>
-                            {row.latestFollowUp ? <div className="mt-1 text-xs text-muted-foreground">{formatDate(row.latestFollowUp.dueAt)}</div> : null}
+                            {row.latestFollowUp ? <div className="mt-1 text-xs text-muted-foreground">{formatDate(row.latestFollowUp.dueAt, locale)}</div> : null}
                           </td>
                           <td className="px-4 py-3">
                             <div className="grid gap-2 md:grid-cols-[150px_1fr_auto]">
                               <select
+                                aria-label={`${t("results.status")}: ${row.mentor.name}`}
                                 value={outcomeStatus[row.mentor.id] || row.outcomeStatusValue}
                                 onChange={(event) => setOutcomeStatus((current) => ({ ...current, [row.mentor.id]: event.target.value as OutreachOutcome["status"] }))}
                                 className="h-9 rounded-md border bg-background px-3 text-sm"
                               >
-                                <option value="open">Open</option>
-                                <option value="booked">Booked</option>
-                                <option value="helpful">Helpful</option>
-                                <option value="declined">Declined</option>
-                                <option value="no_response">No response</option>
-                                <option value="not_relevant">Not relevant</option>
-                                <option value="closed">Closed</option>
+                                <option value="open">{t("detail.outcome.open")}</option>
+                                <option value="booked">{t("detail.outcome.booked")}</option>
+                                <option value="helpful">{t("detail.outcome.helpful")}</option>
+                                <option value="declined">{t("detail.outcome.declined")}</option>
+                                <option value="no_response">{t("detail.outcome.no_response")}</option>
+                                <option value="not_relevant">{t("detail.outcome.not_relevant")}</option>
+                                <option value="closed">{t("detail.outcome.closed")}</option>
                               </select>
                               <Input
                                 value={outcomeText[row.mentor.id] || ""}
                                 onChange={(event) => setOutcomeText((current) => ({ ...current, [row.mentor.id]: event.target.value }))}
-                                placeholder="Outcome summary"
+                                aria-label={`${t("results.summary")}: ${row.mentor.name}`}
+                                placeholder={t("results.summary")}
                                 className="h-9 rounded-md"
                               />
                               <Button variant="outline" className="h-9 rounded-md" onClick={() => void recordOutcome(row.mentor)} disabled={!outcomeText[row.mentor.id]?.trim()}>
-                                Save
+                                {t("results.save")}
                               </Button>
                             </div>
                           </td>
@@ -2640,7 +2656,7 @@ export default function Home() {
                       ))}
                     </tbody>
                   </table>
-                  {!resultRows.length ? <div className="p-6 text-center text-sm text-muted-foreground">No mentors match this results filter.</div> : null}
+                  {!resultRows.length ? <div className="p-6 text-center text-sm text-muted-foreground">{t("results.empty")}</div> : null}
                 </div>
               </CardContent>
             </Card>
@@ -2648,7 +2664,7 @@ export default function Home() {
             <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
               <Card className="rounded-md py-5">
               <CardHeader className="px-5">
-                <CardTitle className="text-lg">Response inbox</CardTitle>
+                <CardTitle className="text-lg">{t("response.inbox")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 px-5">
                 {(details?.responses || []).map((response) => {
@@ -2656,9 +2672,9 @@ export default function Home() {
                   return (
                     <div key={response.id} className="rounded-md border p-4">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium">{mentor?.name || "Unknown mentor"}</div>
+                        <div className="font-medium">{mentor?.name || t("review.unknownMentor")}</div>
                         <Badge variant="outline" className="rounded-md">
-                          {response.classification.replace("_", " ")}
+                          {t(`detail.response.${response.classification}`)}
                         </Badge>
                       </div>
                       <SensitiveText
@@ -2667,17 +2683,17 @@ export default function Home() {
                         visible={isSensitiveVisible(`response-body:${response.id}`)}
                         onReveal={() => revealSensitive(`response-body:${response.id}`)}
                         onHide={() => hideSensitive(`response-body:${response.id}`)}
-                        placeholder="Response text hidden"
+                        placeholder={t("detail.responseHidden")}
                       >
-                        {response.body || "No response text recorded."}
+                        {response.body || t("detail.noResponse")}
                       </SensitiveText>
-                      <div className="mt-2 text-xs text-muted-foreground">{response.nextAction}</div>
+                      <div lang="en" className="mt-2 text-xs text-muted-foreground">{response.nextAction}</div>
                     </div>
                   );
                 })}
                 {!details?.responses.length ? (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No responses recorded yet.
+                    {t("response.empty")}
                   </div>
                 ) : null}
               </CardContent>
@@ -2685,55 +2701,59 @@ export default function Home() {
 
               <Card className="rounded-md py-5">
               <CardHeader className="px-5">
-                <CardTitle className="text-lg">Record response</CardTitle>
+                <CardTitle className="text-lg">{t("response.record")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 px-5">
                 {details?.mentors.map((mentor) => (
                   <div key={mentor.id} className="rounded-md border p-3">
                     <div className="mb-2 text-sm font-medium">{mentor.name}</div>
                     <select
+                      aria-label={`${t("response.classification")}: ${mentor.name}`}
                       value={responseClass[mentor.id] || "unknown"}
                       onChange={(event) => setResponseClass((current) => ({ ...current, [mentor.id]: event.target.value as MentorResponse["classification"] }))}
                       className="mb-2 h-9 w-full rounded-md border bg-background px-3 text-sm"
                     >
-                      <option value="interested">Interested</option>
-                      <option value="more_info">More info</option>
-                      <option value="not_interested">Not interested</option>
-                      <option value="unavailable">Unavailable</option>
-                      <option value="unknown">Unknown</option>
+                      <option value="interested">{t("detail.response.interested")}</option>
+                      <option value="more_info">{t("detail.response.more_info")}</option>
+                      <option value="not_interested">{t("detail.response.not_interested")}</option>
+                      <option value="unavailable">{t("detail.response.unavailable")}</option>
+                      <option value="unknown">{t("detail.response.unknown")}</option>
                     </select>
                     <Textarea
                       value={responseText[mentor.id] || ""}
                       onChange={(event) => setResponseText((current) => ({ ...current, [mentor.id]: event.target.value }))}
-                      placeholder="Paste or summarize reply"
+                      aria-label={`${t("response.body")}: ${mentor.name}`}
+                      placeholder={t("response.body")}
                       className="mb-2 min-h-20 rounded-md"
                     />
                     <Button variant="outline" className="w-full rounded-md" onClick={() => void recordResponse(mentor)} disabled={!responseText[mentor.id]?.trim()}>
                       <MessageSquareReply className="h-4 w-4" />
-                      Record
+                      {t("response.save")}
                     </Button>
                     <div className="mt-3 border-t pt-3">
                       <select
+                        aria-label={`${t("response.outcome")}: ${mentor.name}`}
                         value={outcomeStatus[mentor.id] || "open"}
                         onChange={(event) => setOutcomeStatus((current) => ({ ...current, [mentor.id]: event.target.value as OutreachOutcome["status"] }))}
                         className="mb-2 h-9 w-full rounded-md border bg-background px-3 text-sm"
                       >
-                        <option value="open">Open</option>
-                        <option value="booked">Booked</option>
-                        <option value="helpful">Helpful</option>
-                        <option value="declined">Declined</option>
-                        <option value="no_response">No response</option>
-                        <option value="not_relevant">Not relevant</option>
-                        <option value="closed">Closed</option>
+                        <option value="open">{t("detail.outcome.open")}</option>
+                        <option value="booked">{t("detail.outcome.booked")}</option>
+                        <option value="helpful">{t("detail.outcome.helpful")}</option>
+                        <option value="declined">{t("detail.outcome.declined")}</option>
+                        <option value="no_response">{t("detail.outcome.no_response")}</option>
+                        <option value="not_relevant">{t("detail.outcome.not_relevant")}</option>
+                        <option value="closed">{t("detail.outcome.closed")}</option>
                       </select>
                       <Input
                         value={outcomeText[mentor.id] || ""}
                         onChange={(event) => setOutcomeText((current) => ({ ...current, [mentor.id]: event.target.value }))}
-                        placeholder="Outcome summary"
+                        aria-label={`${t("results.summary")}: ${mentor.name} (${t("response.record")})`}
+                        placeholder={t("results.summary")}
                         className="mb-2 rounded-md"
                       />
                       <Button variant="outline" className="w-full rounded-md" onClick={() => void recordOutcome(mentor)} disabled={!outcomeText[mentor.id]?.trim()}>
-                        Record outcome
+                        {t("response.outcome")}
                       </Button>
                     </div>
                   </div>
@@ -2743,10 +2763,10 @@ export default function Home() {
             </div>
           </TabsContent>
 
-          <TabsContent value="billing" className="grid gap-4 lg:grid-cols-[1fr_420px]">
+          <TabsContent lang={locale} value="billing" className="grid gap-4 lg:grid-cols-[1fr_420px]">
             <Card className="rounded-md py-5">
               <CardHeader className="px-5">
-                <CardTitle className="text-lg">Follow-up queue</CardTitle>
+                <CardTitle className="text-lg">{t("billing.queue")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 px-5">
                 {(details?.followUps || []).map((followUp) => {
@@ -2756,19 +2776,19 @@ export default function Home() {
                   return (
                     <div key={followUp.id} className="rounded-md border p-4">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium">{mentor?.name || "Unknown mentor"}</div>
+                        <div className="font-medium">{mentor?.name || t("review.unknownMentor")}</div>
                         <Badge variant="outline" className={due && followUp.status === "scheduled" ? "rounded-md border-amber-200 bg-amber-50 text-amber-700" : "rounded-md"}>
-                          {followUp.status}
+                          {t(`detail.followUp.${followUp.status}`)}
                         </Badge>
                       </div>
-                      <div className="mt-1 text-xs text-muted-foreground">Due {formatDate(followUp.dueAt)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{t("detail.due")} {formatDate(followUp.dueAt, locale)}</div>
                       <SensitiveText
                         className="mt-2"
                         privacyMode={privacyMode}
                         visible={isSensitiveVisible(`follow-up:${followUp.id}`)}
                         onReveal={() => revealSensitive(`follow-up:${followUp.id}`)}
                         onHide={() => hideSensitive(`follow-up:${followUp.id}`)}
-                        placeholder="Follow-up message hidden"
+                        placeholder={t("detail.followUpHidden")}
                       >
                         {followUp.suggestedMessage}
                       </SensitiveText>
@@ -2777,19 +2797,19 @@ export default function Home() {
                           {linkedDraft && linkedDraft.status !== "rejected" ? (
                             <Button variant="outline" className="rounded-md" onClick={() => navigateToTab("review")}>
                               <ClipboardCheck className="h-4 w-4" />
-                              Review draft
+                              {t("billing.review")}
                             </Button>
                           ) : (
                             <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.createFollowUpDraft(followUp.id))}>
                               <MailPlus className="h-4 w-4" />
-                              Draft follow-up
+                              {t("billing.draft")}
                             </Button>
                           )}
                           <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.completeFollowUp(followUp.id))}>
-                            Complete
+                            {t("billing.complete")}
                           </Button>
                           <Button variant="outline" className="rounded-md" onClick={() => void mutate(() => ledgerApi.cancelFollowUp(followUp.id))}>
-                            Cancel
+                            {t("billing.cancel")}
                           </Button>
                         </div>
                       ) : null}
@@ -2798,7 +2818,7 @@ export default function Home() {
                 })}
                 {!details?.followUps.length ? (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    No follow-ups scheduled yet.
+                    {t("billing.empty")}
                   </div>
                 ) : null}
               </CardContent>
@@ -2807,38 +2827,38 @@ export default function Home() {
             <div className="space-y-4">
               <Card className="rounded-md py-5">
                 <CardHeader className="px-5">
-                  <CardTitle className="text-lg">Resource billing</CardTitle>
+                  <CardTitle className="text-lg">{t("billing.title")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 px-5">
                   <div className="grid grid-cols-2 gap-2">
-                    <MiniStat label="Due follow-ups" value={dueFollowUps.length} />
-                    <MiniStat label="Billing records" value={details?.billingRecords.length || 0} />
-                    <MiniStat label="Invoices" value={details?.invoiceRecords.length || 0} />
-                    <MiniStat label="Final cost" value={formatCurrency((details?.billingRecords || []).reduce((sum, item) => sum + item.finalCost, 0))} />
+                    <MiniStat label={t("billing.due")} value={number(dueFollowUps.length)} />
+                    <MiniStat label={t("billing.records")} value={number(details?.billingRecords.length || 0)} />
+                    <MiniStat label={t("billing.invoices")} value={number(details?.invoiceRecords.length || 0)} />
+                    <MiniStat label={t("billing.final")} value={formatCurrency((details?.billingRecords || []).reduce((sum, item) => sum + item.finalCost, 0), locale)} />
                   </div>
                   {latestResourceSession ? (
                     <div className="rounded-md border bg-muted/20 p-3 text-sm">
                       <div className="flex items-center justify-between gap-3">
-                        <span className="font-medium">Measurement</span>
+                        <span className="font-medium">{t("billing.measurement")}</span>
                         <Badge variant="outline" className="rounded-md">
-                          {latestResourceSession.measurementMode}
+                          {t("billing.process")}
                         </Badge>
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-2">
-                        <MiniStat label="CPU hrs" value={latestResourceSession.cpuCoreHours.toFixed(8)} />
-                        <MiniStat label="RAM GB hrs" value={latestResourceSession.ramGbHours.toFixed(8)} />
-                        <MiniStat label="Bandwidth GB" value={latestResourceSession.bandwidthGb.toFixed(8)} />
-                        <MiniStat label="kWh est." value={latestResourceSession.estimatedKwh.toFixed(8)} />
+                        <MiniStat label={t("billing.cpu")} value={formatResourceAmount(latestResourceSession.cpuCoreHours, locale)} />
+                        <MiniStat label={t("billing.ram")} value={formatResourceAmount(latestResourceSession.ramGbHours, locale)} />
+                        <MiniStat label={t("billing.bandwidth")} value={formatResourceAmount(latestResourceSession.bandwidthGb, locale)} />
+                        <MiniStat label={t("billing.energy")} value={formatResourceAmount(latestResourceSession.estimatedKwh, locale)} />
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{latestResourceSession.measurementNote}</p>
+                      <p lang="en" className="mt-2 text-xs leading-5 text-muted-foreground">{latestResourceSession.measurementNote}</p>
                     </div>
                   ) : null}
                   <Button className="w-full rounded-md" onClick={() => activeCampaignId && void mutate(() => ledgerApi.closeResourceSession(activeCampaignId))} disabled={!activeCampaignId}>
                     <Activity className="h-4 w-4" />
-                    Generate cost record
+                    {t("billing.generate")}
                   </Button>
                   <Button variant="outline" className="w-full rounded-md" onClick={() => void loadUsageReport()} disabled={!activeCampaignId}>
-                    Load usage report
+                    {t("billing.load")}
                   </Button>
                   <Button
                     variant="outline"
@@ -2846,18 +2866,18 @@ export default function Home() {
                     onClick={() => void generateInvoiceReport()}
                     disabled={!activeCampaignId || !(details?.billingRecords.length)}
                   >
-                    Generate invoice report
+                    {t("billing.invoice")}
                   </Button>
                   {usageReport ? (
                     <div className="rounded-md border bg-muted/20 p-3 text-sm">
-                      <div className="font-medium">Usage report</div>
+                      <div className="font-medium">{t("billing.usage")}</div>
                       <div className="mt-2 grid grid-cols-2 gap-2">
-                        <MiniStat label="Outcomes" value={usageReport.totals.outcomesRecorded} />
-                        <MiniStat label="Final" value={formatCurrency(usageReport.totals.finalCost)} />
-                        <MiniStat label="Invoices" value={usageReport.invoiceRecords.length} />
-                        <MiniStat label="Line items" value={usageReport.billingRecords.length} />
+                        <MiniStat label={t("billing.outcomes")} value={number(usageReport.totals.outcomesRecorded)} />
+                        <MiniStat label={t("billing.final")} value={formatCurrency(usageReport.totals.finalCost, locale)} />
+                        <MiniStat label={t("billing.invoices")} value={number(usageReport.invoiceRecords.length)} />
+                        <MiniStat label={t("billing.lines")} value={number(usageReport.billingRecords.length)} />
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{usageReport.measurementNote}</p>
+                      <p lang="en" className="mt-2 text-xs leading-5 text-muted-foreground">{usageReport.measurementNote}</p>
                     </div>
                   ) : null}
                   {(details?.invoiceRecords || []).map((invoice) => (
@@ -2865,43 +2885,43 @@ export default function Home() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="font-medium">{invoice.invoiceNumber}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">Generated {formatDate(invoice.generatedAt)}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{t("billing.generated")} {formatDate(invoice.generatedAt, locale)}</div>
                         </div>
                         <Badge variant="outline" className="rounded-md">
-                          {invoice.status}
+                          {t(`billing.status.${invoice.status}`)}
                         </Badge>
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-2">
-                        <MiniStat label="Raw" value={formatCurrency(invoice.rawResourceCost)} />
-                        <MiniStat label="Final" value={formatCurrency(invoice.finalCost)} />
+                        <MiniStat label={t("billing.raw")} value={formatCurrency(invoice.rawResourceCost, locale)} />
+                        <MiniStat label={t("billing.final")} value={formatCurrency(invoice.finalCost, locale)} />
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{invoice.measurementNote}</p>
+                      <p lang="en" className="mt-2 text-xs leading-5 text-muted-foreground">{invoice.measurementNote}</p>
                     </div>
                   ))}
                   {(details?.billingRecords || []).map((record) => (
                     <div key={record.id} className="rounded-md border p-3 text-sm">
                       <div className="flex justify-between gap-3">
-                        <span className="text-muted-foreground">Raw resource cost</span>
-                        <span className="font-mono">{formatCurrency(record.rawResourceCost)}</span>
+                        <span className="text-muted-foreground">{t("billing.raw")}</span>
+                        <span className="font-mono">{formatCurrency(record.rawResourceCost, locale)}</span>
                       </div>
                       <div className="mt-1 flex justify-between gap-3">
-                        <span className="text-muted-foreground">Final price</span>
-                        <span className="font-mono font-semibold">{formatCurrency(record.finalCost)}</span>
+                        <span className="text-muted-foreground">{t("billing.price")}</span>
+                        <span className="font-mono font-semibold">{formatCurrency(record.finalCost, locale)}</span>
                       </div>
-                      <div className="mt-2 text-xs text-muted-foreground">{record.pricingFormula}</div>
+                      <div lang="en" className="mt-2 text-xs text-muted-foreground">{record.pricingFormula}</div>
                     </div>
                   ))}
                 </CardContent>
               </Card>
               <Card className="rounded-md py-5">
                 <CardHeader className="px-5">
-                  <CardTitle className="text-lg">Safety gates</CardTitle>
+                  <CardTitle className="text-lg">{t("billing.safety")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2 px-5 text-sm text-muted-foreground">
-                  <SafetyLine text="Drafts must be approved before send confirmation." />
-                  <SafetyLine text="Send status requires manual delivery evidence." />
-                  <SafetyLine text="Responses and billing events are audit logged." />
-                  <SafetyLine text="Invoice reports are local records and do not charge anyone." />
+                  <SafetyLine text={t("billing.approvalGate")} />
+                  <SafetyLine text={t("billing.evidenceGate")} />
+                  <SafetyLine text={t("billing.auditGate")} />
+                  <SafetyLine text={t("billing.localOnly")} />
                 </CardContent>
               </Card>
             </div>
@@ -3861,6 +3881,7 @@ function RuntimeUrlRow({
 }
 
 function MessageQualityBox({ quality }: { quality: CampaignDetails["qualityReviews"][number] }) {
+  const { t, locale, number } = useTranslation();
   const tone =
     quality.status === "blocked"
       ? "border-red-200 bg-red-50 text-red-700"
@@ -3868,26 +3889,26 @@ function MessageQualityBox({ quality }: { quality: CampaignDetails["qualityRevie
         ? "border-amber-200 bg-amber-50 text-amber-700"
         : "border-emerald-200 bg-emerald-50 text-emerald-700";
   return (
-    <div className="mb-3 rounded-md border bg-muted/20 p-3 text-sm">
+    <div lang={locale} className="mb-3 rounded-md border bg-muted/20 p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-medium">Message quality</div>
+        <div className="font-medium">{t("quality.title")}</div>
         <Badge variant="outline" className={`rounded-md ${tone}`}>
-          {quality.status}
+          {t(`quality.${quality.status}`)}
         </Badge>
       </div>
       <div className="mt-2 grid grid-cols-3 gap-2">
-        <MiniStat label="Personal" value={`${quality.metricsJson.personalizationScore}%`} />
-        <MiniStat label="Read sec" value={quality.metricsJson.readingTimeSeconds} />
-        <MiniStat label="Tokens" value={quality.metricsJson.unresolvedTokenCount} />
+        <MiniStat label={t("quality.personal")} value={`${number(quality.metricsJson.personalizationScore)}%`} />
+        <MiniStat label={t("quality.seconds")} value={number(quality.metricsJson.readingTimeSeconds)} />
+        <MiniStat label={t("quality.tokens")} value={number(quality.metricsJson.unresolvedTokenCount)} />
       </div>
       {quality.warningsJson.length ? (
         <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
           {quality.warningsJson.map((warning) => (
-            <div key={warning}>{warning}</div>
+            <div lang="en" key={warning}>{warning}</div>
           ))}
         </div>
       ) : (
-        <div className="mt-2 text-xs text-muted-foreground">No quality issues detected.</div>
+        <div className="mt-2 text-xs text-muted-foreground">{t("quality.clean")}</div>
       )}
     </div>
   );
@@ -3932,7 +3953,7 @@ function ReviewColumn({
 }) {
   const { t, locale } = useTranslation();
   return (
-    <Card className="rounded-md py-5">
+    <Card lang={locale} className="rounded-md py-5">
       <CardHeader className="px-5">
         <CardTitle className="text-lg">{title}</CardTitle>
       </CardHeader>
@@ -3952,11 +3973,11 @@ function ReviewColumn({
             <div key={message.id} className="rounded-md border p-4">
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-medium">{mentor?.name || "Unknown mentor"}</div>
-                  <div className="text-xs text-muted-foreground">{mentor?.headline || "No mentor headline"}</div>
+                  <div className="font-medium">{mentor?.name || t("review.unknownMentor")}</div>
+                  <div className="text-xs text-muted-foreground">{mentor?.headline || t("detail.noHeadline")}</div>
                 </div>
                 <Badge variant="outline" className="rounded-md">
-                  {message.status}
+                  {t(`detail.draft.${message.status}`)}
                 </Badge>
               </div>
               {deliveryBlocked ? <div lang={locale} role="alert" className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{t("delivery.blocked")}</div> : null}
@@ -3974,6 +3995,7 @@ function ReviewColumn({
               ) : null}
               {quality ? <MessageQualityBox quality={quality} /> : null}
               <Input
+                aria-label={`${t("review.subject")}: ${mentor?.name || t("review.unknownMentor")}`}
                 value={draftEdits[message.id]?.subject ?? message.subject}
                 onChange={(event) =>
                   onDraftEdit((current) => ({
@@ -3993,13 +4015,14 @@ function ReviewColumn({
                   visible={false}
                   onReveal={() => onRevealSensitive(draftBodyKey)}
                   onHide={() => onHideSensitive(draftBodyKey)}
-                  placeholder="Draft body hidden"
+                  placeholder={t("review.hidden")}
                 >
                   {null}
                 </SensitiveText>
               ) : (
                 <div className="mt-3">
                   <Textarea
+                    aria-label={`${t("review.body")}: ${mentor?.name || t("review.unknownMentor")}`}
                     value={draftEdits[message.id]?.body ?? message.body}
                     onChange={(event) =>
                       onDraftEdit((current) => ({
@@ -4015,7 +4038,7 @@ function ReviewColumn({
                   {privacyMode ? (
                     <Button type="button" size="sm" variant="outline" className="mt-2 h-8 rounded-md" onClick={() => onHideSensitive(draftBodyKey)}>
                       <EyeOff className="h-4 w-4" />
-                      Hide draft body
+                      {t("review.hide")}
                     </Button>
                   ) : null}
                 </div>
@@ -4023,8 +4046,8 @@ function ReviewColumn({
               <div className="mt-3 rounded-md border bg-muted/20 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-medium">Manual profile handoff</div>
-                    <div className="text-xs leading-5 text-muted-foreground">Open the source profile and hand off only approved content. MARO does not send the message.</div>
+                    <div className="text-sm font-medium">{t("review.handoff")}</div>
+                    <div className="text-xs leading-5 text-muted-foreground">{t("review.manualOnly")}</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -4035,7 +4058,7 @@ function ReviewColumn({
                       disabled={!mentor?.profileUrl}
                     >
                       <ExternalLink className="h-4 w-4" />
-                      Open profile
+                      {t("review.profile")}
                     </Button>
                     <Button
                       type="button"
@@ -4045,7 +4068,7 @@ function ReviewColumn({
                       disabled={!draftBodyVisible || !handoffReady}
                     >
                       <Copy className="h-4 w-4" />
-                      Copy approved message
+                      {t("review.copy")}
                     </Button>
                     <Button
                       type="button"
@@ -4055,29 +4078,29 @@ function ReviewColumn({
                       disabled={!draftBodyVisible || !handoffReady}
                     >
                       <ClipboardCheck className="h-4 w-4" />
-                      Copy for extension
+                      {t("review.extensionCopy")}
                     </Button>
                     <Button asChild type="button" variant="outline" className="rounded-md">
                       <a href="/maro-manual-handoff-extension.zip" download>
                         <Download className="h-4 w-4" />
-                        Extension
+                        {t("review.extension")}
                       </a>
                     </Button>
                   </div>
                 </div>
                 {privacyMode && !draftBodyVisible ? (
-                  <div className="mt-2 text-xs text-muted-foreground">Reveal the draft body before copying it for manual handoff.</div>
+                  <div className="mt-2 text-xs text-muted-foreground">{t("review.revealFirst")}</div>
                 ) : null}
                 {message.status !== "approved" ? (
-                  <div className="mt-2 text-xs text-muted-foreground">Approve this exact message before copying it to an external profile.</div>
+                  <div className="mt-2 text-xs text-muted-foreground">{t("review.approveFirst")}</div>
                 ) : null}
                 {hasUnsavedEdit ? (
-                  <div className="mt-2 text-xs text-amber-700">Save and re-approve the changed content before external handoff.</div>
+                  <div className="mt-2 text-xs text-amber-700">{t("review.reapprove")}</div>
                 ) : null}
-                {handoffStatus[message.id] ? <div className="mt-2 text-xs text-muted-foreground">{handoffStatus[message.id]}</div> : null}
+                {handoffStatus[message.id] ? <div lang="en" className="mt-2 text-xs text-muted-foreground">{handoffStatus[message.id]}</div> : null}
                 {handoffFallback[message.id] && !deliveryBlocked && (!privacyMode || draftBodyVisible) ? (
                   <Textarea
-                    aria-label={`Manual handoff fallback for ${mentor?.name || "mentor"}`}
+                    aria-label={`${t("review.fallback")}: ${mentor?.name || t("review.unknownMentor")}`}
                     value={handoffFallback[message.id]}
                     readOnly
                     onFocus={(event) => event.currentTarget.select()}
@@ -4091,7 +4114,7 @@ function ReviewColumn({
         })}
         {!messages.length ? (
           <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-            Nothing in this queue.
+            {t("review.empty")}
           </div>
         ) : null}
       </CardContent>
