@@ -1656,7 +1656,7 @@ export default function Home() {
             </TabsList>
           </div>
 
-          <TabsContent value="ledger" lang={locale} className="grid gap-4 lg:grid-cols-[1fr_380px]">
+          <TabsContent value="ledger" lang={locale} className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
             <Card className="rounded-md py-5">
               <CardHeader className="px-5">
                 <CardTitle className="text-lg">{t("campaign.ledger")}</CardTitle>
@@ -2354,7 +2354,7 @@ export default function Home() {
                 <Button variant="outline" className="w-full rounded-md" onClick={() => void exportMentorCsv()} disabled={!activeCampaignId}>
                   {t("intake.exportMentors")}
                 </Button>
-                <Button variant="outline" className="w-full rounded-md" onClick={() => void exportCampaignHistoryCsv()} disabled={!activeCampaignId}>
+                <Button variant="outline" className="h-auto min-h-9 w-full whitespace-normal rounded-md" onClick={() => void exportCampaignHistoryCsv()} disabled={!activeCampaignId}>
                   {t("intake.exportHistory")}
                 </Button>
                 {csvImportResult ? (
@@ -2478,7 +2478,7 @@ export default function Home() {
                   ) : null}
                   <Button
                     variant="outline"
-                    className="w-full rounded-md"
+                    className="h-auto min-h-9 w-full whitespace-normal rounded-md"
                     onClick={() => void mutate(() => ledgerApi.updateDraft(message.id, edit || { subject: message.subject, body: message.body }))}
                     disabled={!hasUnsavedEdit}
                   >
@@ -2508,7 +2508,7 @@ export default function Home() {
                     </Button>
                   </div>
                   <Button
-                    className="w-full rounded-md"
+                    className="h-auto min-h-9 w-full whitespace-normal rounded-md"
                     onClick={() => void mutate(() => ledgerApi.confirmSend(message.id, sendEvidence[message.id] || ""))}
                     disabled={!sendEvidence[message.id]?.trim() || hasUnsavedEdit || blockedDeliveryMentors.has(message.mentorProfileId)}
                   >
@@ -2560,7 +2560,7 @@ export default function Home() {
                   <div>
                     <CardTitle className="text-lg">{t("results.title")}</CardTitle>
                   </div>
-                  <Button variant="outline" className="rounded-md" onClick={() => void exportCampaignHistoryCsv()} disabled={!activeCampaignId}>
+                  <Button variant="outline" className="h-auto min-h-9 max-w-full whitespace-normal rounded-md" onClick={() => void exportCampaignHistoryCsv()} disabled={!activeCampaignId}>
                     {t("intake.exportHistory")}
                   </Button>
                 </div>
@@ -2990,7 +2990,7 @@ export default function Home() {
                       className="rounded-md"
                     />
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <Button variant="outline" className="rounded-md" onClick={() => void checkWorkspaceIntegrity()}>
                       <ShieldCheck className="h-4 w-4" /> Check data
                     </Button>
@@ -3165,7 +3165,7 @@ function MentorDetailPanel({
             </div>
 
             <div className="rounded-md border p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm font-medium">{t("detail.contactHistory")}</div>
                 <Button size="sm" variant="outline" className="h-8 rounded-md" onClick={() => onCreateDraft(mentor)}>
                   <FileText className="h-4 w-4" />
@@ -4063,7 +4063,7 @@ function ReviewColumn({
                     <Button
                       type="button"
                       variant="outline"
-                      className="rounded-md"
+                      className="h-auto min-h-9 max-w-full whitespace-normal rounded-md"
                       onClick={() => onCopyDraft(message)}
                       disabled={!draftBodyVisible || !handoffReady}
                     >
@@ -4073,7 +4073,7 @@ function ReviewColumn({
                     <Button
                       type="button"
                       variant="outline"
-                      className="rounded-md"
+                      className="h-auto min-h-9 max-w-full whitespace-normal rounded-md"
                       onClick={() => onCopyExtensionHandoff(message)}
                       disabled={!draftBodyVisible || !handoffReady}
                     >

@@ -952,6 +952,7 @@ Use the extension's copy fallback and paste manually when provider form structur
 - MicroMentor discovery and final sending are manual because no authorized provider API is configured.
 - The app is single-user and local. It has no application accounts, team RBAC, or cross-user isolation.
 - The Windows installer is not Authenticode-signed and may trigger an unknown-publisher warning.
+- Sampled English/Dutch screens pass layout checks at 320, 390, 768 and 1440 CSS pixels, and the viewport no longer restricts zoom. These emulated checks do not replace real-device, touch or screen-reader acceptance; see [responsive validation](docs/LOCALIZATION_VALIDATION.md#responsive-controls-and-zoom---2026-10-13).
 - There is no signed automatic update channel or managed canary deployment.
 - The HAI connector is read-only and must be enabled explicitly.
 - Basic Auth protects an ngrok tunnel but is not a multi-user authorization system.

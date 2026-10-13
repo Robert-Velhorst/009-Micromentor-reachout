@@ -13,6 +13,9 @@ import "./check-navigation-completion.mjs";
 import "./check-workflow-localization.mjs";
 
 const require = createRequire(new URL("../package.json", import.meta.url));
+const entryHtml = fs.readFileSync(new URL("../client/index.html", import.meta.url), "utf8");
+assert.match(entryHtml, /name="viewport"\s+content="width=device-width, initial-scale=1\.0"/, 'Use the device width without restricting user zoom');
+assert.doesNotMatch(entryHtml, /\b(?:maximum-scale|user-scalable)\s*=/i, 'Do not add viewport zoom restrictions');
 const { outputFiles } = await build({
   stdin: {
     contents: `

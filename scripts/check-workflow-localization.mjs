@@ -100,6 +100,10 @@ for (const locale of ['en','nl']) {
   assert.match(review.html,/PRIVATE DRAFT/);
   const button=(result,key)=>result.buttons.find(item=>item.name===t(key));
   assert.equal(button(review,'review.approve').disabled,false);
+  assert.match(button(review,'review.confirm').className,/h-auto.*whitespace-normal/, 'Long send confirmation must wrap rather than clip');
+  for (const key of ['review.copy','review.extensionCopy','review.return']) {
+    assert.match(button(review,key).className,/h-auto.*whitespace-normal/, 'Review actions must wrap inside their own containers');
+  }
   await button(review,'review.approve').onClick();
   assert.deepEqual(JSON.parse(JSON.stringify(review.calls[0])),['approveDraft','draft-1','Approved in command center']);
   review.buttons.find(item=>item.name===t('review.copy')&&!item.disabled).onClick();
@@ -125,6 +129,7 @@ for (const locale of ['en','nl']) {
   assert.match(edited.html,/Unsaved &lt;subject&gt;/);
   assert.ok(render(locale,'review','empty').html.includes(t('review.empty')));
   const responses=render(locale,'responses');
+  assert.match(button(responses,'intake.exportHistory').className,/h-auto.*max-w-full.*whitespace-normal/, 'Long export label must fit its panel');
   assert.ok(responses.html.includes(t('response.inbox')));
   assert.ok(responses.html.includes(t('detail.response.more_info')));
   assert.match(responses.html,/value="more_info" selected=""/);

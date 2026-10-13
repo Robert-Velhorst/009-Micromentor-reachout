@@ -1,5 +1,14 @@
 # Codex Worklog
 
+## 2026-10-13 Responsive Controls And Zoom
+
+1. Traced the apparent mobile-width mismatch to browser page zoom and verified actual CSS viewport width/zoom through tab-scoped device metrics.
+2. Fixed narrow overview and mentor-detail overflow; wrapped long Dutch confirmation/export/support and approved-draft actions within their containers. Removed the HTML zoom restriction.
+3. Added regression checks for the viewport declaration and wrapping classes while retaining existing workflow/privacy callback assertions.
+4. Activated all six tabs in English and Dutch at verified CSS widths 320, 390, 768 and 1440. All 48 document-width and direct button-container checks passed. Visually inspected synthetic Dutch review states at 320 and 1440; privacy-off review at 320 also passed. No browser warnings/errors were observed. No physical device or screen reader was used.
+5. `npm run check:localization` passed. Final pinned Node 22.23.2 Windows `npm run check:release` passed in `artifacts/release-check-responsive-final-2026-10-13.log`, including zero reported dependency vulnerabilities, API/storage/connection/extension/ngrok fixtures and fresh/in-use installer upgrades with portable recovery. The local unsigned 33,681,408-byte installer SHA-256 is `831A5D847449C101007DAA3BA21C5645BBDC8D9FAE72432D966754E53E9B9DDE`.
+6. Browser-responsive and installer evidence is recorded in `docs/LOCALIZATION_VALIDATION.md` and `docs/PRODUCTION_READINESS.md`. Whole-product release acceptance is still open for the installed extension, clean Windows machine/account, live installed ngrok outages/I/O, independent security assessment, complete Dutch translation/accessibility, sustained pilot and publisher signing/distribution. No provider send or public tunnel was run.
+
 ## 2026-10-13 Review, Response And Billing Localization
 
 1. Added 97 paired messages (442 total) for review, message quality, manual handoff controls, response/result filters, follow-ups and local cost/invoice reports. Reused existing typed status labels; persisted enums, approved content, exact API IDs and audit notes remain unchanged. Billing formats follow the locale and resource values retain eight decimal places.

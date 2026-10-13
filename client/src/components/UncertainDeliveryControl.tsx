@@ -68,6 +68,6 @@ export function UncertainDeliveryControl({ resolving = false, disabled = false, 
     </div>
     {resolving ? <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={checked} disabled={pending} onChange={event => setChecked(event.target.checked)} className="mt-1"/><span>{t("delivery.checked")}</span></label> : null}
     {needsRefresh ? <div role="alert" className="text-sm text-red-700"><p>{t("delivery.failedSave")}</p>{error ? <p lang="en" className="break-words">{error}</p> : null}<Button type="button" variant="outline" onClick={() => void onRefresh()}><RefreshCcw className="h-4 w-4"/>{t("delivery.refresh")}</Button></div> : null}
-    <Button type="button" variant="outline" disabled={blocked} onClick={() => void submit()}>{resolving ? <Check className="h-4 w-4"/> : <AlertTriangle className="h-4 w-4"/>}{t(pending ? "delivery.saving" : resolving ? "delivery.resolve" : "delivery.record")}</Button>
+    <Button type="button" variant="outline" className="h-auto min-h-9 max-w-full whitespace-normal" disabled={blocked} onClick={() => void submit()}>{resolving ? <Check className="h-4 w-4"/> : <AlertTriangle className="h-4 w-4"/>}{t(pending ? "delivery.saving" : resolving ? "delivery.resolve" : "delivery.record")}</Button>
   </div>;
 }

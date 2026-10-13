@@ -26,8 +26,8 @@ Complete these gates before declaring the candidate production-ready:
    repository assessment in a supported managed-permission environment; triage and
    verify findings. Arrange publisher signing and browser-store distribution with
    explicit approval for costs, account changes and publication.
-5. **Run operator acceptance and a sustained pilot.** Complete Dutch labels and
-   responsive visual/accessibility checks. Verify the daily workflow, slow or lost
+5. **Run operator acceptance and a sustained pilot.** Complete the remaining Dutch
+   translations and real-device accessibility acceptance. Verify the daily workflow, slow or lost
    write acknowledgements, recovery and larger/message-heavy workspaces. Record
    failures and response/resource measurements before setting support limits.
 
@@ -40,7 +40,7 @@ work still awaiting acceptance.
 
 The full local `npm run check:release` passed on Windows 11 Pro x64 using
 Node.js 22.23.2. The latest output is
-`artifacts/release-check-workflow-locale-2026-10-13.log`, including all 36 client
+`artifacts/release-check-responsive-final-2026-10-13.log`, including all 36 client
 connection scenarios, 29 source-launcher/runtime ngrok scenarios, 32 packaged
 Windows function/block checks and fresh/reused installed-runtime Host checks.
 Installed startup, configuration restart, stopped/in-use upgrades and recovery
@@ -69,7 +69,8 @@ are not counted as successful release checks.
 | Post-commit cache failure | An injected metadata error after successful replacement preserves HTTP 200 and the saved project; the next read reloads storage and replaying the same idempotency key does not duplicate the record |
 | Client connection resilience | 36 isolated real-HTTP scenarios pass: deadlines through body transfer, cancellation, request/timer cleanup, no automatic retry, uncertain write feedback, slow successful responses, fresh reads after successful/uncertain updates, restore/reset, compact dashboard query encoding and overlapping/coalesced writes. Actual Home-handler and controlled browser tests verify stale results cannot overwrite newer campaign/safety/edit state, including a post-save lost acknowledgement. This is single-client coordination, not cross-window or live-ngrok acceptance; see [consistency scope](OPERATIONAL_VALIDATION.md#dashboard-read-consistency). |
 | Compact dashboard | The UI explicitly requests audit metadata without before/after snapshots. Full APIs, storage and backup/restore retain complete audit records. Two local 20-pair synthetic runs reduced response bytes by 32.03% with deep equality of all other fields. Browser network inspection confirmed HTTP 200 for the compact request; synthetic mentor creation and audit persistence passed. This is not rendering, CPU or memory acceptance; see [operational evidence](OPERATIONAL_VALIDATION.md#compact-dashboard-comparison). |
-| Incremental Dutch interface | 442 paired messages cover initial controls, mentor list/manual entry/details, timeline categories, privacy buttons, CSV intake, campaign/project forms, source/discovery, review/response/billing, uncertainty/reconciliation and stale-refresh/navigation feedback. Actual-component and handler checks cover labels, unchanged values/callbacks, privacy, approval/copy guards and local amounts. Synthetic browser checks include preserved draft/reply/note input across language changes, local approval, saved response and cost/invoice persistence. Full coverage and visual/accessibility acceptance remain open; see [localization evidence](LOCALIZATION_VALIDATION.md). |
+| Incremental Dutch interface | 442 paired messages cover initial controls, mentor list/manual entry/details, timeline categories, privacy buttons, CSV intake, campaign/project forms, source/discovery, review/response/billing, uncertainty/reconciliation and stale-refresh/navigation feedback. Actual-component and handler checks cover labels, unchanged values/callbacks, privacy, approval/copy guards and local amounts. Synthetic browser checks include preserved draft/reply/note input across language changes, local approval, saved response and cost/invoice persistence. Generated operational text and extension strings remain untranslated; full translation and assistive-technology acceptance remain open. See [localization evidence](LOCALIZATION_VALIDATION.md). |
+| Responsive controls and zoom | Fixed overview/mentor overflow, narrow export/support controls and long review/uncertainty actions. All six tabs in both languages passed document/button bounds checks at verified CSS widths 320, 390, 768 and 1440; Dutch review screenshots at 320/1440 were inspected. Removed the viewport zoom cap and added component/template regressions. Emulated keyboard checks are not physical-device, touch, screen-reader or all-state acceptance; see [responsive scope](LOCALIZATION_VALIDATION.md#responsive-controls-and-zoom---2026-10-13). |
 | Late action completion | Actual-handler tests and synthetic browser interception cover saves and automatic refreshes completing after tab/campaign changes, preserved input, visible unknown outcomes, view-scoped reports and ordinary current-view form reset. No write is cancelled or automatically retried. Same-view edits and cross-window synchronization remain separate; see [navigation evidence](OPERATIONAL_VALIDATION.md#navigation-after-slow-actions). |
 | Truthful delivery history and reconciliation | The timeline distinguishes uncertain, confirmed and failed outcomes, keeps uncertainty context behind privacy controls and reflects explicit resolution. New handoffs are blocked across directly matching identities/URLs and campaigns while uncertain. Approval content is frozen; verified resolution is exposed in Review. API, component and synthetic browser checks pass; failed-resolution notes and clipboard fallbacks respect privacy controls. See [delivery evidence and limits](UNCERTAIN_DELIVERY_VALIDATION.md). |
 | Hidden installer payload files | A regression reproduced the omission of a hidden runtime by the old archive command. The replacement includes hidden files/directories and preserves exact extracted bytes; existing-archive collisions fail without changing the archive. The rebuilt installer starts its bundled runtime and passes the installed upgrade/recovery checks. |
@@ -95,7 +96,7 @@ Node 22 remains within its maintenance support period according to the
 - File: `artifacts/MARO-Windows11-Setup.exe`
 - Candidate version: 1.2.3
 - Size: 33,681,408 bytes
-- SHA-256: `78AE90BEA98CDA1A7ABA4D615825A8D3AAE375E323A71DE621619509DC867F07`
+- SHA-256: `831A5D847449C101007DAA3BA21C5645BBDC8D9FAE72432D966754E53E9B9DDE`
 - Signature: unsigned (`NotSigned` checked on this artifact). Publisher signing and clean-machine trust acceptance remain open.
 
 This hash identifies the local binary, not a future CI rebuild. Installer builds

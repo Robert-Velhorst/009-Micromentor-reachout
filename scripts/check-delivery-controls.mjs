@@ -59,6 +59,7 @@ for (const locale of ["en", "nl"]) {
     assert.doesNotMatch(hidden, /PRIVATE/);
     assert.match(hidden, /type="password"/);
     assert.match(hidden, /disabled=""/);
+    assert.match(hidden, /<button[^>]*class="[^"]*h-auto[^"]*max-w-full[^"]*whitespace-normal/, 'Uncertain-delivery submission must wrap inside a narrow container');
     assert.match(render(locale, resolving, false), /PRIVATE &lt;context&gt;/);
     assert.equal(hidden.includes('type="checkbox"'), resolving);
   }

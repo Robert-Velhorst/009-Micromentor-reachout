@@ -250,6 +250,46 @@ The full pinned-runtime Windows release gate passed in
 contracts, existing API/connection/storage/launcher regressions and installed
 upgrade/recovery. The unsigned installer hash is in `PRODUCTION_READINESS.md`.
 
+## Responsive controls and zoom - 2026-10-13
+
+The earlier viewport discrepancy was traced to browser page zoom (0.5 in CDP
+layout metrics). A physical viewport override followed by tab-scoped device
+metrics produced exact observed CSS widths and zoom 1. Resizing the physical
+viewport resets those metrics, so dimensions were verified after every change.
+Blank or incorrectly framed captures were discarded, not accepted as visual proof.
+
+The production build was exercised in an isolated encrypted workspace at
+`http://127.0.0.1:56323/`, containing a synthetic mentor, an approved draft and a
+local cost record. No real provider action occurred.
+
+- At 320 CSS pixels, the overview initially extended to 325 pixels and mentor
+  details to 330 pixels. Explicit single-column grid sizing and wrapping the
+  mentor-history heading/action row fixed those overflows.
+- Long Dutch export, send-confirmation and support controls clipped or overflowed.
+  Wrapping text with automatic height and stacking support controls fixed them.
+- Screenshot inspection found additional container overflow that a page-width
+  check missed: approved-message copy, extension copy and uncertainty submission.
+  Those actions now respect their container width. Return-for-review also wraps.
+- All six tabs were keyboard-activated in English and Dutch at observed widths
+  320, 390, 768 and 1440 pixels: 48 combinations. Each document's scroll width
+  matched its client width. No active-panel button had overflowing text or
+  extended beyond its immediate parent's right edge (two-pixel tolerance). Wide data tables
+  retain their intentional contained horizontal scrolling.
+- Final screenshots of the Dutch review controls at 320 pixels and the two-column
+  review view at 1440 pixels were inspected. Controls stayed inside their panels
+  and multiline labels remained legible. Privacy-off review at 320 pixels also
+  passed the bounds check; privacy was restored afterward. Console warning/error
+  inspection returned no entries. The owned tab/server were closed and temporary
+  browser overrides reset.
+- Removed `maximum-scale=1` from the viewport template. The template regression
+  rejects zoom restrictions; actual-component regressions assert wrapping on the
+  long review/export/uncertainty actions while retaining existing safety/callback
+  checks. This is not full accessibility or physical-device acceptance.
+
+The resulting client bundle is 381.59 kB / 105.71 kB gzip, 0.08 kB compressed above
+the preceding workflow-localization build. No dependency, background task or
+translation request was added. This does not establish sustained resource use.
+
 ## Remaining work
 
 The uncertainty increment adds actual-component and submission-handler tests in
@@ -266,11 +306,13 @@ extension still need translation. Remaining English generated notices in the new
 panels carry English language metadata. Operator-entered data and approved text must not
 be machine-translated merely because the interface language changes.
 
-Complete keyboard, real screen-reader, narrow-screen and visual acceptance.
-The browser screenshot path returned blank captures or incorrect framing; viewport
-overrides also differed from observed dimensions. A partial nonblank desktop
-capture and narrow-screen control bounds do not prove responsive visual quality.
-No mobile or full accessibility acceptance is claimed.
+Complete keyboard, real screen-reader, physical-device/touch and comprehensive
+visual acceptance. The bounded responsive checks above resolve the earlier
+viewport measurement problem and verify the sampled states, not every content
+length, error state, dialog, browser, operating system or assistive technology.
+Keyboard activation was used because pointer targeting under this browser's
+device emulation was unreliable. No physical-mobile or full accessibility
+acceptance is claimed.
 
 The primary client bundle increased from 327.95 kB / 91.57 kB gzip in the prior
 release log to 337.20 kB / 94.89 kB gzip in the final localization build log.
