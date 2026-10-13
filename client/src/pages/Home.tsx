@@ -209,8 +209,8 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: value < 1 ? 4 : 2,
   }).format(value || 0);
 
-const formatDate = (value: string) =>
-  new Intl.DateTimeFormat("en-GB", {
+const formatDate = (value: string, locale: Locale = "en") =>
+  new Intl.DateTimeFormat(locale === "nl" ? "nl-NL" : "en-GB", {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
@@ -2927,17 +2927,18 @@ function MentorDetailPanel({
   onResolveDuplicate: (mentor: MentorProfile) => void;
 }) {
   const duplicateAction = mentor ? nextActions.find((action) => action.type === "review_duplicate_profile") : null;
+  const { t, locale, number } = useTranslation();
   return (
-    <Card className="rounded-md py-5">
+    <Card lang={locale} className="rounded-md py-5">
       <CardHeader className="px-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-lg">Mentor detail</CardTitle>
-            <div className="mt-1 text-xs text-muted-foreground">Profile, fit, history, and next actions</div>
+            <CardTitle className="text-lg">{t("detail.title")}</CardTitle>
+            <div className="mt-1 text-xs text-muted-foreground">{t("detail.subtitle")}</div>
           </div>
           {mentor ? (
             <Badge variant="outline" className="rounded-md">
-              {stageLabel[mentor.stage] || mentor.stage}
+              {t(`mentor.stage.${mentor.stage}`)}
             </Badge>
           ) : null}
         </div>
@@ -2945,7 +2946,7 @@ function MentorDetailPanel({
       <CardContent className="space-y-4 px-5">
         {!mentor ? (
           <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-            Select a mentor to inspect their outreach history.
+            {t("detail.select")}
           </div>
         ) : (
           <>
@@ -2953,21 +2954,21 @@ function MentorDetailPanel({
               <div className="flex flex-wrap items-center gap-2">
                 <div className="font-medium">{mentor.name}</div>
                 {assessment ? (
-                  <Badge className="rounded-md bg-primary/10 text-primary hover:bg-primary/10">{assessment.score}% fit</Badge>
+                  <Badge className="rounded-md bg-primary/10 text-primary hover:bg-primary/10">{number(assessment.score)}% {t("mentor.fit")}</Badge>
                 ) : null}
               </div>
-              <div className="mt-1 text-sm text-muted-foreground">{mentor.headline || "No headline recorded"}</div>
+              <div className="mt-1 text-sm text-muted-foreground">{mentor.headline || t("detail.noHeadline")}</div>
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span className="rounded-md border px-2 py-1">Source: {mentor.source || "manual"}</span>
-                {sourceRecord ? <span className="rounded-md border px-2 py-1">Search: {sourceRecord.name}</span> : null}
-                {mentor.location ? <span className="rounded-md border px-2 py-1">Location: {mentor.location}</span> : null}
+                <span className="rounded-md border px-2 py-1">{t("mentor.source")}: {mentor.source || t("mentor.manual")}</span>
+                {sourceRecord ? <span className="rounded-md border px-2 py-1">{t("mentor.sourceSearch")}: {sourceRecord.name}</span> : null}
+                {mentor.location ? <span className="rounded-md border px-2 py-1">{t("mentor.location")}: {mentor.location}</span> : null}
                 {mentor.profileUrl ? (
                   <a className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-primary" href={mentor.profileUrl} target="_blank" rel="noreferrer">
-                    Profile <ExternalLink className="h-3 w-3" />
+                    {t("detail.profile")} <ExternalLink className="h-3 w-3" />
                   </a>
                 ) : null}
               </div>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">{mentor.bio || "No profile context recorded yet."}</p>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{mentor.bio || t("mentor.noBio")}</p>
               {mentor.skills.length ? (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {mentor.skills.map((skill) => (
@@ -2989,18 +2990,18 @@ function MentorDetailPanel({
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              <MiniStat label="Drafts" value={messages.length} />
-              <MiniStat label="Sends" value={sendAttempts.length} />
-              <MiniStat label="Replies" value={responses.length} />
+              <MiniStat label={t("count.drafts")} value={number(messages.length)} />
+              <MiniStat label={t("detail.sends")} value={number(sendAttempts.length)} />
+              <MiniStat label={t("detail.replyCount")} value={number(responses.length)} />
             </div>
 
             <div className="rounded-md border p-3">
-              <div className="mb-2 text-sm font-medium">Next actions</div>
-              <ActionList actions={nextActions.slice(0, 3)} emptyText="No immediate action for this mentor." />
+              <div className="mb-2 text-sm font-medium">{t("detail.nextActions")}</div>
+              <div lang={nextActions.length ? "en" : locale}><ActionList actions={nextActions.slice(0, 3)} emptyText={t("detail.noActions")} /></div>
               {mentor && duplicateAction ? (
                 <Button variant="outline" className="mt-3 w-full rounded-md" onClick={() => onResolveDuplicate(mentor)}>
                   <Check className="h-4 w-4" />
-                  Resolve duplicate
+                  {t("detail.resolveDuplicate")}
                 </Button>
               ) : null}
             </div>
@@ -3014,25 +3015,25 @@ function MentorDetailPanel({
             />
 
             <div className="rounded-md border p-3">
-              <div className="mb-2 text-sm font-medium">Fit reasoning</div>
+              <div className="mb-2 text-sm font-medium">{t("detail.fitReasoning")}</div>
               <ul className="space-y-1 text-xs leading-5 text-muted-foreground">
-                {(assessment?.reasonsJson || ["No fit rationale recorded yet."]).map((reason) => (
-                  <li key={reason}>{reason}</li>
+                {(assessment?.reasonsJson || [t("detail.noReasons")]).map((reason) => (
+                  <li lang={assessment ? "en" : locale} key={reason}>{reason}</li>
                 ))}
               </ul>
               {assessment?.risksJson.length ? (
                 <div className="mt-3 border-t pt-3 text-xs leading-5 text-muted-foreground">
-                  Risk notes: {assessment.risksJson.join(" ")}
+                  {t("detail.risks")}: <span lang="en">{assessment.risksJson.join(" ")}</span>
                 </div>
               ) : null}
             </div>
 
             <div className="rounded-md border p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-sm font-medium">Contact history</div>
+                <div className="text-sm font-medium">{t("detail.contactHistory")}</div>
                 <Button size="sm" variant="outline" className="h-8 rounded-md" onClick={() => onCreateDraft(mentor)}>
                   <FileText className="h-4 w-4" />
-                  Draft
+                  {t("mentor.draft")}
                 </Button>
               </div>
               <div className="space-y-2">
@@ -3044,15 +3045,15 @@ function MentorDetailPanel({
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium">{message.subject}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">Updated {formatDate(message.updatedAt)}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{t("detail.updated")} {formatDate(message.updatedAt, locale)}</div>
                         </div>
                         <Badge variant="outline" className="rounded-md">
-                          {message.status}
+                          {t(`detail.draft.${message.status}`)}
                         </Badge>
                       </div>
                       {approvals.length ? (
                         <div className="mt-2 text-xs leading-5 text-muted-foreground">
-                          Review: {approvals.map((approval) => `${approval.decision} - ${approval.decisionReason}`).join("; ")}
+                          {t("detail.review")}: {approvals.map((approval) => `${t(`detail.decision.${approval.decision}`)} - ${approval.decisionReason}`).join("; ")}
                         </div>
                       ) : null}
                       {attempts.length ? (
@@ -3062,44 +3063,44 @@ function MentorDetailPanel({
                           visible={isSensitiveVisible(`send-proof:${message.id}`)}
                           onReveal={() => onRevealSensitive(`send-proof:${message.id}`)}
                           onHide={() => onHideSensitive(`send-proof:${message.id}`)}
-                          placeholder="Send proof hidden"
+                          placeholder={t("detail.sendHidden")}
                         >
-                          Send proof: {attempts.map((attempt) => attempt.deliveryEvidence || attempt.status).join("; ")}
+                          {t("detail.sendProof")}: {attempts.map((attempt) => attempt.deliveryEvidence || t(`detail.send.${attempt.status}`)).join("; ")}
                         </SensitiveText>
                       ) : null}
                     </div>
                   );
                 })}
-                {!messages.length ? <div className="text-sm text-muted-foreground">No messages drafted yet.</div> : null}
+                {!messages.length ? <div className="text-sm text-muted-foreground">{t("detail.noMessages")}</div> : null}
               </div>
             </div>
 
             <div className="rounded-md border p-3">
-              <div className="mb-2 text-sm font-medium">Replies, follow-ups, and outcomes</div>
+              <div className="mb-2 text-sm font-medium">{t("detail.replies")}</div>
               <div className="space-y-2 text-xs leading-5 text-muted-foreground">
                 {responses.map((response) => (
                   <div key={response.id} className="rounded-md bg-muted/30 p-2">
-                    <div className="mb-1 font-medium">{response.classification.replace("_", " ")}</div>
+                    <div className="mb-1 font-medium">{t(`detail.response.${response.classification}`)}</div>
                     <SensitiveText
                       privacyMode={privacyMode}
                       visible={isSensitiveVisible(`detail-response:${response.id}`)}
                       onReveal={() => onRevealSensitive(`detail-response:${response.id}`)}
                       onHide={() => onHideSensitive(`detail-response:${response.id}`)}
-                      placeholder="Response text hidden"
+                      placeholder={t("detail.responseHidden")}
                     >
-                      {response.body || "No response text recorded."}
+                      {response.body || t("detail.noResponse")}
                     </SensitiveText>
                   </div>
                 ))}
                 {followUps.map((followUp) => (
                   <div key={followUp.id} className="rounded-md bg-muted/30 p-2">
-                    <div className="mb-1 font-medium">Follow-up {followUp.status}, due {formatDate(followUp.dueAt)}</div>
+                    <div className="mb-1 font-medium">{t("detail.followUp")} {t(`detail.followUp.${followUp.status}`)}, {t("detail.due")} {formatDate(followUp.dueAt, locale)}</div>
                     <SensitiveText
                       privacyMode={privacyMode}
                       visible={isSensitiveVisible(`detail-follow-up:${followUp.id}`)}
                       onReveal={() => onRevealSensitive(`detail-follow-up:${followUp.id}`)}
                       onHide={() => onHideSensitive(`detail-follow-up:${followUp.id}`)}
-                      placeholder="Follow-up message hidden"
+                      placeholder={t("detail.followUpHidden")}
                     >
                       {followUp.suggestedMessage}
                     </SensitiveText>
@@ -3107,26 +3108,26 @@ function MentorDetailPanel({
                 ))}
                 {outcomes.map((outcome) => (
                   <div key={outcome.id} className="rounded-md bg-muted/30 p-2">
-                    Outcome {outcome.status}: {outcome.summary}
+                    {t("detail.outcome")} {t(`detail.outcome.${outcome.status}`)}: {outcome.summary}
                   </div>
                 ))}
-                {!responses.length && !followUps.length && !outcomes.length ? <div>No replies, follow-ups, or outcomes recorded yet.</div> : null}
+                {!responses.length && !followUps.length && !outcomes.length ? <div>{t("detail.noOutcomes")}</div> : null}
               </div>
             </div>
 
             <div className="rounded-md border p-3">
-              <div className="mb-2 text-sm font-medium">Notes and audit</div>
+              <div className="mb-2 text-sm font-medium">{t("detail.notesAudit")}</div>
               <SensitiveText
                 privacyMode={privacyMode}
                 visible={isSensitiveVisible(`detail-notes:${mentor.id}`)}
                 onReveal={() => onRevealSensitive(`detail-notes:${mentor.id}`)}
                 onHide={() => onHideSensitive(`detail-notes:${mentor.id}`)}
-                placeholder="Internal notes hidden"
+                placeholder={t("detail.notesHidden")}
               >
-                {mentor.notes || "No internal notes recorded."}
+                {mentor.notes || t("detail.noNotes")}
               </SensitiveText>
               {auditEvents.length ? (
-                <div className="mt-3 border-t pt-3 text-xs leading-5 text-muted-foreground">
+                <div lang="en" className="mt-3 border-t pt-3 text-xs leading-5 text-muted-foreground">
                   {auditEvents.slice(0, 4).map((event) => `${event.action} (${event.riskLevel})`).join(", ")}
                 </div>
               ) : null}
@@ -3523,15 +3524,16 @@ function RelationshipTimeline({
   onRevealSensitive: (key: string) => void;
   onHideSensitive: (key: string) => void;
 }) {
+  const { t, locale, number } = useTranslation();
   return (
-    <div className="rounded-md border p-3" data-testid="mentor-relationship-timeline">
+    <div lang={locale} className="rounded-md border p-3" data-testid="mentor-relationship-timeline">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="text-sm font-medium">Relationship timeline</div>
-          <div className="mt-1 text-xs text-muted-foreground">Chronological contact history across drafts, sends, replies, follow-ups, outcomes, and audit events</div>
+          <div className="text-sm font-medium">{t("detail.timeline")}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{t("detail.timelineSubtitle")}</div>
         </div>
         <Badge variant="outline" className="rounded-md">
-          {entries.length}
+          {number(entries.length)}
         </Badge>
       </div>
       {entries.length ? (
@@ -3540,14 +3542,14 @@ function RelationshipTimeline({
             <div key={entry.id} className="rounded-md border bg-background p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">{entry.title}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">{formatDate(entry.occurredAt)}</div>
+                  <div lang="en" className="text-sm font-medium">{entry.title}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{formatDate(entry.occurredAt, locale)}</div>
                 </div>
                 <Badge variant="outline" className={`rounded-md ${timelineTone[entry.tone]}`}>
-                  {entry.label}
+                  {t(`detail.timeline.${entry.label}`)}
                 </Badge>
               </div>
-              <div className="mt-2 text-xs leading-5 text-muted-foreground">{entry.detail}</div>
+              <div lang="en" className="mt-2 text-xs leading-5 text-muted-foreground">{entry.detail}</div>
               {entry.sensitiveKey && entry.sensitiveText ? (
                 <SensitiveText
                   className="mt-2"
@@ -3555,7 +3557,7 @@ function RelationshipTimeline({
                   visible={isSensitiveVisible(entry.sensitiveKey)}
                   onReveal={() => onRevealSensitive(entry.sensitiveKey as string)}
                   onHide={() => onHideSensitive(entry.sensitiveKey as string)}
-                  placeholder={entry.sensitivePlaceholder || "Timeline detail hidden"}
+                  placeholder={locale === "en" && entry.sensitivePlaceholder ? entry.sensitivePlaceholder : t("detail.timelineHidden")}
                 >
                   {entry.sensitiveText}
                 </SensitiveText>
@@ -3565,7 +3567,7 @@ function RelationshipTimeline({
         </div>
       ) : (
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          No relationship events recorded yet.
+          {t("detail.noEvents")}
         </div>
       )}
     </div>
@@ -3619,14 +3621,15 @@ function SensitiveText({
   placeholder: string;
   className?: string;
 }) {
+  const { t, locale } = useTranslation();
   if (privacyMode && !visible) {
     return (
       <div className={`rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground ${className}`}>
         <div className="flex items-center justify-between gap-3">
           <span>{placeholder}</span>
-          <Button type="button" size="sm" variant="outline" className="h-8 rounded-md" onClick={onReveal}>
+          <Button lang={locale} type="button" size="sm" variant="outline" className="h-8 rounded-md" onClick={onReveal}>
             <Eye className="h-4 w-4" />
-            Reveal
+            {t("sensitive.reveal")}
           </Button>
         </div>
       </div>
@@ -3637,9 +3640,9 @@ function SensitiveText({
     <div className={`rounded-md border bg-background p-3 text-sm leading-6 text-muted-foreground ${className}`}>
       <div className="whitespace-pre-wrap">{children}</div>
       {privacyMode ? (
-        <Button type="button" size="sm" variant="outline" className="mt-2 h-8 rounded-md" onClick={onHide}>
+        <Button lang={locale} type="button" size="sm" variant="outline" className="mt-2 h-8 rounded-md" onClick={onHide}>
           <EyeOff className="h-4 w-4" />
-          Hide
+          {t("sensitive.hide")}
         </Button>
       ) : null}
     </div>

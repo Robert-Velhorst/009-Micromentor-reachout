@@ -11,7 +11,7 @@ does not reload the dashboard, replace message draft edits, change privacy mode,
 or replace unsaved safety-setting fields. There is no translation service, extra
 runtime dependency, background polling or automatic retry.
 
-The paired catalog currently contains 255 messages covering:
+The paired catalog currently contains 322 messages covering:
 
 - Header, privacy controls, refresh, setup and outbound-pause notices.
 - Six navigation tabs and mentor pagination, including accessible names and
@@ -38,6 +38,12 @@ The paired catalog currently contains 255 messages covering:
   query. The notice reports an opening request, not a confirmed popup. The old
   `window.open` return-value test could report a false popup failure with
   `noopener` (see [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Window/open#noopener)).
+- Mentor-detail headings, empty states, source/profile labels, fit counts,
+  draft/review/delivery/response/follow-up/outcome statuses, and timeline category
+  labels. Detail and timeline timestamps follow the selected locale. Shared
+  sensitive-text reveal/hide buttons are translated without changing visibility
+  state or callbacks. Generated timeline titles/details, assessments and audit
+  descriptions remain unchanged and explicitly marked English.
 
 The document language follows the selected locale. Untranslated main content is
 explicitly marked English, with language overrides for translated regions.
@@ -68,7 +74,7 @@ for every dashboard race or exactly-once writes.
   language-triggered draft reload, preservation of an unsaved cooldown, both
   refresh completion orders, overlapping writes, failure cleanup, explicit
   reconciliation and restore/reset refreshes.
-- `npm run check:client-requests` now has 28 real, isolated HTTP scenarios. Six
+- `npm run check:client-requests` now has 29 real, isolated HTTP scenarios. Six
   cover settings reads across successful or uncertain settings/restore/reset
   writes. These caught stale request sharing before the fix. Timer and connection
   cleanup remain checked; same-epoch reads still coalesce.
@@ -90,6 +96,12 @@ for every dashboard race or exactly-once writes.
   Actual add/copy/open callbacks are exercised with API and clipboard boundaries;
   opening must not also call `window.open`. Only the unrelated readiness, runtime
   and next-action panels are replaced in the rendering fixture.
+- `scripts/check-mentor-detail-localization.mjs` renders the actual detail,
+  timeline and shared privacy components. It verifies both languages and local
+  dates, empty/unselected states, status variants, escaped operator content and
+  unchanged input records. Hidden markup must not contain private text; revealed
+  and privacy-off modes retain it. Actual callback closures receive the original
+  mentor for draft/duplicate actions and the exact privacy keys for reveal/hide.
 
 The Home handler tests substitute network/state boundaries and are not themselves
 rendered-browser tests. They do not imply physical-disk or live-ngrok acceptance.
@@ -166,10 +178,24 @@ The owned test tab and server were stopped. The full release gate passed in
 campaign checks, installed upgrades and independent-key backup recovery. The exact
 installer hash is recorded in [production readiness](PRODUCTION_READINESS.md).
 
+The mentor-detail increment was checked on 2026-10-13 with production assets in
+the isolated workspace `http://127.0.0.1:54146/`:
+
+- Created a synthetic mentor with a private note, then selected Dutch. Detail
+  headings, status, counters and timeline date (`okt`) changed language.
+- Revealed the note, switched to English, verified the same note remained
+  visible, then hid it. The private text was absent from rendered text afterward.
+- Created a draft from the detail-panel action. The contact history and timeline
+  reflected the new draft, without approving or sending it.
+- Switched back to Dutch and reloaded. Dutch details and hidden-note state were
+  present; no warning/error console entries were reported.
+- Closed the owned tab and stopped the temporary server. These are interaction
+  and DOM checks, not screenshot, mobile or screen-reader acceptance.
+
 ## Remaining work
 
-Review/response/billing text, the mentor detail panel, readiness/runtime panels,
-generated recommendations, server errors, date/currency consistency and the extension still
+Review/response/billing tabs, readiness/runtime panels, generated timeline
+titles/details, recommendations, server errors, remaining date/currency consistency and the extension still
 need translation. Operator-entered mentor data and approved message text must not
 be machine-translated merely because the interface language changes.
 
@@ -188,3 +214,5 @@ The mentor/intake increment adds another 2.11 kB gzip, bringing the bundle to
 355.06 kB / 99.19 kB gzip, another 2.19 kB compressed. No extra translation
 dependency, translation network request or full dashboard refresh is needed when
 switching language.
+The mentor-detail increment brings the bundle to 361.33 kB / 100.71 kB gzip,
+1.49 kB compressed above the preceding compact-dashboard build (99.22 kB gzip).

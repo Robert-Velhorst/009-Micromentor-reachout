@@ -2296,18 +2296,21 @@ function buildMentorRelationshipTimeline(state: LedgerState, mentor: MentorProfi
   }
 
   for (const attempt of state.messageSendAttempts.filter((item) => item.mentorProfileId === mentor.id)) {
+    const uncertain = attempt.status === "uncertain";
     const sensitiveText = attempt.deliveryEvidence
       ? `Delivery evidence: ${attempt.deliveryEvidence}`
       : attempt.errorMessage
-      ? `Failure detail: ${attempt.errorMessage}`
+      ? `${uncertain ? "Delivery uncertainty" : "Failure detail"}: ${attempt.errorMessage}`
       : undefined;
     entries.push({
       id: `send:${attempt.id}`,
       occurredAt: attempt.finishedAt || attempt.startedAt || attempt.createdAt,
       label: "Send",
-      title: attempt.status === "confirmed_sent" ? "Manual send confirmed" : "Manual send failed",
-      detail: attempt.status === "confirmed_sent" ? "Manual delivery evidence is recorded." : "Manual delivery failed and remains retryable.",
-      tone: attempt.status === "confirmed_sent" ? "success" : "danger",
+      title: attempt.status === "confirmed_sent" ? "Manual send confirmed" : uncertain ? "Manual send uncertain" : "Manual send failed",
+      detail: attempt.status === "confirmed_sent" ? "Manual delivery evidence is recorded." : uncertain
+        ? "Delivery is unconfirmed. Check the platform before resolving this attempt; do not resend while uncertain."
+        : "Manual delivery failed and remains retryable.",
+      tone: attempt.status === "confirmed_sent" ? "success" : uncertain ? "warning" : "danger",
       sensitiveKey: sensitiveText ? `timeline-send:${attempt.id}` : undefined,
       sensitiveText,
       sensitivePlaceholder: sensitiveText ? "Delivery details hidden" : undefined,

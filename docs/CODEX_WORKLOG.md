@@ -1,5 +1,14 @@
 # Codex Worklog
 
+## 2026-10-13 Mentor Details And Truthful Delivery Timeline
+
+1. Added 67 paired English/Dutch messages for mentor-detail controls/statuses, timeline categories and shared privacy buttons (322 total). Detail/timeline dates use the selected locale. Operator records, approved text and generated assessments/timeline descriptions are not translated or mutated.
+2. Added actual-component tests for EN/NL rendering, empty/unselected states, local dates, escaped records, private text absent from hidden markup, revealed/privacy-off states and exact draft/duplicate/reveal/hide callbacks. The suite runs in the existing localization/release gate without another runtime dependency.
+3. Browser interaction checks in a fresh isolated workspace verified Dutch details, note visibility across language changes, hiding, detail-panel draft creation and persisted locale after reload. No console warnings/errors were reported. The owned tab and server were stopped. This is not visual/mobile/accessibility acceptance.
+4. An API regression reproduced a real timeline defect: uncertain sends were labeled failed and retryable. Uncertainty now has distinct warning text/tone and private context; explicit failed resolution updates the timeline. The initial failing test is in `artifacts/check-timeline-uncertain-before-2026-10-13.log`.
+5. Further review found an open production blocker: uncertain attempts are not an identity-wide contact gate and the review UI does not expose the existing record/resolve APIs. Documented this explicitly in README and production readiness; completing that end-to-end reconciliation path is the next priority, not claimed fixed by the timeline change.
+6. Full pinned-runtime local release checks passed in `artifacts/release-check-mentor-detail-2026-10-13.log`, including the regression, dependency audit, contracts, 29 client cases, storage/launcher checks, installer upgrades and independent-key recovery. The local installer remains unsigned. The preceding commit's GitHub run was still queued when checked; no predecessor CI success is claimed for this patch.
+
 ## 2026-10-13 Compact Dashboard Audit Payload
 
 1. Added opt-in `auditDetail=summary` to the dashboard API and enabled it in the UI. Only audit `beforeState`/`afterState` snapshots are omitted; legacy default/full requests, audit metadata, all other dashboard fields, stored records and backups remain unchanged. Invalid modes fail with HTTP 400.

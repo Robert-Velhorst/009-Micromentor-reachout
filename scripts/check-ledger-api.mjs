@@ -1077,11 +1077,21 @@ try {
   });
   assert(uncertain.attempt.status === "uncertain", "Ambiguous send was not kept uncertain");
   assert(uncertain.draft.status === "approved", "Ambiguous send incorrectly marked the draft sent");
+  const uncertainTimeline = (await api(`/api/mentors/${uncertain.attempt.mentorProfileId}/timeline`)).relationshipTimeline;
+  const uncertainEntry = uncertainTimeline.entries.find((entry) => entry.id === `send:${uncertain.attempt.id}`);
+  assert(uncertainEntry?.title === "Manual send uncertain", "Timeline must not call uncertain delivery failed");
+  assert(uncertainEntry?.tone === "warning", "Uncertain delivery must be shown as unresolved");
+  assert(uncertainEntry?.detail === "Delivery is unconfirmed. Check the platform before resolving this attempt; do not resend while uncertain.", "Timeline must require reconciliation instead of encouraging retry");
+  assert(!uncertainEntry.detail.includes("Browser closed"), "Uncertain delivery context must remain behind privacy controls");
+  assert(uncertainEntry.sensitiveText === "Delivery uncertainty: Browser closed before confirmation", "Timeline must preserve uncertainty context without calling it failure");
   const resolved = await api(`/api/send-attempts/${uncertain.attempt.id}/resolve`, {
     method: "POST",
     body: JSON.stringify({ resolution: "failed", note: "No delivery evidence" }),
   });
   assert(resolved.attempt.status === "failed", "Uncertain send did not resolve to failed");
+  const resolvedEntry = (await api(`/api/mentors/${uncertain.attempt.mentorProfileId}/timeline`)).relationshipTimeline.entries.find((entry) => entry.id === `send:${uncertain.attempt.id}`);
+  assert(resolvedEntry?.title === "Manual send failed" && resolvedEntry.tone === "danger", "Timeline must reflect a resolved failure");
+  console.log("PASS delivery timeline: uncertainty is distinct from failed delivery, private context retained and resolution reflected");
   await api(`/api/mentors/${safetyMentor.mentor.id}`, {
     method: "PATCH",
     body: JSON.stringify({ doNotContact: true, doNotContactReason: "QA opt-out" }),
