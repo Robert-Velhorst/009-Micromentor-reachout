@@ -4,6 +4,7 @@ import vm from "node:vm";
 import fs from "node:fs";
 import ts from "typescript";
 import { build } from "esbuild";
+import "./check-mentor-localization.mjs";
 
 const require = createRequire(new URL("../package.json", import.meta.url));
 const { outputFiles } = await build({

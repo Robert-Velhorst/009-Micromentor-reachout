@@ -701,7 +701,7 @@ Reset supports queue, mentor, and complete-workspace scopes and requires explici
 | `npm run check:operational` | Build and test 1,000 synthetic profiles, request-size guards, backup recovery, and forced restart; write server measurements to `artifacts/operational-check.json` |
 | `npm run check:recommendations` | Compare indexed/direct mentor relationships, verify recommendation rules, and guard against repeated full-profile scans |
 | `npm run check:mentor-pagination` | Check 25-profile page boundaries, complete reachability, empty results, and out-of-range page requests |
-| `npm run check:localization` | Render paired English/Dutch messages and exercise the actual language/restore/reset handlers for stale reads, pending writes, retained drafts and safety edits |
+| `npm run check:localization` | Render English/Dutch controls and the mentor/import tab; verify stable CSV/status values, file-read notices, and actual language/restore/reset handlers for stale reads, pending writes, retained drafts and safety edits |
 | `npm run check:storage` | Build and exercise ten pre-commit storage faults and a post-commit cache fault against the real encrypted API, including data preservation, cleanup, retry, idempotent replay and restart checks |
 | `npm run check:client-requests` | Exercise the actual client against isolated HTTP connections: deadlines through body transfer, cancellation, in-flight cleanup, no automatic retries, uncertain write feedback and fresh settings after changes or recovery |
 | `npm run check:ngrok` | Build and exercise the real source launcher/runtime with a local ngrok process fixture: port ownership, endpoint matching, deadlines, exits, cancellation, policy arguments and cleanup; no public tunnel |
@@ -908,7 +908,7 @@ Use the extension's copy fallback and paste manually when provider form structur
 - There is no signed automatic update channel or managed canary deployment.
 - The HAI connector is read-only and must be enabled explicitly.
 - Basic Auth protects an ngrok tunnel but is not a multi-user authorization system.
-- The Language/Taal menu saves the workspace preference and translates the header, tabs, mentor pagination, setup/pause notices, backup/recovery controls and fallback pages. It preserves open draft fields when changing language. Most detailed campaign, discovery, review, response and billing content, server messages and the extension remain English; this is not a fully translated Dutch release. See [localization coverage](docs/LOCALIZATION_VALIDATION.md).
+- The Language/Taal menu saves the workspace preference and translates the header, tabs, mentor list/manual entry, CSV intake, pagination, setup/pause notices, backup/recovery controls and fallback pages. It preserves open draft fields when changing language; stored data and CSV/status values are not translated. Detailed campaign, discovery, mentor-detail, review, response and billing content, server messages and the extension remain English; this is not a fully translated Dutch release. See [localization coverage](docs/LOCALIZATION_VALIDATION.md).
 - Search and filtering are suitable for the current local-workspace scale; server-side pagination is a future large-dataset enhancement.
 - Follow-up reminders appear in MARO's queues; there is no operating-system push notification service.
 - Local rate-limit and idempotency caches reset when the single Node process restarts.

@@ -1,5 +1,14 @@
 # Codex Worklog
 
+## 2026-10-13 Mentor Intake And Installer Payload
+
+1. Added 83 paired English/Dutch messages for mentor list controls, manual entry and CSV intake, bringing the catalog to 149. Stored phases, CSV headers, user data and approved messages remain unchanged. Added per-mentor accessible names and language markers for untranslated detail/diagnostic regions.
+2. Added actual-tab React rendering and CSV file-handler checks to the existing localization gate. Verified synthetic browser entry, phase saving, CSV preview/import, disabled import without a name mapping, retained unsaved input, translated existing notices and persistence after reload. No provider actions or real messages were performed. Screenshots were blank; visual acceptance remains open.
+3. Refreshed the dependency audit, which found two advisories absent from the September result. Updated only `proxy-addr` 2.0.7 to 2.0.8 and `source-map-js` 1.2.1 to 1.2.2; the fresh audit reports zero vulnerabilities. This is not a repository-wide security assessment.
+4. Reproduced a Windows packaging defect: `Compress-Archive` silently omitted a hidden copied Node executable, so the installer lacked `runtime/node.exe`. The new regression failed on the original command. Replaced the archive command with .NET `ZipFile.CreateFromDirectory`, with terminating errors. The regression now preserves hidden files/directories, visible/empty files and exact bytes, and rejects an existing archive without altering it.
+5. Moved TypeScript's incremental cache out of the dependency directory. Hidden flags on pre-existing local generated outputs also caused write failures; these were corrected on the affected outputs without changing access permissions. Failed release runs are retained in `artifacts` rather than reported as successes.
+6. The full pinned-runtime release gate passed in `artifacts/release-check-mentor-payload-final-2026-10-13.log`, including the new payload regression, localization checks, 28 client scenarios, 29 source-ngrok scenarios, 32 packaged Windows checks and installed startup/upgrades/independent-key recovery. The rebuilt installer remains unsigned; its exact hash is in `PRODUCTION_READINESS.md`. No main merge or public release was performed.
+
 ## 2026-09-06 Locale Controls And Preference Safety
 
 1. Connected the saved English/Dutch preference to a language menu and 66 paired interface messages. Translated header/navigation, pagination, setup/pause notices, backup/recovery controls and fallback pages; most detailed workflows remain English.

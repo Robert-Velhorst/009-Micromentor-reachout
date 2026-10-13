@@ -280,6 +280,7 @@ await run("Isolated ngrok launcher and lifecycle checks", process.execPath, ["sc
 await run("Large workspace and recovery checks", process.execPath, ["scripts/check-operational.mjs"]);
 
 if (process.platform === "win32") {
+  await run("Windows hidden-file payload regression", process.execPath, ["scripts/check-windows-payload.mjs"]);
   await run("Windows installer build", process.execPath, ["scripts/build-windows-installer.mjs"]);
   await run("Packaged Windows ngrok function checks", process.execPath, ["scripts/check-windows-ngrok.mjs"]);
   const installerPath = path.join(process.cwd(), "artifacts", "MARO-Windows11-Setup.exe");

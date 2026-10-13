@@ -660,6 +660,7 @@ if (fs.existsSync(appZip)) {
   fs.unlinkSync(appZip);
 }
 
+// Compress-Archive omits hidden files, including a copied runtime from a hidden checkout.
 run(
   "powershell",
   [
@@ -667,7 +668,7 @@ run(
     "-ExecutionPolicy",
     "Bypass",
     "-Command",
-    "$ProgressPreference='SilentlyContinue'; Compress-Archive -Force -Path * -DestinationPath $env:APP_ZIP",
+    "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory((Get-Location).ProviderPath, $env:APP_ZIP, [IO.Compression.CompressionLevel]::Optimal, $false)",
   ],
   { cwd: appRoot, env: { ...process.env, APP_ZIP: appZip } }
 );

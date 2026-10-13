@@ -1,6 +1,6 @@
 # Localization validation
 
-Updated: 2026-09-06. This is an incremental English/Dutch implementation, not
+Updated: 2026-10-13. This is an incremental English/Dutch implementation, not
 acceptance of the full Dutch interface or the whole product.
 
 ## Implemented coverage
@@ -11,7 +11,7 @@ does not reload the dashboard, replace message draft edits, change privacy mode,
 or replace unsaved safety-setting fields. There is no translation service, extra
 runtime dependency, background polling or automatic retry.
 
-The paired catalog currently contains 66 messages covering:
+The paired catalog currently contains 149 messages covering:
 
 - Header, privacy controls, refresh, setup and outbound-pause notices.
 - Six navigation tabs and mentor pagination, including accessible names and
@@ -22,6 +22,12 @@ The paired catalog currently contains 66 messages covering:
   change also translates an existing notice.
 - Error-boundary recovery and the not-found page. A direct not-found navigation
   independently reads the saved preference because Home is not mounted there.
+- Mentor list filters, phases, notes visibility, contact controls, empty states
+  and manual mentor entry. Accessible names identify the mentor for each phase,
+  notes and notes-visibility control.
+- CSV input, column-mapping labels, preview/import results, file-read status and
+  missing-name validation. CSV headers and stored status values are unchanged.
+  File-read notices retain a translation key, not a translated string.
 
 The document language follows the selected locale. Untranslated main content is
 explicitly marked English, with language overrides for translated regions.
@@ -60,6 +66,13 @@ for every dashboard race or exactly-once writes.
   locales are rejected without changing the preference, and unrelated safety
   settings are preserved.
 - Both `npm test` and `npm run check:release` include localization checks.
+- `scripts/check-mentor-localization.mjs`, included by the localization gate,
+  extracts and renders the actual mentor tab with controlled state and real UI
+  components. It checks both locales, empty/filtered/blocked/revealed/unmapped
+  states, stable option values, unchanged/escaped operator input, CSV results and
+  English language markers for untranslated diagnostics. Only the unrelated
+  detail panel is replaced. Actual CSV file handlers are also executed for
+  unsupported files, successful reads, failed reads and cancellation.
 
 The Home handler tests substitute network/state boundaries and are not themselves
 rendered-browser tests. They do not imply physical-disk or live-ngrok acceptance.
@@ -91,9 +104,30 @@ Rechecked with the final production assets at `http://127.0.0.1:63330/`:
 These addresses identify test sessions, not deployed endpoints. The test servers
 were stopped. Reproduce browser checks against a new isolated local workspace.
 
+On 2026-10-13, the updated production assets were checked in a new synthetic
+workspace at `http://127.0.0.1:55400/`:
+
+- Unsaved mentor name, internal notes and CSV contents survived Dutch/English
+  switching. A synthetic mentor was then created through the actual form.
+- Selecting Dutch `Vervolgcontact` and saving retained the machine value
+  `follow_up`. The persisted mentor remained visible after subsequent imports
+  and a reload; the Dutch language preference was also retained.
+- CSV preview reported one candidate without adding a profile; import increased
+  the visible count from one to two. The existing import-result notice translated
+  on a later English switch without repeating the import.
+- Clearing the name-column mapping displayed Dutch validation and disabled import.
+  The same warning changed to English on a language switch.
+- No browser warning/error console entries were recorded in the checked session.
+  The screenshot returned an empty image, so these are interaction/DOM checks,
+  not visual acceptance.
+
+The test browser tab and owned server were stopped after verification. The full
+Windows release gate, including these automated localization checks, passed in
+`artifacts/release-check-mentor-payload-final-2026-10-13.log`.
+
 ## Remaining work
 
-Most detailed campaign/source/import/review/response/billing text, generated
+Detailed campaign/source/review/response/billing text, the mentor detail panel, generated
 recommendations, server errors, date/currency consistency and the extension still
 need translation. Operator-entered mentor data and approved message text must not
 be machine-translated merely because the interface language changes.
@@ -108,5 +142,6 @@ The primary client bundle increased from 327.95 kB / 91.57 kB gzip in the prior
 release log to 337.20 kB / 94.89 kB gzip in the final localization build log.
 That is approximately 3.32 kB additional compressed JavaScript. This measures
 bundle size, not user-perceived latency or sustained memory/CPU performance.
-No extra translation network request or full dashboard refresh is needed when
-switching language.
+The mentor/intake increment adds another 2.11 kB gzip, bringing the bundle to
+344.66 kB / 97.00 kB gzip. No extra translation dependency, translation network
+request or full dashboard refresh is needed when switching language.

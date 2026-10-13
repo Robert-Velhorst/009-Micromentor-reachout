@@ -1,6 +1,9 @@
+import { mentorEn, mentorNl } from "./mentorMessages";
+
 export type Locale = "en" | "nl";
 
 const en = {
+  ...mentorEn,
   "language.label": "Language",
   "language.saving": "Saving language...",
   "language.failed": "The saved language could not be confirmed. Your open drafts are unchanged. Save your work before refreshing to check the saved preference.",
@@ -72,6 +75,7 @@ const en = {
 export type MessageKey = keyof typeof en;
 
 const nl: Record<MessageKey, string> = {
+  ...mentorNl,
   "language.label": "Taal",
   "language.saving": "Taal opslaan...",
   "language.failed": "De opgeslagen taal kon niet worden bevestigd. Je open concepten zijn ongewijzigd. Bewaar je werk voordat je vernieuwt om de opgeslagen voorkeur te controleren.",

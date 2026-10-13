@@ -32,7 +32,7 @@ import { MentorPagination } from "@/components/MentorPagination";
 import { LanguageSelect } from "@/components/LanguageSelect";
 import { WorkspaceNotice, type WorkspaceNoticeValue } from "@/components/WorkspaceNotice";
 import { useTranslation } from "@/lib/locale";
-import type { Locale } from "@/lib/messages";
+import type { Locale, MessageKey } from "@/lib/messages";
 import { mentorPageWindow } from "@/lib/mentorPagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -116,19 +116,19 @@ type SourceForm = {
 type CsvColumnKey = keyof Required<MentorCsvColumnMap>;
 type LedgerTab = "ledger" | "mentors" | "review" | "responses" | "billing" | "audit";
 type ResultFilter = "all" | "awaiting_outcome" | "follow_up_due" | "booked" | "declined" | "no_response" | "open";
-const csvColumnFields: Array<{ key: CsvColumnKey; label: string; required?: boolean }> = [
-  { key: "name", label: "Name", required: true },
-  { key: "company", label: "Company" },
-  { key: "headline", label: "Headline / role" },
-  { key: "bio", label: "Bio / goal" },
-  { key: "skills", label: "Skills" },
-  { key: "industries", label: "Industries" },
-  { key: "location", label: "Location" },
-  { key: "profileUrl", label: "URL / profile" },
-  { key: "notes", label: "Notes" },
-  { key: "source", label: "Source" },
-  { key: "priority", label: "Priority" },
-  { key: "stage", label: "Stage" },
+const csvColumnFields: Array<{ key: CsvColumnKey; label: MessageKey; required?: boolean }> = [
+  { key: "name", label: "intake.field.name", required: true },
+  { key: "company", label: "intake.field.company" },
+  { key: "headline", label: "intake.field.headline" },
+  { key: "bio", label: "intake.field.bio" },
+  { key: "skills", label: "intake.field.skills" },
+  { key: "industries", label: "intake.field.industries" },
+  { key: "location", label: "intake.field.location" },
+  { key: "profileUrl", label: "intake.field.profileUrl" },
+  { key: "notes", label: "intake.field.notes" },
+  { key: "source", label: "intake.field.source" },
+  { key: "priority", label: "intake.field.priority" },
+  { key: "stage", label: "intake.field.stage" },
 ];
 
 const csvColumnAliases: Record<CsvColumnKey, string[]> = {
@@ -437,7 +437,7 @@ const readinessItemTone: Record<CampaignReadiness["items"][number]["status"], st
 };
 
 export default function Home() {
-  const { t, setLocale, locale } = useTranslation();
+  const { t, setLocale, locale, number } = useTranslation();
   const localeRevision = useRef(0);
   const localeWritesPending = useRef(0);
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
@@ -466,7 +466,7 @@ export default function Home() {
   const [csvText, setCsvText] = useState(sampleCsv);
   const [csvColumnMap, setCsvColumnMap] = useState<Record<CsvColumnKey, string>>(emptyCsvColumnMap);
   const [csvSourceRecordId, setCsvSourceRecordId] = useState("");
-  const [csvFileStatus, setCsvFileStatus] = useState("");
+  const [csvFileStatus, setCsvFileStatus] = useState<WorkspaceNoticeValue | null>(null);
   const [csvImportResult, setCsvImportResult] = useState<MentorImportResult | null>(null);
   const [selectedMentorId, setSelectedMentorId] = useState("");
   const [privacyMode, setPrivacyMode] = useState(true);
@@ -974,19 +974,19 @@ export default function Home() {
   };
 
   const readCsvFile = async (file: File | null) => {
-    setCsvFileStatus("");
+    setCsvFileStatus(null);
     setCsvImportResult(null);
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".csv") && file.type && file.type !== "text/csv") {
-      setCsvFileStatus("Unsupported file type.");
+      setCsvFileStatus({ message: "intake.unsupported" });
       return;
     }
     try {
       const text = await file.text();
       setCsvText(text);
-      setCsvFileStatus(`Loaded ${file.name}.`);
+      setCsvFileStatus({ message: "intake.loaded", details: file.name });
     } catch {
-      setCsvFileStatus("Unable to read CSV file.");
+      setCsvFileStatus({ message: "intake.readFailed" });
     }
   };
 
@@ -1923,23 +1923,23 @@ export default function Home() {
             </div>
           </TabsContent>
 
-          <TabsContent value="mentors" className="grid gap-4 xl:grid-cols-[1fr_390px]">
+          <TabsContent value="mentors" lang={locale} className="grid gap-4 xl:grid-cols-[1fr_390px]">
             <Card className="rounded-md py-5">
               <CardHeader className="px-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 ref={mentorListHeading} tabIndex={-1} className="scroll-mt-4 text-lg font-semibold leading-none">Mentor profiles and fit scores</h2>
-                    <div className="mt-1 text-xs text-muted-foreground">Strong match threshold: {strongFitThreshold}%</div>
+                    <h2 ref={mentorListHeading} tabIndex={-1} className="scroll-mt-4 text-lg font-semibold leading-none">{t("mentor.title")}</h2>
+                    <div className="mt-1 text-xs text-muted-foreground">{t("mentor.threshold")}: {number(strongFitThreshold)}%</div>
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <select
-                      aria-label="Mentor source search filter"
+                      aria-label={t("mentor.sourceFilter")}
                       value={sourceFilterId}
                       onChange={(event) => setSourceFilterId(event.target.value)}
                       className="h-9 rounded-md border bg-background px-3 text-sm"
                     >
-                      <option value="">All sources</option>
-                      <option value="__unlinked__">No source search</option>
+                      <option value="">{t("mentor.allSources")}</option>
+                      <option value="__unlinked__">{t("mentor.noSourceSearch")}</option>
                       {(details?.sourceRecords || []).map((source) => (
                         <option key={source.id} value={source.id}>
                           {source.name}
@@ -1948,7 +1948,7 @@ export default function Home() {
                     </select>
                     <div className="relative">
                       <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search mentors" aria-label="Search mentors" className="h-9 rounded-md pl-9 sm:w-64" />
+                      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("mentor.search")} aria-label={t("mentor.search")} className="h-9 rounded-md pl-9 sm:w-64" />
                     </div>
                   </div>
                 </div>
@@ -1957,11 +1957,10 @@ export default function Home() {
                 {sourceFilterId ? (
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-3 text-sm">
                     <span>
-                      Showing {filteredMentors.length} mentor{filteredMentors.length === 1 ? "" : "s"} from{" "}
-                      {sourceFilterId === "__unlinked__" ? "unlinked intake" : sourceRecordsById.get(sourceFilterId)?.name || "selected source"}
+                      {t("mentor.filteredCount")}: {number(filteredMentors.length)}. {sourceFilterId === "__unlinked__" ? t("mentor.unlinked") : sourceRecordsById.get(sourceFilterId)?.name || t("mentor.selectedSource")}
                     </span>
                     <Button variant="outline" className="h-8 rounded-md" onClick={() => setSourceFilterId("")}>
-                      Clear source filter
+                      {t("mentor.clearFilter")}
                     </Button>
                   </div>
                 ) : null}
@@ -1978,32 +1977,33 @@ export default function Home() {
                             <div className="flex flex-wrap items-center gap-2">
                               <div className="font-medium">{mentor.name}</div>
                               <Badge variant="outline" className="rounded-md">
-                                {stageLabel[mentor.stage] || mentor.stage}
+                                {t(`mentor.stage.${mentor.stage}`)}
                               </Badge>
                               {assessment ? (
                                 <Badge className="rounded-md bg-primary/10 text-primary hover:bg-primary/10">
-                                  {assessment.score}% fit
+                                  {number(assessment.score)}% {t("mentor.fit")}
                                 </Badge>
                               ) : null}
                               {mentor.doNotContact ? (
                                 <Badge variant="outline" className="rounded-md border-red-200 bg-red-50 text-red-700">
-                                  <Ban className="h-3 w-3" /> Do not contact
+                                  <Ban className="h-3 w-3" /> {t("mentor.doNotContact")}
                                 </Badge>
                               ) : null}
                             </div>
                             <div className="mt-1 text-sm text-muted-foreground">{mentor.headline}</div>
                             <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                              <span className="rounded-md border px-2 py-1">Source: {mentor.source || "manual"}</span>
-                              {sourceRecord ? <span className="rounded-md border px-2 py-1">Search: {sourceRecord.name}</span> : null}
-                              {mentor.location ? <span className="rounded-md border px-2 py-1">Location: {mentor.location}</span> : null}
-                              {mentor.industries.length ? <span className="rounded-md border px-2 py-1">Industries: {mentor.industries.join(", ")}</span> : null}
+                              <span className="rounded-md border px-2 py-1">{t("mentor.source")}: {mentor.source || t("mentor.manual")}</span>
+                              {sourceRecord ? <span className="rounded-md border px-2 py-1">{t("mentor.sourceSearch")}: {sourceRecord.name}</span> : null}
+                              {mentor.location ? <span className="rounded-md border px-2 py-1">{t("mentor.location")}: {mentor.location}</span> : null}
+                              {mentor.industries.length ? <span className="rounded-md border px-2 py-1">{t("mentor.industries")}: {mentor.industries.join(", ")}</span> : null}
                             </div>
-                            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{mentor.bio || "No profile context recorded yet."}</p>
-                            <div className="mt-2 text-xs text-muted-foreground">
+                            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{mentor.bio || t("mentor.noBio")}</p>
+                            <div lang="en" className="mt-2 text-xs text-muted-foreground">
                               {(assessment?.reasonsJson || []).slice(0, 2).join(" ")}
                             </div>
                             <div className="mt-3 grid gap-2 md:grid-cols-[180px_1fr_auto_auto]">
                               <select
+                                aria-label={`${t("mentor.stage")}: ${mentor.name}`}
                                 value={mentorEdits[mentor.id]?.stage || mentor.stage}
                                 onChange={(event) =>
                                   setMentorEdits((current) => ({
@@ -2016,9 +2016,9 @@ export default function Home() {
                                 }
                                 className="h-9 rounded-md border bg-background px-3 text-sm"
                               >
-                                {Object.entries(stageLabel).map(([value, label]) => (
+                                {(Object.keys(stageLabel) as MentorProfile["stage"][]).map((value) => (
                                   <option key={value} value={value}>
-                                    {label}
+                                    {t(`mentor.stage.${value}`)}
                                   </option>
                                 ))}
                               </select>
@@ -2034,12 +2034,15 @@ export default function Home() {
                                     },
                                   }))
                                 }
-                                placeholder="Mentor notes"
+                                placeholder={t("mentor.notes")}
+                                aria-label={`${t("mentor.notes")}: ${mentor.name}`}
                                 className="h-9 rounded-md"
                               />
                               <Button
                                 variant="outline"
                                 className="rounded-md"
+                                aria-label={`${t(isSensitiveVisible(`mentor-notes:${mentor.id}`) ? "mentor.hideNotes" : "mentor.revealNotes")}: ${mentor.name}`}
+                                title={t(isSensitiveVisible(`mentor-notes:${mentor.id}`) ? "mentor.hideNotes" : "mentor.revealNotes")}
                                 onClick={() =>
                                   isSensitiveVisible(`mentor-notes:${mentor.id}`)
                                     ? hideSensitive(`mentor-notes:${mentor.id}`)
@@ -2049,7 +2052,7 @@ export default function Home() {
                                 {isSensitiveVisible(`mentor-notes:${mentor.id}`) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                               </Button>
                               <Button variant="outline" className="rounded-md" onClick={() => void saveMentorEdit(mentor)}>
-                                Save
+                                {t("mentor.save")}
                               </Button>
                             </div>
                           </div>
@@ -2063,17 +2066,17 @@ export default function Home() {
                               }))}
                             >
                               {mentor.doNotContact ? <CirclePlay className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-                              {mentor.doNotContact ? "Allow contact" : "Do not contact"}
+                              {t(mentor.doNotContact ? "mentor.allowContact" : "mentor.doNotContact")}
                             </Button>
                             <Button variant="outline" className="rounded-md" onClick={() => setSelectedMentorId(mentor.id)}>
-                              Inspect
+                              {t("mentor.inspect")}
                             </Button>
                             <Button variant="outline" className="rounded-md" disabled={mentor.doNotContact} onClick={() => void mutate(() => ledgerApi.createDraft(activeCampaignId, mentor.id))}>
                               <FileText className="h-4 w-4" />
-                              Draft
+                              {t("mentor.draft")}
                             </Button>
                             <Badge variant="outline" className="rounded-md">
-                              {mentorMessages.length} messages
+                              {t("mentor.messages")}: {number(mentorMessages.length)}
                             </Badge>
                           </div>
                         </div>
@@ -2082,7 +2085,7 @@ export default function Home() {
                   })}
                   {!filteredMentors.length ? (
                     <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                      {details?.mentors.length ? "No mentors match these filters." : "No mentors in this campaign yet."}
+                      {t(details?.mentors.length ? "mentor.noMatches" : "mentor.empty")}
                     </div>
                   ) : null}
                 </div>
@@ -2090,6 +2093,7 @@ export default function Home() {
               </CardContent>
             </Card>
 
+            <div lang="en" className="contents">
             <MentorDetailPanel
               mentor={selectedMentor}
               sourceRecord={selectedMentor?.sourceRecordId ? sourceRecordsById.get(selectedMentor.sourceRecordId) || null : null}
@@ -2118,58 +2122,61 @@ export default function Home() {
               onCreateDraft={(mentor) => void mutate(() => ledgerApi.createDraft(activeCampaignId, mentor.id))}
               onResolveDuplicate={(mentor) => void resolveDuplicateMentor(mentor)}
             />
+            </div>
 
             <Card className="rounded-md py-5">
               <CardHeader className="px-5">
-                <CardTitle className="text-lg">Add mentor</CardTitle>
+                <CardTitle className="text-lg">{t("mentor.add")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 px-5">
-                <Input value={mentorForm.name} onChange={(event) => setMentorForm((current) => ({ ...current, name: event.target.value }))} placeholder="Name" className="rounded-md" />
-                <Input value={mentorForm.company} onChange={(event) => setMentorForm((current) => ({ ...current, company: event.target.value }))} placeholder="Company or organization" className="rounded-md" />
-                <Input value={mentorForm.headline} onChange={(event) => setMentorForm((current) => ({ ...current, headline: event.target.value }))} placeholder="Headline or role" className="rounded-md" />
-                <Textarea value={mentorForm.bio} onChange={(event) => setMentorForm((current) => ({ ...current, bio: event.target.value }))} placeholder="Bio, relevant context, or why they may help" className="min-h-24 rounded-md" />
-                <Input value={mentorForm.skills} onChange={(event) => setMentorForm((current) => ({ ...current, skills: event.target.value }))} placeholder="Skills, comma separated" className="rounded-md" />
-                <Input value={mentorForm.industries} onChange={(event) => setMentorForm((current) => ({ ...current, industries: event.target.value }))} placeholder="Industries, comma separated" className="rounded-md" />
-                <Input value={mentorForm.location} onChange={(event) => setMentorForm((current) => ({ ...current, location: event.target.value }))} placeholder="Location" className="rounded-md" />
-                <Input value={mentorForm.profileUrl} onChange={(event) => setMentorForm((current) => ({ ...current, profileUrl: event.target.value }))} placeholder="Profile URL" className="rounded-md" />
+                <Input value={mentorForm.name} onChange={(event) => setMentorForm((current) => ({ ...current, name: event.target.value }))} placeholder={t("mentor.name")} aria-label={t("mentor.name")} className="rounded-md" />
+                <Input value={mentorForm.company} onChange={(event) => setMentorForm((current) => ({ ...current, company: event.target.value }))} placeholder={t("mentor.company")} aria-label={t("mentor.company")} className="rounded-md" />
+                <Input value={mentorForm.headline} onChange={(event) => setMentorForm((current) => ({ ...current, headline: event.target.value }))} placeholder={t("mentor.headline")} aria-label={t("mentor.headline")} className="rounded-md" />
+                <Textarea value={mentorForm.bio} onChange={(event) => setMentorForm((current) => ({ ...current, bio: event.target.value }))} placeholder={t("mentor.bio")} aria-label={t("mentor.bio")} className="min-h-24 rounded-md" />
+                <Input value={mentorForm.skills} onChange={(event) => setMentorForm((current) => ({ ...current, skills: event.target.value }))} placeholder={t("mentor.skills")} aria-label={t("mentor.skills")} className="rounded-md" />
+                <Input value={mentorForm.industries} onChange={(event) => setMentorForm((current) => ({ ...current, industries: event.target.value }))} placeholder={t("mentor.industryInput")} aria-label={t("mentor.industryInput")} className="rounded-md" />
+                <Input value={mentorForm.location} onChange={(event) => setMentorForm((current) => ({ ...current, location: event.target.value }))} placeholder={t("mentor.location")} aria-label={t("mentor.location")} className="rounded-md" />
+                <Input value={mentorForm.profileUrl} onChange={(event) => setMentorForm((current) => ({ ...current, profileUrl: event.target.value }))} placeholder={t("mentor.profileUrl")} aria-label={t("mentor.profileUrl")} className="rounded-md" />
                 <label className="grid gap-1 text-xs text-muted-foreground">
-                  <span>Link mentor to source search</span>
+                  <span>{t("mentor.linkSource")}</span>
                   <select
-                    aria-label="Manual mentor source search"
+                    aria-label={t("mentor.manualSource")}
                     value={mentorForm.sourceRecordId}
                     onChange={(event) => setMentorForm((current) => ({ ...current, sourceRecordId: event.target.value }))}
                     className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
                   >
-                    <option value="">No source link</option>
+                    <option value="">{t("mentor.noSourceLink")}</option>
                     {(details?.sourceRecords || []).map((source) => (
                       <option key={source.id} value={source.id}>
-                        {source.name} ({source.importedCount}/{source.resultsFound})
+                        {source.name} ({number(source.importedCount)}/{number(source.resultsFound)})
                       </option>
                     ))}
                   </select>
                 </label>
-                <Textarea value={mentorForm.notes} onChange={(event) => setMentorForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Internal notes" className="min-h-20 rounded-md" />
+                <Textarea value={mentorForm.notes} onChange={(event) => setMentorForm((current) => ({ ...current, notes: event.target.value }))} placeholder={t("mentor.internalNotes")} aria-label={t("mentor.internalNotes")} className="min-h-20 rounded-md" />
                 <Button className="w-full rounded-md" onClick={() => void addMentor()} disabled={!mentorForm.name.trim() || !activeCampaignId}>
                   <Plus className="h-4 w-4" />
-                  Add and score
+                  {t("mentor.addAndScore")}
                 </Button>
               </CardContent>
             </Card>
 
             <Card className="rounded-md py-5">
               <CardHeader className="px-5">
-                <CardTitle className="text-lg">CSV intake</CardTitle>
+                <CardTitle className="text-lg">{t("intake.title")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 px-5">
                 <Input
                   type="file"
                   accept=".csv,text/csv"
+                  aria-label={t("intake.file")}
                   className="rounded-md"
                   onChange={(event) => void readCsvFile(event.target.files?.[0] || null)}
                 />
-                {csvFileStatus ? <div className="text-xs text-muted-foreground">{csvFileStatus}</div> : null}
+                {csvFileStatus ? <WorkspaceNotice notice={csvFileStatus} /> : null}
                 <Textarea
                   value={csvText}
+                  aria-label={t("intake.text")}
                   onChange={(event) => {
                     setCsvText(event.target.value);
                     setCsvImportResult(null);
@@ -2178,17 +2185,17 @@ export default function Home() {
                   placeholder="name,company,headline,bio,skills,profileUrl,notes"
                 />
                 <label className="grid gap-1 text-xs text-muted-foreground">
-                  <span>Link import to source search</span>
+                  <span>{t("intake.linkSource")}</span>
                   <select
-                    aria-label="CSV import source search"
+                    aria-label={t("intake.source")}
                     value={csvSourceRecordId}
                     onChange={(event) => setCsvSourceRecordId(event.target.value)}
                     className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
                   >
-                    <option value="">No source link</option>
+                    <option value="">{t("mentor.noSourceLink")}</option>
                     {(details?.sourceRecords || []).map((source) => (
                       <option key={source.id} value={source.id}>
-                        {source.name} ({source.importedCount}/{source.resultsFound})
+                        {source.name} ({number(source.importedCount)}/{number(source.resultsFound)})
                       </option>
                     ))}
                   </select>
@@ -2196,16 +2203,16 @@ export default function Home() {
                 {csvHeaders.length ? (
                   <div className="rounded-md border bg-muted/20 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm font-medium">Column mapping</div>
+                      <div className="text-sm font-medium">{t("intake.mapping")}</div>
                       <Badge variant="outline" className="rounded-md">
-                        {csvHeaders.length} headers
+                        {t("intake.headers")}: {number(csvHeaders.length)}
                       </Badge>
                     </div>
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
                       {csvColumnFields.map((field) => (
                         <label key={field.key} className="grid gap-1 text-xs text-muted-foreground">
                           <span>
-                            {field.label}
+                            {t(field.label)}
                             {field.required ? " *" : ""}
                           </span>
                           <select
@@ -2218,7 +2225,7 @@ export default function Home() {
                             }
                             className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
                           >
-                            <option value="">Do not import</option>
+                            <option value="">{t("intake.skipColumn")}</option>
                             {csvHeaders.map((header) => (
                               <option key={`${field.key}:${header}`} value={header}>
                                 {header}
@@ -2228,34 +2235,38 @@ export default function Home() {
                         </label>
                       ))}
                     </div>
-                    {!csvColumnMap.name ? <div className="mt-2 text-xs text-red-600">Map a name column before importing.</div> : null}
+                    {!csvColumnMap.name ? <div role="alert" className="mt-2 text-xs text-red-600">{t("intake.nameRequired")}</div> : null}
                   </div>
                 ) : null}
                 <div className="grid grid-cols-2 gap-2">
                   <Button variant="outline" className="rounded-md" onClick={() => void importMentorCsv(true)} disabled={!csvText.trim() || !activeCampaignId || !csvColumnMap.name}>
-                    Preview
+                    {t("intake.preview")}
                   </Button>
                   <Button className="rounded-md" onClick={() => void importMentorCsv(false)} disabled={!csvText.trim() || !activeCampaignId || !csvColumnMap.name}>
-                    Import
+                    {t("intake.import")}
                   </Button>
                 </div>
                 <Button variant="outline" className="w-full rounded-md" onClick={() => void exportMentorCsv()} disabled={!activeCampaignId}>
-                  Export mentors CSV
+                  {t("intake.exportMentors")}
                 </Button>
                 <Button variant="outline" className="w-full rounded-md" onClick={() => void exportCampaignHistoryCsv()} disabled={!activeCampaignId}>
-                  Export campaign history CSV
+                  {t("intake.exportHistory")}
                 </Button>
                 {csvImportResult ? (
-                  <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                  <div role="status" className="rounded-md border bg-muted/20 p-3 text-sm">
                     <div className="font-medium">
-                      {csvImportResult.preview ? "Preview" : "Imported"} {csvImportResult.importedCount} of {csvImportResult.totalRows}
+                      {t(csvImportResult.preview ? "intake.preview" : "intake.imported")}: {number(csvImportResult.importedCount)} {t("intake.of")} {number(csvImportResult.totalRows)}
                     </div>
                     {csvImportResult.skipped.length ? (
                       <div className="mt-2 text-xs leading-5 text-muted-foreground">
-                        Skipped: {csvImportResult.skipped.map((item) => `row ${item.row} ${item.reason}`).join(", ")}
+                        {t("intake.skipped")}: {csvImportResult.skipped.map((item, index) => (
+                          <span key={`${item.row}:${index}`}>
+                            {index ? ", " : ""}{t("intake.row")} {number(item.row)}: <span lang="en">{item.reason}</span>
+                          </span>
+                        ))}
                       </div>
                     ) : (
-                      <div className="mt-2 text-xs text-muted-foreground">No duplicate or invalid rows detected.</div>
+                      <div className="mt-2 text-xs text-muted-foreground">{t("intake.clean")}</div>
                     )}
                   </div>
                 ) : null}
