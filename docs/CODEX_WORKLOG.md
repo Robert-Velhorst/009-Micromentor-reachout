@@ -1,5 +1,14 @@
 # Codex Worklog
 
+## 2026-10-13 Dashboard Read Consistency
+
+1. Reproduced two real regressions: an older dashboard completion replaced newer campaign/safety state and erased a newly typed draft; a post-write dashboard GET reused an older in-flight response. The pre-fix failures are in `artifacts/check-dashboard-refresh-before-2026-10-13.log` and `artifacts/check-read-epoch-before-2026-10-13.log`.
+2. Generalized settings-only read epochs to all GET/HEAD requests, invalidating on distinct write start and settlement, including lost acknowledgements. Identical pending writes still coalesce and are counted once. Added a read-state snapshot for Home; no automatic retries, polling, dependency or storage migration.
+3. Home applies only its latest stable read. Older results/errors cannot overwrite data, guards, edits or loading state. Reads spanning a write request explicit refresh without applying their snapshot. Ordinary refreshes do not restore captured runtime metadata; unmount invalidates pending loads.
+4. Added actual Home-handler completion-order tests and seven real-HTTP cases, bringing the client suite to 36 scenarios. Existing settings/restore/reset, timeout, cleanup and language tests pass; the message catalog has 343 paired entries.
+5. In a fresh synthetic browser workspace, response-stage interception proved old-before-write responses cannot undo new uncertainty or verified resolution. Unsaved subject input survived a late older result. A late campaign A response could not replace newly created campaign B. A combined HTTP 200 write-acknowledgement loss plus stale dashboard preserved the block, required refresh and recovered one saved attempt. The disabled language menu was not forced. Interception was cleared and the owned browser/server stopped; no real message or public tunnel.
+6. Full pinned-runtime Windows release checks passed in `artifacts/release-check-dashboard-races-2026-10-13.log`, including installer upgrades and fresh-key recovery. Installer hash/signature and bounded proof/limitations are documented. The bundle increased by 0.23 kB gzip, with no sustained-performance claim. Existing branch predecessor CI remained queued when checked; the new revision requires its own CI. Cross-window coordination, stale mutation-callback navigation and the broader live/clean-machine/security gates remain open.
+
 ## 2026-10-13 Uncertain Delivery Guard And Reconciliation
 
 1. Added workspace-wide uncertainty state and a server guard across directly matching identity IDs/nonempty normalized profile URLs, including other campaigns and zero cooldown. New drafts, approvals, handoffs and confirmed sends fail closed while unresolved. The original approved content cannot be edited/rejected; confirmed resolution requires its exact approval snapshot and preserves other safety gates.

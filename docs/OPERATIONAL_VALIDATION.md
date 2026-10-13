@@ -462,3 +462,79 @@ The complete local release gate passed on 2026-09-05, recorded in
 additional replay assertion passed separately in
 `artifacts/storage-cache-final-2026-09-05.log`. Both test processes and their
 disposable data were cleaned up.
+
+## Dashboard read consistency
+
+On 2026-10-13, two regressions reproduced stale dashboard state after a write:
+`artifacts/check-dashboard-refresh-before-2026-10-13.log` shows an older response
+replacing the current campaign, clearing a newly typed draft and overwriting the
+delivery block. `artifacts/check-read-epoch-before-2026-10-13.log` shows a fresh
+post-write dashboard read joining an older in-flight request instead of reading
+the saved state.
+
+The request layer now increments a read revision at the start and settlement of
+each distinct write, including failure or an uncertain acknowledgement. GET/HEAD
+coalescing is scoped to that revision. Identical pending writes still share one
+request and one pending-write count. The dashboard captures the revision and
+pending-write count, accepts only its latest load request, and rejects results
+that overlap a write. Older successes/errors cannot replace newer state or finish
+its loading indicator. A rejected latest result asks for explicit refresh; it
+does not clear draft edits or safety guards. Ordinary loads leave runtime metadata
+unchanged unless runtime refresh was explicitly requested. Unmount invalidates
+outstanding dashboard loads.
+
+`scripts/check-dashboard-refresh.mjs` executes the actual Home loading handler
+with controlled completion order. It covers older success/error after a newer
+result, older completion while a newer read is pending, current failure, writes
+starting/finishing during reads, already-pending writes, retained edits/guards,
+subsequent explicit reconciliation and runtime-state preservation. It is included
+in the localization gate, `npm test` and the full release gate.
+
+Seven additional real-HTTP scenarios in `scripts/check-client-requests.mjs` cover
+dashboard, timeline and settings reads after both successful and unacknowledged
+delivery writes, plus overlapping/coalesced write accounting. All 36 scenarios
+pass with timers and connections cleaned up. The six original settings/restore/
+reset freshness regressions still pass. Evidence:
+`artifacts/check-read-epoch-after-2026-10-13.log`.
+
+The coordination state is two numeric counters plus one React request ref, with
+no new dependency, background poller, persistence format or provider traffic.
+There is no automatic retry and no promise of atomic server snapshots across
+separate endpoints. Scope is one mounted app/client module: writes from another
+browser window or an external client are not broadcast to it. User changes to
+forms during an otherwise valid explicit refresh retain the existing refresh
+semantics; this patch protects stale results, not every unsaved-form workflow.
+New refreshes intentionally issued by an older mutation callback and cross-window
+coordination remain separate acceptance cases.
+
+Built production assets were also checked in a fresh synthetic encrypted
+workspace at `http://127.0.0.1:54101/` on 2026-10-13. Response-stage browser
+interception was limited to local API Fetch requests:
+
+- Held an HTTP 200 dashboard response from before recording uncertainty. Recorded
+  uncertainty and delivered its newer dashboard response first, then released
+  the old response. The uncertainty section and copy block remained.
+- Repeated in reverse: held an unresolved snapshot, resolved as verified not sent,
+  delivered the current snapshot, then typed an unsaved subject. Releasing the old
+  response neither restored uncertainty nor erased the subject; Save edit stayed
+  enabled. No subject change was submitted to the server.
+- Held campaign A's response while creating synthetic campaign B and delivering
+  its response. The selected campaign and displayed title remained B after A's
+  late response arrived.
+- Held a dashboard response, recorded a new uncertainty, then failed that write's
+  HTTP 200 response with `ConnectionClosed`. Releasing the old dashboard showed
+  the changed-workspace warning, retained the safety block and kept retry disabled.
+  Explicit refresh recovered exactly one uncertain attempt and cleared the stale
+  read warning without submitting another write.
+- The language menu was disabled during a pending load; the attempted language
+  overlap was not forced and is not claimed as a browser-tested scenario.
+- Interception was cleared, no warning/error console entries were reported, and
+  the temporary tab and owned server were stopped. These are DOM/interaction
+  checks, not screenshots, installed ngrok, physical outages or provider writes.
+
+The full pinned-runtime Windows release gate passed in
+`artifacts/release-check-dashboard-races-2026-10-13.log`, including the 36 client
+scenarios, actual handler tests, installer upgrades and independent-key recovery.
+Client JavaScript is 369.69 kB / 102.99 kB gzip, 0.23 kB compressed above the
+preceding build. This is bundle measurement, not sustained CPU/RAM or latency
+acceptance. The current unsigned installer hash is in `PRODUCTION_READINESS.md`.

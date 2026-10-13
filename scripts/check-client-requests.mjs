@@ -337,4 +337,56 @@ await scenario("dashboard requests compact audit records and encodes campaign id
   assert.equal(requests.length, 2);
 });
 
+for (const readKind of ['dashboard', 'mentorTimeline', 'workspaceSettings']) {
+for (const writeFails of [false, true]) {
+  await scenario(`${readKind} after delivery write (${writeFails ? 'lost acknowledgement' : 'success'}) uses a fresh connection`, async ({api, fixture, requests}) => {
+    let oldResponse;
+    const readArrived = deferred();
+    fixture.reply = (request, response) => {
+      if (request.method !== 'GET') {
+        if (writeFails) response.destroy();
+        else response.end('{"attempt":{"status":"uncertain"}}');
+      } else if (!oldResponse) {
+        oldResponse = response; readArrived.resolve();
+      } else response.end('{"marker":"fresh"}');
+    };
+    const read = () => api[readKind]('synthetic');
+    const old = settled(read());
+    const coalesced = settled(read());
+    await within(readArrived.promise, 'Old GET did not arrive');
+    const write = await settled(api.recordUncertainSendAttempt('synthetic', 'Test uncertainty'));
+    assert.equal(Boolean(write.error), writeFails);
+    try {
+      const fresh = await within(read(), 'Post-write read reused an older response');
+      assert.equal(fresh.marker, 'fresh');
+      assert.equal(requests.filter(item => item.method === 'GET').length, 2);
+    } finally {
+      oldResponse.end('{"marker":"old"}');
+      assert.equal((await old).value?.marker, 'old');
+      assert.equal((await coalesced).value?.marker, 'old');
+    }
+  });
+}
+}
+await scenario('read barrier tracks overlapping/coalesced writes through success and failure', async ({api, fixture, requests}) => {
+  const releases = [], bothArrived = deferred();
+  fixture.reply = (_request, response) => {
+    releases.push(response);
+    if (releases.length === 2) bothArrived.resolve();
+  };
+  const initial = api.readState();
+  const first = settled(api.recordUncertainSendAttempt('one', 'Test'));
+  const same = settled(api.recordUncertainSendAttempt('one', 'Test'));
+  const second = settled(api.recordUncertainSendAttempt('two', 'Test'));
+  await within(bothArrived.promise, 'Both distinct writes did not arrive');
+  assert.equal(requests.length, 2, 'Duplicate in-flight write remains coalesced');
+  assert.equal(api.readState().pendingWrites, 2);
+  assert.equal(api.readState().revision, initial.revision + 2);
+  releases[0].end('{}'); await first; await same;
+  assert.equal(api.readState().pendingWrites, 1);
+  releases[1].destroy(); await second;
+  assert.equal(api.readState().pendingWrites, 0);
+  assert.equal(api.readState().revision, initial.revision + 4);
+});
+
 console.log(`PASS client request suite: ${passed} isolated HTTP scenarios; no provider requests or operator data`);

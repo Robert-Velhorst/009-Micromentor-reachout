@@ -691,6 +691,17 @@ MARO keeps the successful acknowledgement, discards the old cache and reloads
 storage on the next read. Failures before replacement remain errors. This does
 not remove uncertainty when the connection drops before an acknowledgement arrives.
 
+### Concurrent refreshes
+
+Within one app window, an older dashboard response cannot replace a newer load
+or a result from before an intervening write. This also applies when the write's
+acknowledgement is lost. MARO retains the existing display/edits and safety block;
+when necessary it asks you to refresh explicitly. A fresh read does not reuse a
+pre-write connection. There is no automatic retry or background polling. This is
+not synchronization between separate windows or a guarantee that every unsaved
+form survives an otherwise valid explicit refresh. See
+[consistency tests and limits](docs/OPERATIONAL_VALIDATION.md#dashboard-read-consistency).
+
 ### Workspace backups
 
 Portable backups use:

@@ -596,7 +596,8 @@ export type MentorImportResult = {
 export type MentorCsvColumnMap = Partial<Record<"name" | "company" | "headline" | "bio" | "skills" | "industries" | "location" | "profileUrl" | "notes" | "source" | "priority" | "stage", string>>;
 
 const inFlightRequests = new Map<string, Promise<unknown>>();
-let settingsReadEpoch = 0;
+let readEpoch = 0;
+let pendingWrites = 0;
 
 async function performRequest<T>(url: string, options: RequestInit, headers: Headers): Promise<T> {
   const isMutation = !["GET", "HEAD"].includes((options.method || "GET").toUpperCase());
@@ -652,39 +653,40 @@ async function performRequest<T>(url: string, options: RequestInit, headers: Hea
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const method = (options.method || "GET").toUpperCase();
+  const isWrite = !["GET", "HEAD"].includes(method);
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
   if (options.body !== undefined) headers.set("Content-Type", "application/json");
-  if (!["GET", "HEAD"].includes(method)) {
+  if (isWrite) {
     headers.set("X-MARO-Request", "1");
     headers.set("Idempotency-Key", globalThis.crypto?.randomUUID?.() || `maro-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   }
 
-  const epoch = method === "GET" && url === "/api/workspace/settings" ? settingsReadEpoch : 0;
+  const epoch = isWrite ? 0 : readEpoch;
   const key = `${method}:${url}:${typeof options.body === "string" ? options.body : ""}:${epoch}`;
   const existing = inFlightRequests.get(key);
   if (existing) return existing as Promise<T>;
 
+  // A post-write read must not join an older request, even if the write lost its acknowledgement.
+  if (isWrite) {
+    readEpoch += 1;
+    pendingWrites += 1;
+  }
   const pending = performRequest<T>(url, options, headers);
   inFlightRequests.set(key, pending);
   try {
     return await pending;
   } finally {
     if (inFlightRequests.get(key) === pending) inFlightRequests.delete(key);
-  }
-}
-
-async function changeSettings<T>(url: string, options: RequestInit): Promise<T> {
-  // Restore and reset also replace settings. Never reuse a pre-write read afterward.
-  settingsReadEpoch += 1;
-  try {
-    return await request<T>(url, options);
-  } finally {
-    settingsReadEpoch += 1;
+    if (isWrite) {
+      pendingWrites -= 1;
+      readEpoch += 1;
+    }
   }
 }
 
 export const ledgerApi = {
+  readState: () => ({ revision: readEpoch, pendingWrites }),
   health: () => request<HealthStatus>("/api/health"),
   readiness: () => request<ReadinessStatus>("/api/readiness"),
   diagnostics: () => request<Diagnostics>("/api/diagnostics"),
@@ -701,18 +703,18 @@ export const ledgerApi = {
       body: JSON.stringify({ backupJson }),
     }),
   restoreWorkspace: (backupJson: string) =>
-    changeSettings<{ restored: true; summary: WorkspaceSummary }>("/api/workspace/restore", {
+    request<{ restored: true; summary: WorkspaceSummary }>("/api/workspace/restore", {
       method: "POST",
       body: JSON.stringify({ backupJson, confirm: true }),
     }),
   resetWorkspace: (scope: "queue" | "mentors" | "workspace") =>
-    changeSettings<{ reset: true; scope: string; summary: WorkspaceSummary }>("/api/workspace/reset", {
+    request<{ reset: true; scope: string; summary: WorkspaceSummary }>("/api/workspace/reset", {
       method: "POST",
       body: JSON.stringify({ scope, confirm: true }),
     }),
   workspaceSettings: () => request<{ settings: WorkspaceSettings; environmentOutboundPause: boolean }>("/api/workspace/settings"),
   updateWorkspaceSettings: (payload: Partial<WorkspaceSettings>) =>
-    changeSettings<{ settings: WorkspaceSettings; environmentOutboundPause: boolean }>("/api/workspace/settings", {
+    request<{ settings: WorkspaceSettings; environmentOutboundPause: boolean }>("/api/workspace/settings", {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),

@@ -133,8 +133,9 @@ owned test server were closed; no public tunnel or real message was created.
 - The operator supplies delivery evidence. MARO neither verifies a provider inbox
   nor sends a message. No real platform writes were performed for these checks.
 - The controlled browser post-save failures above and real-HTTP request failure
-  tests are not installed-runtime/real-ngrok outage acceptance. Concurrent stale
-  dashboard responses, failure before server commit and real connection outages
+  tests are not installed-runtime/real-ngrok outage acceptance. Same-client stale
+  dashboard responses now have [separate handler and browser evidence](OPERATIONAL_VALIDATION.md#dashboard-read-consistency), including after an unacknowledged write.
+  Cross-window changes, failure before server commit and real connection outages
   still need broader end-to-end acceptance. Server guards remain authoritative.
 - Previously inconsistent imported/legacy records can fail closed. Do not change
   an unknown outcome to failed merely to unblock them; preserve the backup and

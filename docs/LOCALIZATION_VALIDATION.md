@@ -11,7 +11,7 @@ does not reload the dashboard, replace message draft edits, change privacy mode,
 or replace unsaved safety-setting fields. There is no translation service, extra
 runtime dependency, background polling or automatic retry.
 
-The paired catalog currently contains 342 messages covering:
+The paired catalog currently contains 343 messages covering:
 
 - Header, privacy controls, refresh, setup and outbound-pause notices.
 - Six navigation tabs and mentor pagination, including accessible names and
@@ -60,12 +60,13 @@ They must not overwrite a cooldown field edited while the request was pending.
 Home tracks settings-changing operations and rejects older locale reads across
 language changes, restoration and reset, including overlapping writes.
 
-The request layer separates in-flight settings reads into write epochs. Reads
+The request layer separates all in-flight GET/HEAD reads into write epochs. Reads
 within one epoch can still share a connection, but a post-write read cannot reuse
-a pre-write request. Invalidation happens on success and uncertain failure for
-settings updates, workspace restoration and reset. This prevents an older English
-response from undoing a restored Dutch preference. It is not a general solution
-for every dashboard race or exactly-once writes.
+a pre-write request. Invalidation happens at write start and settlement, including
+uncertain failure. The dashboard accepts only its latest read and rejects results
+overlapping a write without clearing edits or safety state. The original locale
+guards remain. This is single-client coordination, not exactly-once writes or
+cross-window synchronization; see [dashboard consistency](OPERATIONAL_VALIDATION.md#dashboard-read-consistency).
 
 ## Automated evidence
 
@@ -77,10 +78,13 @@ for every dashboard race or exactly-once writes.
   language-triggered draft reload, preservation of an unsaved cooldown, both
   refresh completion orders, overlapping writes, failure cleanup, explicit
   reconciliation and restore/reset refreshes.
-- `npm run check:client-requests` now has 29 real, isolated HTTP scenarios. Six
+- `npm run check:client-requests` now has 36 real, isolated HTTP scenarios. Six
   cover settings reads across successful or uncertain settings/restore/reset
   writes. These caught stale request sharing before the fix. Timer and connection
-  cleanup remain checked; same-epoch reads still coalesce.
+  cleanup remain checked; same-epoch reads still coalesce. Seven more cases cover
+  delivery-write freshness for dashboard/timeline/settings and overlapping or
+  coalesced write accounting. Actual dashboard handler tests cover completion
+  order, stale errors/loading state, write overlap and retained safety state.
 - The encrypted API smoke checks that Dutch persists across requests, unsupported
   locales are rejected without changing the preference, and unrelated safety
   settings are preserved.

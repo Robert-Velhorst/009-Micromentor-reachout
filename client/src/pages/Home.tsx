@@ -444,6 +444,7 @@ export default function Home() {
   const { t, setLocale, locale, number } = useTranslation();
   const localeRevision = useRef(0);
   const localeWritesPending = useRef(0);
+  const ledgerReadRequest = useRef(0);
   const [summary, setSummary] = useState<LedgerSummary | null>(null);
   const [projects, setProjects] = useState<OutreachProject[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -498,6 +499,8 @@ export default function Home() {
   const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryNotice | null>(null);
 
   const loadLedger = async (campaignId?: string, options: { refreshRuntime?: boolean } = {}) => {
+    const requestId = ++ledgerReadRequest.current;
+    const readState = ledgerApi.readState();
     const readLocaleRevision = localeRevision.current;
     setLoading(true);
     setError("");
@@ -508,6 +511,12 @@ export default function Home() {
         options.refreshRuntime ? ledgerApi.runtimeStatus().catch(() => null) : Promise.resolve(runtimeStatus),
         ledgerApi.workspaceSettings(),
       ]);
+      if (requestId !== ledgerReadRequest.current) return;
+      const currentReadState = ledgerApi.readState();
+      if (readState.revision !== currentReadState.revision || readState.pendingWrites || currentReadState.pendingWrites) {
+        setError(t("refresh.changed"));
+        return;
+      }
       setSummary(snapshot.summary);
       setProjects(snapshot.projects);
       setCampaigns(snapshot.campaigns);
@@ -515,7 +524,7 @@ export default function Home() {
       setDetails(snapshot.details);
       setDeliverySafety(snapshot.deliverySafety);
       setHealthStatus(snapshot.health);
-      setRuntimeStatus(nextRuntimeStatus);
+      if (options.refreshRuntime) setRuntimeStatus(nextRuntimeStatus);
       setHaiStatus(snapshot.haiStatus);
       setWorkspaceSettings(settingsResult.settings);
       // An older refresh must not undo a language change that is still saving.
@@ -525,14 +534,15 @@ export default function Home() {
       setEnvironmentOutboundPause(settingsResult.environmentOutboundPause);
       setDraftEdits({});
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
+      if (requestId === ledgerReadRequest.current) setError(err instanceof Error ? err.message : "Unable to load MARO ledger");
     } finally {
-      setLoading(false);
+      if (requestId === ledgerReadRequest.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     void loadLedger(undefined, { refreshRuntime: true });
+    return () => { ledgerReadRequest.current += 1; };
     // Load once on mount; subsequent refreshes are explicit after mutations.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

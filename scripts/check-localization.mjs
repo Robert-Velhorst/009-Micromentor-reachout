@@ -8,6 +8,7 @@ import "./check-mentor-localization.mjs";
 import "./check-campaign-localization.mjs";
 import "./check-mentor-detail-localization.mjs";
 import "./check-delivery-controls.mjs";
+import "./check-dashboard-refresh.mjs";
 
 const require = createRequire(new URL("../package.json", import.meta.url));
 const { outputFiles } = await build({
@@ -105,7 +106,9 @@ function fixture() {
     t: (key) => key,
     localeRevision: { current: 0 },
     localeWritesPending: { current: 0 },
+    ledgerReadRequest: { current: 0 },
     ledgerApi: {
+      readState: () => ({revision:0,pendingWrites:0}),
       dashboard: async () => { events.push(["dashboard"]); return {}; },
       workspaceSettings: () => read.promise,
       updateWorkspaceSettings: (payload) => { events.push(["patch", JSON.parse(JSON.stringify(payload))]); return write.promise; },
