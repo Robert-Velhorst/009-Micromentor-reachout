@@ -40,7 +40,7 @@ work still awaiting acceptance.
 
 The full local `npm run check:release` passed on Windows 11 Pro x64 using
 Node.js 22.23.2. The latest output is
-`artifacts/release-check-mentor-payload-final-2026-10-13.log`, including all 28 client
+`artifacts/release-check-campaign-localization-2026-10-13.log`, including all 28 client
 connection scenarios, 29 source-launcher/runtime ngrok scenarios, 32 packaged
 Windows function/block checks and fresh/reused installed-runtime Host checks.
 Installed startup, configuration restart, stopped/in-use upgrades and recovery
@@ -67,7 +67,7 @@ are not counted as successful release checks.
 | Injected storage failures | Ten backup/primary fault cases passed with intact acknowledged data, cache isolation, temporary-file cleanup, successful retry and restart integrity; these are simulated filesystem errors, not physical disk or power-loss tests |
 | Post-commit cache failure | An injected metadata error after successful replacement preserves HTTP 200 and the saved project; the next read reloads storage and replaying the same idempotency key does not duplicate the record |
 | Client connection resilience | 28 isolated real-HTTP scenarios pass: deadlines through body transfer, cancellation, request/timer cleanup, no automatic retry, uncertain write feedback, slow successful responses and fresh settings after successful/uncertain updates, restore and reset. This is not whole-browser or live-ngrok acceptance. |
-| Incremental Dutch interface | 149 paired messages cover the initial controls plus mentor list/manual entry and CSV intake. Actual-tab rendering checks cover labels, states, preserved data/values and file handlers. Synthetic browser checks cover retained unsaved entry, phase persistence and CSV preview/import/validation. Full coverage and visual/accessibility acceptance remain open; see [localization evidence](LOCALIZATION_VALIDATION.md). |
+| Incremental Dutch interface | 255 paired messages cover initial controls, mentor list/manual entry, CSV intake, campaign/project forms and source/discovery controls. Actual-component and handler checks cover labels, states, preserved data/values, completion guards and secure source links. Synthetic browser checks cover retained input, saved campaign/source values, translated notices and mentor/CSV workflows. Full coverage and visual/accessibility acceptance remain open; see [localization evidence](LOCALIZATION_VALIDATION.md). |
 | Hidden installer payload files | A regression reproduced the omission of a hidden runtime by the old archive command. The replacement includes hidden files/directories and preserves exact extracted bytes; existing-archive collisions fail without changing the archive. The rebuilt installer starts its bundled runtime and passes the installed upgrade/recovery checks. |
 | Source ngrok lifecycle | 29 real-process/local-inspector cases cover own-child readiness, bounded startup/discovery, endpoint and policy checks, pre-verification Host rejection, process exits, cancellation and cleanup. Twelve configuration I/O cases exercise partial writes, exclusive-create collisions, replacement failure and deletion refusal, including during normal shutdown. Persistent cleanup refusal reports the owned file and returns failure; it is not claimed successfully removed. Partial-response/GC regressions are also included; no public tunnel was opened. |
 | Packaged Windows ngrok functions and blocks | 32 local-fixture cases cover endpoint matching, deadlines, keyed configuration changes, process identity, parent-controlled cleanup and ten Windows configuration scenarios. Real locks exercise failed replacement, credentials-file deletion and process/host publication. Successful controls cover UTF-8, quoting, startup and registration-before-publication. This is not whole-launcher or live provider acceptance. |
@@ -90,8 +90,8 @@ Node 22 remains within its maintenance support period according to the
 
 - File: `artifacts/MARO-Windows11-Setup.exe`
 - Candidate version: 1.2.3
-- Size: 33,671,680 bytes
-- SHA-256: `AE330759909AED371F5BCD3CED09DCA473A05AE5C3A90B31706EC33BF78EF177`
+- Size: 33,673,728 bytes
+- SHA-256: `243CFE08F1622A688BE332BE86EC6F99884882F1D6870375F6118EEC53327007`
 - Signature: unsigned (`NotSigned` checked on this artifact). Publisher signing and clean-machine trust acceptance remain open.
 
 This hash identifies the local binary, not a future CI rebuild. Installer builds
@@ -133,7 +133,7 @@ repository security assessment or proof that every advisory was reachable in MAR
 | Extension distribution | Unpacked development installation is available. Ordinary user distribution still needs a supported browser-store release process. |
 | Installed ngrok path | The PowerShell launcher is separate from `scripts/ngrok.mjs`. Packaged functions and selected startup/publication blocks have identity, file-lock and cleanup coverage; the installed local runtime also has Host-boundary checks. Complete live startup/reuse/credential rotation, authentication, outages, forced-parent termination, stream-write/flush fault injection and physical-disk behavior remain open. |
 | Operational pilot | The bounded 1,000-profile API/recovery, injected storage-error cases and client connection tests pass; see [operational evidence](OPERATIONAL_VALIDATION.md). Responsive visual acceptance, complete browser interaction coverage, response-size reduction, sustained real usage, end-to-end reconciliation after a lost write acknowledgement, hardware interruption, physically full volumes, live ngrok outages, and larger-than-tested datasets remain open. |
-| Dutch interface | Language selection, initial controls, mentor list/manual entry and CSV intake are implemented and tested. Campaign/source workflows, mentor detail, review, responses, billing, server messages and the extension still need translation. See [coverage and remaining acceptance](LOCALIZATION_VALIDATION.md); partial control coverage is not full Dutch-language acceptance. |
+| Dutch interface | Language selection, initial controls, mentor list/manual entry, CSV intake, campaign/project forms and source/discovery controls are implemented and tested. Mentor detail, readiness/runtime panels, generated recommendations, review, responses, billing, server messages and the extension still need translation. See [coverage and remaining acceptance](LOCALIZATION_VALIDATION.md); partial control coverage is not full Dutch-language acceptance. |
 
 ## Installed-extension acceptance procedure
 

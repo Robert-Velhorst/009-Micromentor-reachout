@@ -11,7 +11,7 @@ does not reload the dashboard, replace message draft edits, change privacy mode,
 or replace unsaved safety-setting fields. There is no translation service, extra
 runtime dependency, background polling or automatic retry.
 
-The paired catalog currently contains 149 messages covering:
+The paired catalog currently contains 255 messages covering:
 
 - Header, privacy controls, refresh, setup and outbound-pause notices.
 - Six navigation tabs and mentor pagination, including accessible names and
@@ -28,6 +28,16 @@ The paired catalog currently contains 149 messages covering:
 - CSV input, column-mapping labels, preview/import results, file-read status and
   missing-name validation. CSV headers and stored status values are unchanged.
   File-read notices retain a translation key, not a translated string.
+- Campaign metrics, selection, creation and settings; project creation/editing;
+  source registration, outcome updates and discovery-plan controls. Every input,
+  textarea and select in these regions has an accessible name. Stored enum values,
+  operator text and generated recommendations are unchanged.
+- Discovery notices retain message keys and parameters, so existing confirmations
+  translate without repeating the action. Source opening uses a native link with
+  `target="_blank"` and `rel="noopener noreferrer"`; it does not append the prepared
+  query. The notice reports an opening request, not a confirmed popup. The old
+  `window.open` return-value test could report a false popup failure with
+  `noopener` (see [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Window/open#noopener)).
 
 The document language follows the selected locale. Untranslated main content is
 explicitly marked English, with language overrides for translated regions.
@@ -73,6 +83,13 @@ for every dashboard race or exactly-once writes.
   English language markers for untranslated diagnostics. Only the unrelated
   detail panel is replaced. Actual CSV file handlers are also executed for
   unsupported files, successful reads, failed reads and cancellation.
+- `scripts/check-campaign-localization.mjs` renders the actual dashboard, ledger
+  and discovery components in both languages. It checks accessible field names,
+  stable campaign/source option values, escaped input, empty/unchanged/blocked
+  states, completion guards, localized counts/notices and secure native links.
+  Actual add/copy/open callbacks are exercised with API and clipboard boundaries;
+  opening must not also call `window.open`. Only the unrelated readiness, runtime
+  and next-action panels are replaced in the rendering fixture.
 
 The Home handler tests substitute network/state boundaries and are not themselves
 rendered-browser tests. They do not imply physical-disk or live-ngrok acceptance.
@@ -125,10 +142,34 @@ The test browser tab and owned server were stopped after verification. The full
 Windows release gate, including these automated localization checks, passed in
 `artifacts/release-check-mentor-payload-final-2026-10-13.log`.
 
+The campaign/project/source increment was checked on 2026-10-13 against the built
+production assets at `http://127.0.0.1:55974/` in another isolated workspace:
+
+- Unsaved project title/description, campaign title/goal and source notes survived
+  English-to-Dutch switching unchanged.
+- The actual forms created a synthetic project and a campaign linked to it, then
+  recorded a synthetic source with a local query, notes and 12 results.
+- Selecting `Voltooid` with open readiness checks displayed the translated warning
+  and disabled saving. Selecting `Gepauzeerd` allowed saving; after a reload the
+  stored value was still `paused` and the campaign goal was unchanged.
+- Updating the source to 15 results and new notes persisted after reload.
+- Adding three recommended sources disabled further additions. The existing
+  confirmation translated to `Recommended sources added: 3` on an English switch.
+- All three rendered source links retained their base destination, `_blank` and
+  `noopener noreferrer`, without the prepared query. No external links were opened
+  in this pass; provider navigation and installed-extension acceptance are separate.
+- No warning/error console entries were recorded. Screenshot capture was blank
+  again, so visual and responsive acceptance remain open.
+
+The owned test tab and server were stopped. The full release gate passed in
+`artifacts/release-check-campaign-localization-2026-10-13.log`, including the new
+campaign checks, installed upgrades and independent-key backup recovery. The exact
+installer hash is recorded in [production readiness](PRODUCTION_READINESS.md).
+
 ## Remaining work
 
-Detailed campaign/source/review/response/billing text, the mentor detail panel, generated
-recommendations, server errors, date/currency consistency and the extension still
+Review/response/billing text, the mentor detail panel, readiness/runtime panels,
+generated recommendations, server errors, date/currency consistency and the extension still
 need translation. Operator-entered mentor data and approved message text must not
 be machine-translated merely because the interface language changes.
 
@@ -143,5 +184,7 @@ release log to 337.20 kB / 94.89 kB gzip in the final localization build log.
 That is approximately 3.32 kB additional compressed JavaScript. This measures
 bundle size, not user-perceived latency or sustained memory/CPU performance.
 The mentor/intake increment adds another 2.11 kB gzip, bringing the bundle to
-344.66 kB / 97.00 kB gzip. No extra translation dependency, translation network
-request or full dashboard refresh is needed when switching language.
+344.66 kB / 97.00 kB gzip. The campaign/project/source increment brings it to
+355.06 kB / 99.19 kB gzip, another 2.19 kB compressed. No extra translation
+dependency, translation network request or full dashboard refresh is needed when
+switching language.

@@ -1,5 +1,13 @@
 # Codex Worklog
 
+## 2026-10-13 Campaign And Source Controls
+
+1. Added 106 paired messages for campaign metrics/settings/creation, project forms and source registration/discovery controls, bringing the catalog to 255. Added accessible field names, localized counts and explicit English boundaries for untranslated recommendations/readiness/runtime content. Stored status values and operator text are unchanged.
+2. Replaced imperative source popups with native `_blank` links using `noopener noreferrer`, without appending the prepared query. The previous `window.open` return-value check could falsely report a blocked popup under `noopener`. The new structured notice reports only an opening request and remains translatable.
+3. Added actual-component rendering and actual discovery-handler tests to the localization gate. They cover both languages, escaped values, field names, stable enum values, completion/empty/unchanged guards, source links and notice parameters.
+4. Browser-tested a synthetic project/campaign/source through the real forms: retained unsaved input across locale changes, blocked premature completion, saved paused status, source count/note updates, translated existing add-source confirmation and persistence after reload. Console was clean. Captured screenshots remained blank; no visual/mobile acceptance or external provider navigation is claimed.
+5. Full Windows release checks passed in `artifacts/release-check-campaign-localization-2026-10-13.log`, including installed upgrades and independent-key recovery. The rebuilt unsigned installer hash is recorded in `PRODUCTION_READINESS.md`. Owned browser/server test sessions were stopped; no real messages, public tunnel, main merge or release publication were performed.
+
 ## 2026-10-13 Mentor Intake And Installer Payload
 
 1. Added 83 paired English/Dutch messages for mentor list controls, manual entry and CSV intake, bringing the catalog to 149. Stored phases, CSV headers, user data and approved messages remain unchanged. Added per-mentor accessible names and language markers for untranslated detail/diagnostic regions.

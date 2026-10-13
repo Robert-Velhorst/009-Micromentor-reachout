@@ -116,6 +116,7 @@ type SourceForm = {
 type CsvColumnKey = keyof Required<MentorCsvColumnMap>;
 type LedgerTab = "ledger" | "mentors" | "review" | "responses" | "billing" | "audit";
 type ResultFilter = "all" | "awaiting_outcome" | "follow_up_due" | "booked" | "declined" | "no_response" | "open";
+type DiscoveryNotice = { message: MessageKey; count?: number; sourceName?: string };
 const csvColumnFields: Array<{ key: CsvColumnKey; label: MessageKey; required?: boolean }> = [
   { key: "name", label: "intake.field.name", required: true },
   { key: "company", label: "intake.field.company" },
@@ -489,7 +490,7 @@ export default function Home() {
   const [mentorPagination, setMentorPagination] = useState({ scope: "", page: 1 });
   const mentorListHeading = useRef<HTMLHeadingElement>(null);
   const [sourceEdits, setSourceEdits] = useState<Record<string, SourceForm>>({});
-  const [discoveryStatus, setDiscoveryStatus] = useState("");
+  const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryNotice | null>(null);
 
   const loadLedger = async (campaignId?: string, options: { refreshRuntime?: boolean } = {}) => {
     const readLocaleRevision = localeRevision.current;
@@ -816,27 +817,22 @@ export default function Home() {
       const result = await ledgerApi.applyDiscoveryPlan(activeCampaignId);
       setDiscoveryStatus(
         result.createdSources.length
-          ? `${result.createdSources.length} recommended source${result.createdSources.length === 1 ? "" : "s"} added to the ledger.`
-          : "All recommended sources are already in the ledger."
+          ? { message: "source.added", count: result.createdSources.length }
+          : { message: "source.allRecorded" }
       );
     });
 
   const copyDiscoveryQuery = async (source: DiscoveryPlanSource) => {
     try {
       await copyTextToClipboard(source.searchQuery);
-      setDiscoveryStatus(`${source.name} query copied.`);
+      setDiscoveryStatus({ message: "source.copied", sourceName: source.name });
     } catch {
-      setDiscoveryStatus("Clipboard blocked. Select and copy the query manually.");
+      setDiscoveryStatus({ message: "source.copyFailed" });
     }
   };
 
   const openDiscoverySource = (source: DiscoveryPlanSource) => {
-    const opened = window.open(source.launchUrl, "_blank", "noopener,noreferrer");
-    setDiscoveryStatus(
-      opened
-        ? `${source.name} opened without transmitting the prepared query.`
-        : "Source popup was blocked. Use the visible source link instead."
-    );
+    setDiscoveryStatus({ message: "source.openRequested", sourceName: source.name });
   };
 
   const updateSourceSearch = (source: MentorSource) =>
@@ -1301,64 +1297,59 @@ export default function Home() {
           </div>
         ) : null}
 
-        <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <section lang={locale} className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
           <Card className="rounded-md py-5">
             <CardHeader className="gap-4 px-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge className="rounded-md bg-primary/10 text-primary hover:bg-primary/10">
-                      Command dashboard
+                      {t("dashboard.title")}
                     </Badge>
                     <Badge variant="outline" className="rounded-md">
-                      {campaigns.length} campaigns
+                      {t("count.campaigns")}: {number(campaigns.length)}
                     </Badge>
                     <Badge variant="outline" className="rounded-md">
-                      Approval gated
+                      {t("dashboard.approval")}
                     </Badge>
                   </div>
-                  <CardTitle className="text-2xl leading-tight md:text-3xl">
-                    Control mentor discovery, review, follow-up, and billing.
-                  </CardTitle>
-                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                    Campaigns, mentors, message approvals, manual send confirmations, responses, follow-ups, resource costs, and audit events now use the local backend ledger.
-                  </p>
                 </div>
                 <div className="grid grid-cols-3 gap-2 rounded-md border bg-muted/30 p-2 text-center">
                   <div className="min-w-20">
-                    <div className="font-mono text-xl font-semibold">{summary?.totals.mentors || 0}</div>
-                    <div className="text-xs text-muted-foreground">Mentors</div>
+                    <div className="font-mono text-xl font-semibold">{number(summary?.totals.mentors || 0)}</div>
+                    <div className="text-xs text-muted-foreground">{t("count.mentors")}</div>
                   </div>
                   <div className="min-w-20">
-                    <div className="font-mono text-xl font-semibold">{summary?.totals.strongMatches || 0}</div>
-                    <div className="text-xs text-muted-foreground">Strong</div>
+                    <div className="font-mono text-xl font-semibold">{number(summary?.totals.strongMatches || 0)}</div>
+                    <div className="text-xs text-muted-foreground">{t("dashboard.strong")}</div>
                   </div>
                   <div className="min-w-20">
-                    <div className="font-mono text-xl font-semibold">{summary?.totals.followUpsDue || 0}</div>
-                    <div className="text-xs text-muted-foreground">Due</div>
+                    <div className="font-mono text-xl font-semibold">{number(summary?.totals.followUpsDue || 0)}</div>
+                    <div className="text-xs text-muted-foreground">{t("dashboard.due")}</div>
                   </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4 px-5">
               <div className="grid gap-4 md:grid-cols-5">
-                <MetricCard icon={<Users className="h-4 w-4 text-primary" />} label="Drafts" value={summary?.totals.drafts || 0} />
-                <MetricCard icon={<ClipboardCheck className="h-4 w-4 text-emerald-600" />} label="Approved" value={summary?.totals.approvals || 0} />
-                <MetricCard icon={<Send className="h-4 w-4 text-amber-600" />} label="Sent" value={summary?.totals.sent || 0} />
-                <MetricCard icon={<AlertTriangle className="h-4 w-4 text-red-600" />} label="Actions" value={summary?.totals.nextActions || nextActions.length} />
-                <MetricCard icon={<Euro className="h-4 w-4 text-sky-600" />} label="Final cost" value={formatCurrency(summary?.totals.finalCost || 0)} />
+                <MetricCard icon={<Users className="h-4 w-4 text-primary" />} label={t("count.drafts")} value={number(summary?.totals.drafts || 0)} />
+                <MetricCard icon={<ClipboardCheck className="h-4 w-4 text-emerald-600" />} label={t("dashboard.approved")} value={number(summary?.totals.approvals || 0)} />
+                <MetricCard icon={<Send className="h-4 w-4 text-amber-600" />} label={t("dashboard.sent")} value={number(summary?.totals.sent || 0)} />
+                <MetricCard icon={<AlertTriangle className="h-4 w-4 text-red-600" />} label={t("dashboard.actions")} value={number(summary?.totals.nextActions || nextActions.length)} />
+                <MetricCard icon={<Euro className="h-4 w-4 text-sky-600" />} label={t("dashboard.cost")} value={formatCurrency(summary?.totals.finalCost || 0)} />
               </div>
-              <NextActionPanel actions={nextActions.slice(0, 5)} onOpenAction={(action) => void openNextAction(action)} />
+              <div lang="en"><NextActionPanel actions={nextActions.slice(0, 5)} onOpenAction={(action) => void openNextAction(action)} /></div>
             </CardContent>
           </Card>
 
           <div className="space-y-4">
             <Card className="rounded-md py-5">
               <CardHeader className="px-5">
-                <CardTitle className="text-lg">Active campaign</CardTitle>
+                <CardTitle className="text-lg">{t("campaign.active")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 px-5">
                 <select
+                  aria-label={t("campaign.active")}
                   value={activeCampaignId}
                   onChange={(event) => void loadLedger(event.target.value)}
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm"
@@ -1371,21 +1362,22 @@ export default function Home() {
                   ))}
                 </select>
                 <div className="rounded-md border p-4">
-                  <div className="text-sm font-medium">{campaign?.title || "No campaign selected"}</div>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{campaign?.goal || "Create a campaign to start the ledger."}</p>
+                  <div className="text-sm font-medium">{campaign?.title || t("campaign.none")}</div>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{campaign?.goal || t("campaign.start")}</p>
                   {campaign ? (
                     <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                      <MiniStat label="Project" value={campaignProject?.title || "Unassigned"} />
-                      <MiniStat label="Follow-up rule" value={`${campaignFollowUpDays(campaign)} days`} />
-                      <MiniStat label="Tone" value={campaignTone(campaign)} />
-                      <MiniStat label="Strong fit" value={`${campaignFitThreshold(campaign)}%+`} />
+                      <MiniStat label={t("project.label")} value={campaignProject?.title || t("campaign.unassigned")} />
+                      <MiniStat label={t("campaign.followUp")} value={`${number(campaignFollowUpDays(campaign))} ${t("campaign.days")}`} />
+                      <MiniStat label={t("campaign.tone")} value={campaignTone(campaign)} />
+                      <MiniStat label={t("campaign.strongFit")} value={`${number(campaignFitThreshold(campaign))}%+`} />
                     </div>
                   ) : null}
                 </div>
                 {campaign ? (
                   <div className="border-t pt-4">
-                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Campaign settings</div>
+                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">{t("campaign.settings")}</div>
                     <select
+                      aria-label={t("campaign.project")}
                       value={campaignSettingsForm.projectId}
                       onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, projectId: event.target.value }))}
                       className="mb-2 h-10 w-full rounded-md border bg-background px-3 text-sm"
@@ -1400,43 +1392,46 @@ export default function Home() {
                     <Input
                       value={campaignSettingsForm.title}
                       onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, title: event.target.value }))}
-                      placeholder="Active campaign title"
+                      placeholder={t("campaign.activeTitle")}
+                      aria-label={t("campaign.activeTitle")}
                       className="mb-2 rounded-md"
                     />
                     <Textarea
                       value={campaignSettingsForm.goal}
                       onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, goal: event.target.value }))}
-                      placeholder="Active campaign goal"
+                      placeholder={t("campaign.activeGoal")}
+                      aria-label={t("campaign.activeGoal")}
                       className="mb-2 min-h-20 rounded-md"
                     />
                     <Input
                       value={campaignSettingsForm.targetMentorType}
                       onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, targetMentorType: event.target.value }))}
-                      placeholder="Active target mentor type"
+                      placeholder={t("campaign.activeTarget")}
+                      aria-label={t("campaign.activeTarget")}
                       className="mb-2 rounded-md"
                     />
                     <div className="mb-2 rounded-md border bg-muted/20 p-3">
-                      <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Fit criteria</div>
+                      <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">{t("campaign.criteria")}</div>
                       <div className="grid gap-2 md:grid-cols-2">
                         <Input
                           value={campaignSettingsForm.skills}
                           onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, skills: event.target.value }))}
-                          placeholder="Skills, comma separated"
-                          aria-label="Campaign fit skills"
+                          placeholder={t("mentor.skills")}
+                          aria-label={t("campaign.skills")}
                           className="rounded-md"
                         />
                         <Input
                           value={campaignSettingsForm.industries}
                           onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, industries: event.target.value }))}
-                          placeholder="Industries, comma separated"
-                          aria-label="Campaign fit industries"
+                          placeholder={t("mentor.industryInput")}
+                          aria-label={t("campaign.industries")}
                           className="rounded-md"
                         />
                         <Input
                           value={campaignSettingsForm.locations}
                           onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, locations: event.target.value }))}
-                          placeholder="Locations, comma separated"
-                          aria-label="Campaign preferred locations"
+                          placeholder={t("campaign.locationsInput")}
+                          aria-label={t("campaign.locations")}
                           className="rounded-md"
                         />
                         <Input
@@ -1445,8 +1440,8 @@ export default function Home() {
                           max="95"
                           value={campaignSettingsForm.minimumFitScore}
                           onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, minimumFitScore: event.target.value }))}
-                          placeholder="Minimum fit score"
-                          aria-label="Campaign minimum fit score"
+                          placeholder={t("campaign.minimum")}
+                          aria-label={t("campaign.minimumActive")}
                           className="rounded-md"
                         />
                       </div>
@@ -1455,13 +1450,15 @@ export default function Home() {
                       <Input
                         value={campaignSettingsForm.source}
                         onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, source: event.target.value }))}
-                        placeholder="Active source"
+                        placeholder={t("campaign.activeSource")}
+                        aria-label={t("campaign.activeSource")}
                         className="rounded-md"
                       />
                       <Input
                         value={campaignSettingsForm.tone}
                         onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, tone: event.target.value }))}
-                        placeholder="Active message tone"
+                        placeholder={t("campaign.activeTone")}
+                        aria-label={t("campaign.activeTone")}
                         className="rounded-md"
                       />
                     </div>
@@ -1472,24 +1469,25 @@ export default function Home() {
                         max="90"
                         value={campaignSettingsForm.followUpAfterDays}
                         onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, followUpAfterDays: event.target.value }))}
-                        placeholder="Active follow-up after days"
+                        placeholder={t("campaign.activeFollowUp")}
+                        aria-label={t("campaign.activeFollowUp")}
                         className="rounded-md"
                       />
                       <select
-                        aria-label="Campaign status"
+                        aria-label={t("campaign.status")}
                         value={campaignSettingsForm.status}
                         onChange={(event) => setCampaignSettingsForm((current) => ({ ...current, status: event.target.value as Campaign["status"] }))}
                         className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                       >
-                        <option value="active">Active</option>
-                        <option value="paused">Paused</option>
-                        <option value="completed">Completed</option>
-                        <option value="archived">Archived</option>
+                        <option value="active">{t("campaign.status.active")}</option>
+                        <option value="paused">{t("campaign.status.paused")}</option>
+                        <option value="completed">{t("campaign.status.completed")}</option>
+                        <option value="archived">{t("campaign.status.archived")}</option>
                       </select>
                     </div>
                     {completionBlockedByReadiness && details?.readiness ? (
                       <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-                        Complete is blocked until campaign readiness is ready. {details.readiness.blockers} blockers and {details.readiness.attentionItems} attention items remain.
+                        {t("campaign.completionBlocked")} {t("campaign.blockers")}: {number(details.readiness.blockers)}. {t("campaign.attention")}: {number(details.readiness.attentionItems)}.
                       </div>
                     ) : null}
                     <Button
@@ -1509,27 +1507,29 @@ export default function Home() {
                       }
                     >
                       <ClipboardCheck className="h-4 w-4" />
-                      Save campaign
+                      {t("campaign.save")}
                     </Button>
                   </div>
                 ) : null}
-                <Progress value={progress} className="h-2 rounded-md bg-muted" />
+                <Progress value={progress} aria-label={t("campaign.progress")} className="h-2 rounded-md bg-muted" />
                 <div className="grid grid-cols-3 gap-2 text-sm">
-                  <MiniStat label="Drafted" value={campaign?.messagesDrafted || 0} />
-                  <MiniStat label="Sent" value={campaign?.messagesSent || 0} />
-                  <MiniStat label="Replies" value={campaign?.responsesReceived || 0} />
+                  <MiniStat label={t("count.drafts")} value={number(campaign?.messagesDrafted || 0)} />
+                  <MiniStat label={t("dashboard.sent")} value={number(campaign?.messagesSent || 0)} />
+                  <MiniStat label={t("dashboard.replies")} value={number(campaign?.responsesReceived || 0)} />
                 </div>
                 {details?.readiness ? (
+                  <div lang="en">
                   <CampaignReadinessPanel
                     readiness={details.readiness}
                     actions={nextActions}
                     onOpenAction={(action) => void openNextAction(action)}
                   />
+                  </div>
                 ) : null}
               </CardContent>
             </Card>
 
-            <RuntimeExposurePanel runtimeStatus={runtimeStatus} healthStatus={healthStatus} copyStatus={runtimeCopyStatus} onCopyUrl={copyRuntimeUrl} />
+            <div lang="en"><RuntimeExposurePanel runtimeStatus={runtimeStatus} healthStatus={healthStatus} copyStatus={runtimeCopyStatus} onCopyUrl={copyRuntimeUrl} /></div>
           </div>
         </section>
 
@@ -1563,23 +1563,23 @@ export default function Home() {
             </TabsList>
           </div>
 
-          <TabsContent value="ledger" className="grid gap-4 lg:grid-cols-[1fr_380px]">
+          <TabsContent value="ledger" lang={locale} className="grid gap-4 lg:grid-cols-[1fr_380px]">
             <Card className="rounded-md py-5">
               <CardHeader className="px-5">
-                <CardTitle className="text-lg">Campaign ledger</CardTitle>
+                <CardTitle className="text-lg">{t("campaign.ledger")}</CardTitle>
               </CardHeader>
               <CardContent className="px-5">
                 <div className="overflow-x-auto rounded-md border">
                   <table className="w-full min-w-[860px] text-sm">
                     <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
                       <tr>
-                        <th className="px-4 py-3 font-medium">Campaign</th>
-                        <th className="px-4 py-3 font-medium">Target</th>
-                        <th className="px-4 py-3 font-medium">Mentors</th>
-                        <th className="px-4 py-3 font-medium">Approved</th>
-                        <th className="px-4 py-3 font-medium">Sent</th>
-                        <th className="px-4 py-3 font-medium">Responses</th>
-                        <th className="px-4 py-3 font-medium">Follow-ups</th>
+                        <th className="px-4 py-3 font-medium">{t("campaign.column")}</th>
+                        <th className="px-4 py-3 font-medium">{t("campaign.target")}</th>
+                        <th className="px-4 py-3 font-medium">{t("count.mentors")}</th>
+                        <th className="px-4 py-3 font-medium">{t("dashboard.approved")}</th>
+                        <th className="px-4 py-3 font-medium">{t("dashboard.sent")}</th>
+                        <th className="px-4 py-3 font-medium">{t("dashboard.replies")}</th>
+                        <th className="px-4 py-3 font-medium">{t("campaign.followUps")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -1590,15 +1590,15 @@ export default function Home() {
                               {item.title}
                             </button>
                             <div className="text-xs text-muted-foreground">
-                              {(projects.find((project) => project.id === item.projectId) || projects[0])?.title || "Unassigned project"} - {item.source}
+                              {(projects.find((project) => project.id === item.projectId) || projects[0])?.title || t("project.unassigned")} - {item.source}
                             </div>
                           </td>
                           <td className="max-w-[260px] px-4 py-3 text-muted-foreground">{item.targetMentorType}</td>
-                          <td className="px-4 py-3 font-mono">{item.totalMentors}</td>
-                          <td className="px-4 py-3 font-mono">{item.messagesApproved}</td>
-                          <td className="px-4 py-3 font-mono">{item.messagesSent}</td>
-                          <td className="px-4 py-3 font-mono">{item.responsesReceived}</td>
-                          <td className="px-4 py-3 font-mono">{item.followUpsDue}</td>
+                          <td className="px-4 py-3 font-mono">{number(item.totalMentors)}</td>
+                          <td className="px-4 py-3 font-mono">{number(item.messagesApproved)}</td>
+                          <td className="px-4 py-3 font-mono">{number(item.messagesSent)}</td>
+                          <td className="px-4 py-3 font-mono">{number(item.responsesReceived)}</td>
+                          <td className="px-4 py-3 font-mono">{number(item.followUpsDue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1610,28 +1610,30 @@ export default function Home() {
             <div className="space-y-4">
               <Card className="rounded-md py-5">
                 <CardHeader className="px-5">
-                  <CardTitle className="text-lg">Project context</CardTitle>
+                  <CardTitle className="text-lg">{t("project.context")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 px-5">
                   <div className="rounded-md border bg-muted/20 p-3">
-                    <div className="text-sm font-medium">{campaignProject?.title || "No project selected"}</div>
+                    <div className="text-sm font-medium">{campaignProject?.title || t("project.none")}</div>
                     <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {campaignProject?.description || "Projects group related mentor outreach campaigns."}
+                      {campaignProject?.description || t("project.noDescription")}
                     </div>
                   </div>
                   <div className="border-t pt-3">
-                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Active project</div>
+                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">{t("project.active")}</div>
                     <Input
                       value={projectEditForm.title}
                       onChange={(event) => setProjectEditForm((current) => ({ ...current, title: event.target.value }))}
-                      placeholder="Active project title"
+                      placeholder={t("project.activeTitle")}
+                      aria-label={t("project.activeTitle")}
                       className="mb-2 rounded-md"
                       disabled={!campaignProject}
                     />
                     <Textarea
                       value={projectEditForm.description}
                       onChange={(event) => setProjectEditForm((current) => ({ ...current, description: event.target.value }))}
-                      placeholder="Active project description"
+                      placeholder={t("project.activeDescription")}
+                      aria-label={t("project.activeDescription")}
                       className="mb-2 min-h-20 rounded-md"
                       disabled={!campaignProject}
                     />
@@ -1642,26 +1644,28 @@ export default function Home() {
                       disabled={!campaignProject || !projectEditForm.title.trim() || !projectContextChanged}
                     >
                       <ClipboardCheck className="h-4 w-4" />
-                      Save project
+                      {t("project.save")}
                     </Button>
                   </div>
                   <div className="border-t pt-3">
-                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">New project</div>
+                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">{t("project.new")}</div>
                     <Input
                       value={projectForm.title}
                       onChange={(event) => setProjectForm((current) => ({ ...current, title: event.target.value }))}
-                      placeholder="New project title"
+                      placeholder={t("project.newTitle")}
+                      aria-label={t("project.newTitle")}
                       className="mb-2 rounded-md"
                     />
                     <Textarea
                       value={projectForm.description}
                       onChange={(event) => setProjectForm((current) => ({ ...current, description: event.target.value }))}
-                      placeholder="New project description"
+                      placeholder={t("project.newDescription")}
+                      aria-label={t("project.newDescription")}
                       className="mb-2 min-h-20 rounded-md"
                     />
                     <Button variant="outline" className="w-full rounded-md" onClick={() => void createProject()} disabled={!projectForm.title.trim()}>
                       <Plus className="h-4 w-4" />
-                      Create project
+                      {t("project.create")}
                     </Button>
                   </div>
                 </CardContent>
@@ -1669,7 +1673,7 @@ export default function Home() {
 
               <Card className="rounded-md py-5">
                 <CardHeader className="px-5">
-                  <CardTitle className="text-lg">Source searches</CardTitle>
+                  <CardTitle className="text-lg">{t("source.searches")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 px-5">
                   <DiscoveryPlanPanel
@@ -1693,26 +1697,26 @@ export default function Home() {
                           <div>
                             <div className="font-medium">{source.name}</div>
                             <div className="mt-1 text-xs text-muted-foreground">
-                              {source.sourceType} - {source.status}
-                              {source.searchedAt ? ` - ${formatDate(source.searchedAt)}` : ""}
+                              {source.sourceType} - {t(`source.status.${source.status}`)}
+                              {source.searchedAt ? <span lang="en"> - {formatDate(source.searchedAt)}</span> : null}
                             </div>
                           </div>
                           <Badge variant="outline" className="rounded-md">
-                            {source.importedCount}/{source.resultsFound}
+                            {number(source.importedCount)}/{number(source.resultsFound)}
                           </Badge>
                         </div>
                         <div className="mt-3 grid grid-cols-3 gap-2">
-                          <MiniStat label="Linked" value={linkedMentors.length} />
-                          <MiniStat label="Strong" value={strongLinkedMentors.length} />
-                          <MiniStat label="Remaining" value={remainingResults} />
+                          <MiniStat label={t("source.linked")} value={number(linkedMentors.length)} />
+                          <MiniStat label={t("dashboard.strong")} value={number(strongLinkedMentors.length)} />
+                          <MiniStat label={t("source.remaining")} value={number(remainingResults)} />
                         </div>
-                        {source.searchQuery ? <div className="mt-2 text-xs text-muted-foreground">Query: {source.searchQuery}</div> : null}
+                        {source.searchQuery ? <div className="mt-2 text-xs text-muted-foreground">{t("source.query")}: {source.searchQuery}</div> : null}
                         {source.notes ? <div className="mt-2 text-xs leading-5 text-muted-foreground">{source.notes}</div> : null}
                         <div className="mt-3 rounded-md border bg-muted/20 p-3">
-                          <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Update search outcome</div>
+                          <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">{t("source.updateOutcome")}</div>
                           <div className="grid gap-2 md:grid-cols-3">
                             <select
-                              aria-label={`Update status for ${source.name}`}
+                              aria-label={`${t("source.status")}: ${source.name}`}
                               value={sourceEdit.status}
                               onChange={(event) =>
                                 setSourceEdits((current) => ({
@@ -1725,10 +1729,10 @@ export default function Home() {
                               }
                               className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                             >
-                              <option value="planned">Planned</option>
-                              <option value="searched">Searched</option>
-                              <option value="imported">Imported</option>
-                              <option value="skipped">Skipped</option>
+                              <option value="planned">{t("source.status.planned")}</option>
+                              <option value="searched">{t("source.status.searched")}</option>
+                              <option value="imported">{t("source.status.imported")}</option>
+                              <option value="skipped">{t("source.status.skipped")}</option>
                             </select>
                             <Input
                               type="number"
@@ -1743,8 +1747,8 @@ export default function Home() {
                                   },
                                 }))
                               }
-                              placeholder="Results"
-                              aria-label={`Update results found for ${source.name}`}
+                              placeholder={t("source.results")}
+                              aria-label={`${t("source.results")}: ${source.name}`}
                               className="rounded-md"
                             />
                             <Input
@@ -1760,8 +1764,8 @@ export default function Home() {
                                   },
                                 }))
                               }
-                              placeholder="Imported"
-                              aria-label={`Update imported count for ${source.name}`}
+                              placeholder={t("source.imported")}
+                              aria-label={`${t("source.imported")}: ${source.name}`}
                               className="rounded-md"
                             />
                           </div>
@@ -1776,8 +1780,8 @@ export default function Home() {
                                 },
                               }))
                             }
-                            placeholder="Search outcome notes"
-                            aria-label={`Update notes for ${source.name}`}
+                            placeholder={t("source.outcomeNotes")}
+                            aria-label={`${t("source.notes")}: ${source.name}`}
                             className="mt-2 min-h-20 rounded-md"
                           />
                           <Button
@@ -1787,7 +1791,7 @@ export default function Home() {
                             disabled={!sourceChanged}
                           >
                             <ClipboardCheck className="h-4 w-4" />
-                            Update source
+                            {t("source.update")}
                           </Button>
                         </div>
                         <Button
@@ -1799,47 +1803,50 @@ export default function Home() {
                             setActiveTab("mentors");
                           }}
                         >
-                          View mentors from source
+                          {t("source.viewMentors")}
                         </Button>
                       </div>
                     );
                   })}
                   {!details?.sourceRecords.length ? (
                     <div className="rounded-md border border-dashed p-5 text-center text-sm text-muted-foreground">
-                      No source searches recorded yet.
+                      {t("source.empty")}
                     </div>
                   ) : null}
                   <div className="border-t pt-3">
-                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Record source</div>
+                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">{t("source.record")}</div>
                     <Input
                       value={sourceForm.name}
                       onChange={(event) => setSourceForm((current) => ({ ...current, name: event.target.value }))}
-                      placeholder="Source search name"
+                      placeholder={t("source.name")}
+                      aria-label={t("source.name")}
                       className="mb-2 rounded-md"
                     />
                     <div className="mb-2 grid gap-2 md:grid-cols-2">
                       <Input
                         value={sourceForm.sourceType}
                         onChange={(event) => setSourceForm((current) => ({ ...current, sourceType: event.target.value }))}
-                        placeholder="Source type"
+                        placeholder={t("source.type")}
+                        aria-label={t("source.type")}
                         className="rounded-md"
                       />
                       <select
-                        aria-label="Source status"
+                        aria-label={t("source.status")}
                         value={sourceForm.status}
                         onChange={(event) => setSourceForm((current) => ({ ...current, status: event.target.value as MentorSource["status"] }))}
                         className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                       >
-                        <option value="planned">Planned</option>
-                        <option value="searched">Searched</option>
-                        <option value="imported">Imported</option>
-                        <option value="skipped">Skipped</option>
+                        <option value="planned">{t("source.status.planned")}</option>
+                        <option value="searched">{t("source.status.searched")}</option>
+                        <option value="imported">{t("source.status.imported")}</option>
+                        <option value="skipped">{t("source.status.skipped")}</option>
                       </select>
                     </div>
                     <Input
                       value={sourceForm.searchQuery}
                       onChange={(event) => setSourceForm((current) => ({ ...current, searchQuery: event.target.value }))}
-                      placeholder="Search query or filter"
+                      placeholder={t("source.queryInput")}
+                      aria-label={t("source.queryInput")}
                       className="mb-2 rounded-md"
                     />
                     <div className="mb-2 grid gap-2 md:grid-cols-2">
@@ -1848,7 +1855,8 @@ export default function Home() {
                         min="0"
                         value={sourceForm.resultsFound}
                         onChange={(event) => setSourceForm((current) => ({ ...current, resultsFound: event.target.value }))}
-                        placeholder="Results found"
+                        placeholder={t("source.results")}
+                        aria-label={t("source.results")}
                         className="rounded-md"
                       />
                       <Input
@@ -1856,19 +1864,21 @@ export default function Home() {
                         min="0"
                         value={sourceForm.importedCount}
                         onChange={(event) => setSourceForm((current) => ({ ...current, importedCount: event.target.value }))}
-                        placeholder="Imported count"
+                        placeholder={t("source.imported")}
+                        aria-label={t("source.imported")}
                         className="rounded-md"
                       />
                     </div>
                     <Textarea
                       value={sourceForm.notes}
                       onChange={(event) => setSourceForm((current) => ({ ...current, notes: event.target.value }))}
-                      placeholder="Source notes"
+                      placeholder={t("source.notes")}
+                      aria-label={t("source.notes")}
                       className="mb-2 min-h-20 rounded-md"
                     />
                     <Button variant="outline" className="w-full rounded-md" onClick={() => void recordSourceSearch()} disabled={!activeCampaignId || !sourceForm.name.trim()}>
                       <Search className="h-4 w-4" />
-                      Record source
+                      {t("source.record")}
                     </Button>
                   </div>
                 </CardContent>
@@ -1876,10 +1886,11 @@ export default function Home() {
 
               <Card className="rounded-md py-5">
                 <CardHeader className="px-5">
-                  <CardTitle className="text-lg">New campaign</CardTitle>
+                  <CardTitle className="text-lg">{t("campaign.new")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 px-5">
                   <select
+                    aria-label={t("campaign.newProject")}
                     value={campaignForm.projectId || campaignProject?.id || projects[0]?.id || ""}
                     onChange={(event) => setCampaignForm((current) => ({ ...current, projectId: event.target.value }))}
                     className="h-10 w-full rounded-md border bg-background px-3 text-sm"
@@ -1891,32 +1902,33 @@ export default function Home() {
                       </option>
                     ))}
                   </select>
-                  <Input value={campaignForm.title} onChange={(event) => setCampaignForm((current) => ({ ...current, title: event.target.value }))} placeholder="Campaign title" className="rounded-md" />
-                  <Textarea value={campaignForm.goal} onChange={(event) => setCampaignForm((current) => ({ ...current, goal: event.target.value }))} placeholder="Outreach goal" className="min-h-24 rounded-md" />
-                  <Input value={campaignForm.targetMentorType} onChange={(event) => setCampaignForm((current) => ({ ...current, targetMentorType: event.target.value }))} placeholder="Target mentor type" className="rounded-md" />
+                  <Input value={campaignForm.title} onChange={(event) => setCampaignForm((current) => ({ ...current, title: event.target.value }))} placeholder={t("campaign.title")} aria-label={t("campaign.title")} className="rounded-md" />
+                  <Textarea value={campaignForm.goal} onChange={(event) => setCampaignForm((current) => ({ ...current, goal: event.target.value }))} placeholder={t("campaign.goal")} aria-label={t("campaign.goal")} className="min-h-24 rounded-md" />
+                  <Input value={campaignForm.targetMentorType} onChange={(event) => setCampaignForm((current) => ({ ...current, targetMentorType: event.target.value }))} placeholder={t("campaign.targetType")} aria-label={t("campaign.targetType")} className="rounded-md" />
                   <div className="rounded-md border bg-muted/20 p-3">
-                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">Fit criteria</div>
+                    <div className="mb-2 text-xs font-medium uppercase tracking-normal text-muted-foreground">{t("campaign.criteria")}</div>
                     <div className="grid gap-2 md:grid-cols-2">
-                      <Input value={campaignForm.skills} onChange={(event) => setCampaignForm((current) => ({ ...current, skills: event.target.value }))} placeholder="Skills, comma separated" aria-label="New campaign fit skills" className="rounded-md" />
-                      <Input value={campaignForm.industries} onChange={(event) => setCampaignForm((current) => ({ ...current, industries: event.target.value }))} placeholder="Industries, comma separated" aria-label="New campaign fit industries" className="rounded-md" />
-                      <Input value={campaignForm.locations} onChange={(event) => setCampaignForm((current) => ({ ...current, locations: event.target.value }))} placeholder="Locations, comma separated" aria-label="New campaign preferred locations" className="rounded-md" />
-                      <Input type="number" min="35" max="95" value={campaignForm.minimumFitScore} onChange={(event) => setCampaignForm((current) => ({ ...current, minimumFitScore: event.target.value }))} placeholder="Minimum fit score" aria-label="New campaign minimum fit score" className="rounded-md" />
+                      <Input value={campaignForm.skills} onChange={(event) => setCampaignForm((current) => ({ ...current, skills: event.target.value }))} placeholder={t("mentor.skills")} aria-label={t("campaign.newSkills")} className="rounded-md" />
+                      <Input value={campaignForm.industries} onChange={(event) => setCampaignForm((current) => ({ ...current, industries: event.target.value }))} placeholder={t("mentor.industryInput")} aria-label={t("campaign.newIndustries")} className="rounded-md" />
+                      <Input value={campaignForm.locations} onChange={(event) => setCampaignForm((current) => ({ ...current, locations: event.target.value }))} placeholder={t("campaign.locationsInput")} aria-label={t("campaign.newLocations")} className="rounded-md" />
+                      <Input type="number" min="35" max="95" value={campaignForm.minimumFitScore} onChange={(event) => setCampaignForm((current) => ({ ...current, minimumFitScore: event.target.value }))} placeholder={t("campaign.minimum")} aria-label={t("campaign.newMinimum")} className="rounded-md" />
                     </div>
                   </div>
-                  <Input value={campaignForm.source} onChange={(event) => setCampaignForm((current) => ({ ...current, source: event.target.value }))} placeholder="Source" className="rounded-md" />
-                  <Input value={campaignForm.tone} onChange={(event) => setCampaignForm((current) => ({ ...current, tone: event.target.value }))} placeholder="Message tone" className="rounded-md" />
+                  <Input value={campaignForm.source} onChange={(event) => setCampaignForm((current) => ({ ...current, source: event.target.value }))} placeholder={t("mentor.source")} aria-label={t("mentor.source")} className="rounded-md" />
+                  <Input value={campaignForm.tone} onChange={(event) => setCampaignForm((current) => ({ ...current, tone: event.target.value }))} placeholder={t("campaign.messageTone")} aria-label={t("campaign.messageTone")} className="rounded-md" />
                   <Input
                     type="number"
                     min="1"
                     max="90"
                     value={campaignForm.followUpAfterDays}
                     onChange={(event) => setCampaignForm((current) => ({ ...current, followUpAfterDays: event.target.value }))}
-                    placeholder="Follow-up after days"
+                    placeholder={t("campaign.followUpInput")}
+                    aria-label={t("campaign.followUpInput")}
                     className="rounded-md"
                   />
                   <Button className="w-full rounded-md" onClick={() => void createCampaign()} disabled={!campaignForm.title.trim() || !campaignForm.goal.trim() || !projects.length}>
                     <Plus className="h-4 w-4" />
-                    Create campaign
+                    {t("campaign.create")}
                   </Button>
                 </CardContent>
               </Card>
@@ -3134,22 +3146,23 @@ function DiscoveryPlanPanel({
   onOpen,
 }: {
   plan: CampaignDetails["discoveryPlan"] | null;
-  status: string;
+  status: DiscoveryNotice | null;
   onApply: () => void;
   onCopy: (source: DiscoveryPlanSource) => void;
   onOpen: (source: DiscoveryPlanSource) => void;
 }) {
+  const { t, locale, number } = useTranslation();
   if (!plan) {
-    return <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">Select a campaign to build its discovery plan.</div>;
+    return <div lang={locale} className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{t("source.selectCampaign")}</div>;
   }
 
   const recordedCount = plan.sources.length - plan.unrecordedCount;
   return (
-    <div className="rounded-md border bg-muted/20 p-3">
+    <div lang={locale} className="rounded-md border bg-muted/20 p-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="text-sm font-medium">Campaign discovery plan</div>
-          <div className="mt-1 text-xs text-muted-foreground">{recordedCount} of {plan.sources.length} recommended sources in the ledger</div>
+          <div className="text-sm font-medium">{t("source.plan")}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{t("source.recordedCount")}: {number(recordedCount)} / {number(plan.sources.length)}</div>
         </div>
         <Button
           size="sm"
@@ -3159,7 +3172,7 @@ function DiscoveryPlanPanel({
           onClick={onApply}
         >
           <Plus className="h-4 w-4" />
-          Add {plan.unrecordedCount || "recommended"} sources
+          {t("source.add")} ({number(plan.unrecordedCount)})
         </Button>
       </div>
       <div className="mt-3 divide-y border-t">
@@ -3171,28 +3184,34 @@ function DiscoveryPlanPanel({
                 <div className="mt-1 text-xs text-muted-foreground">{source.sourceType}</div>
               </div>
               <Badge variant="outline" className="rounded-md">
-                {source.status === "recorded" ? "In ledger" : "Recommended"}
+                {t(source.status === "recorded" ? "source.recorded" : "source.recommended")}
               </Badge>
             </div>
             <div className="mt-2 break-words rounded-md border bg-background px-2.5 py-2 font-mono text-xs leading-5">
               {source.searchQuery}
             </div>
-            <div className="mt-2 text-xs leading-5 text-muted-foreground">{source.rationale}</div>
+            <div lang="en" className="mt-2 text-xs leading-5 text-muted-foreground">{source.rationale}</div>
             <div className="mt-2 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" className="h-8 rounded-md" onClick={() => onCopy(source)} aria-label={`Copy ${source.name} query`}>
+              <Button size="sm" variant="outline" className="h-8 rounded-md" onClick={() => onCopy(source)} aria-label={`${t("source.copy")}: ${source.name}`}>
                 <Copy className="h-3.5 w-3.5" />
-                Copy query
+                {t("source.copy")}
               </Button>
-              <Button size="sm" variant="outline" className="h-8 rounded-md" onClick={() => onOpen(source)} aria-label={`Open ${source.name}`}>
-                <ExternalLink className="h-3.5 w-3.5" />
-                Open source
+              <Button asChild size="sm" variant="outline" className="h-8 rounded-md">
+                <a href={source.launchUrl} target="_blank" rel="noopener noreferrer" onClick={() => onOpen(source)} aria-label={`${t("source.open")}: ${source.name} (${t("source.newTab")})`}>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  {t("source.open")}
+                </a>
               </Button>
             </div>
-            <div className="mt-2 text-xs text-muted-foreground">{source.privacyNote}</div>
+            <div lang="en" className="mt-2 text-xs text-muted-foreground">{source.privacyNote}</div>
           </div>
         ))}
       </div>
-      {status ? <div className="border-t pt-2 text-xs text-muted-foreground">{status}</div> : null}
+      {status ? (
+        <div role="status" className="border-t pt-2 text-xs text-muted-foreground">
+          {t(status.message)}{status.count !== undefined ? `: ${number(status.count)}` : ""}{status.sourceName ? `: ${status.sourceName}` : ""}
+        </div>
+      ) : null}
     </div>
   );
 }
