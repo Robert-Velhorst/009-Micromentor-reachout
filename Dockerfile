@@ -21,7 +21,7 @@ RUN set -eux; \
 FROM node-runtime AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci && npm audit --audit-level=low
 COPY . .
 RUN npm run check:release
 
