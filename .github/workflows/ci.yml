@@ -35,7 +35,11 @@ jobs:
       - name: Start image and verify HTTP response
         run: |
           docker run --detach --name maro-web-ci --publish 127.0.0.1:8080:80 maro-web:ci
-          curl --fail --retry 20 --retry-delay 2 --retry-connrefused http://127.0.0.1:8080/
+          if ! curl --fail --silent --show-error --retry 20 --retry-delay 2 --retry-connrefused --retry-all-errors http://127.0.0.1:8080/; then
+            docker ps --all
+            docker logs maro-web-ci
+            exit 1
+          fi
       - name: Remove test container
         if: always()
         run: docker rm --force maro-web-ci || true
