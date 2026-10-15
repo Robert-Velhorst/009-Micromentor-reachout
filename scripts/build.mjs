@@ -70,18 +70,17 @@ async function withBuildRoot(callback) {
 await withBuildRoot(async (buildRoot) => {
   fs.rmSync(path.join(buildRoot, "dist"), { recursive: true, force: true });
   await run(process.execPath, ["node_modules/vite/bin/vite.js", "build"], buildRoot);
-  await run(
-    process.execPath,
-    [
-      "node_modules/esbuild/bin/esbuild",
-      "server/index.ts",
-      "--platform=node",
-      "--bundle",
-      "--format=cjs",
-      "--outfile=dist/index.cjs",
-      `--define:process.env.MARO_BUILD_VERSION=${JSON.stringify(appVersion)}`,
-    ],
-    buildRoot
-  );
+
+  const esbuildPath = path.join(buildRoot, "node_modules/esbuild/bin/esbuild");
+  const esbuildArgs = [
+    "server/index.ts",
+    "--platform=node",
+    "--bundle",
+    "--format=cjs",
+    "--outfile=dist/index.cjs",
+    `--define:process.env.MARO_BUILD_VERSION=${JSON.stringify(appVersion)}`,
+  ];
+  await run(isWindows ? process.execPath : esbuildPath, isWindows ? [esbuildPath, ...esbuildArgs] : esbuildArgs, buildRoot);
+
   await run(process.execPath, ["scripts/build-extension.mjs"], buildRoot);
 });
