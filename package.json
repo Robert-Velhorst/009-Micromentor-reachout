@@ -2,7 +2,7 @@
   "name": "mentor-messenger-landing",
   "version": "1.1.0",
   "type": "module",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "npm run tunnel",
     "dev:vite": "vite --host 127.0.0.1",
