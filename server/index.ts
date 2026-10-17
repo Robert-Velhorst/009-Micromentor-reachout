@@ -1,4 +1,5 @@
 import express, { type ErrorRequestHandler, type Request } from "express";
+import { rateLimit } from "express-rate-limit";
 import { createServer } from "http";
 import path from "path";
 import { registerLedgerRoutes } from "./ledger";
@@ -87,6 +88,12 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   const isProduction = process.env.NODE_ENV === "production";
+  const spaFallbackLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 600,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+  });
 
   app.disable("x-powered-by");
   app.use((_req, res, next) => {
@@ -217,7 +224,7 @@ async function startServer() {
   );
 
   // Handle client-side routing - serve index.html for all routes
-  app.get("/{*splat}", (_req, res) => {
+  app.get("/{*splat}", spaFallbackLimiter, (_req, res) => {
     res.sendFile(path.join(staticPath, "index.html"));
   });
 
