@@ -5,7 +5,7 @@ Archive reconciliation and dependency refresh: 2026-07-26
 
 ## Repository Understanding
 
-MARO retains the existing React, Vite build, and Express structure while using the Express server as the operational boundary. Vite is a build tool only in the default workflow: `npm run dev` and `npm run preview` build MARO and launch the protected ngrok flow. The production command center is `client/src/pages/Home.tsx`; `server/ledger.ts` owns the persisted local operating ledger and API behavior.
+MARO retains the existing React, Vite build, and Express structure while using the Express server as the operational boundary. The default `npm run dev` workflow serves Vite on loopback, and `npm run preview` builds MARO and starts its local Express server. The explicitly invoked `npm run tunnel` command remains available only for temporary remote integration checks. The production command center is `client/src/pages/Home.tsx`; `server/ledger.ts` owns the persisted local operating ledger and API behavior.
 
 The ledger uses local JSON persistence with optional AES-256-GCM encryption rather than introducing a second database stack. It is hidden from git, normalized on load, cached for read efficiency, and exposed through service-like route helpers. This satisfies the local-first persistence objective while preserving a possible later storage migration boundary.
 
