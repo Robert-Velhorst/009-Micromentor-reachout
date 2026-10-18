@@ -25,7 +25,7 @@ RUN npm ci && npm audit --audit-level=low
 COPY . .
 RUN npm run check:release
 
-FROM nginx:1.30.5-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94 AS runtime
+FROM nginx:1.31.0-alpine@sha256:2f07d83bf561b506400dc183b1b2003803e39efbd22451f848adaba14d28c7c7 AS runtime
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
