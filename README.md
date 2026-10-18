@@ -129,7 +129,7 @@ The HAI integration status endpoint is read-only. It exposes campaign readiness,
 
 - Windows 11, macOS, or Linux for development.
 - Node.js and npm for development.
-- ngrok CLI installed and authenticated if you want the default dev command to expose the app through ngrok.
+- ngrok CLI installed and authenticated only if you explicitly need the optional temporary tunnel for an integration check.
 
 ## Development
 
@@ -139,18 +139,18 @@ Install dependencies:
 npm install
 ```
 
-Run the default ngrok flow:
+Run the local-only development server:
 
 ```sh
 npm run dev
 ```
 
-This builds the production app, starts the local Node server on `127.0.0.1:3000`, then opens a basic-auth protected ngrok tunnel to that local server. Set `NGROK_BASIC_AUTH` first; MARO refuses to create an unprotected tunnel by default.
+The default development command binds Vite to loopback. It does not launch ngrok or expose the local ledger publicly.
 
-For a local Vite-only development server:
+To run the production build locally:
 
 ```sh
-npm run dev:vite
+npm run preview
 ```
 
 The browser debug collector is disabled by default to avoid background request logging and `.manus-logs` churn during normal development. Enable it only for focused UI diagnostics:
@@ -169,7 +169,7 @@ npm run start
 
 The production server binds to `127.0.0.1` by default. Set `PORT` or `HOST` if you need a different local port or host.
 
-## ngrok
+## Optional temporary ngrok integration check
 
 Install and authenticate ngrok first:
 
@@ -177,18 +177,18 @@ Install and authenticate ngrok first:
 ngrok config add-authtoken <token>
 ```
 
-Required basic auth for the default tunnel flow:
+Start the explicitly requested tunnel only when a temporary remote integration check requires it:
 
 ```sh
 set NGROK_BASIC_AUTH=user:password
-npm run dev
+npm run tunnel
 ```
 
-To intentionally allow an unauthenticated public tunnel, use the explicit override:
+An unauthenticated public tunnel is blocked by default. If a specific test requires it, the explicit override is:
 
 ```sh
 set MARO_ALLOW_PUBLIC_TUNNEL=1
-npm run dev
+npm run tunnel
 ```
 
 The command center reads `GET /api/runtime/status` to show the app version, local URL, detected ngrok tunnel URL, basic-auth status, and explicit public-tunnel opt-in. If an explicitly allowed public tunnel is active without `NGROK_BASIC_AUTH`, MARO shows a first-viewport warning before you share the tunnel URL.
