@@ -12,7 +12,6 @@ import {
   EyeOff,
   FileText,
   Gauge,
-  Globe2,
   Lock,
   MailPlus,
   MessageSquareReply,
@@ -994,8 +993,6 @@ export default function Home() {
       });
   }, [details?.mentors, details?.messages, responsesByMentor, followUpsByMentor, outcomesByMentor, resultFilter]);
   const latestResourceSession = details?.resourceSessions[0] || null;
-  const publicTunnelWithoutAuth = Boolean(runtimeStatus?.warnings.includes("ngrok_public_without_basic_auth"));
-
   const isSensitiveVisible = (key: string) => !privacyMode || revealedSensitive.has(key);
   const revealSensitive = (key: string) =>
     setRevealedSensitive((current) => {
@@ -1184,13 +1181,6 @@ export default function Home() {
             {error}
           </div>
         ) : null}
-        {publicTunnelWithoutAuth ? (
-          <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            <AlertTriangle className="h-4 w-4" />
-            ngrok was explicitly opened publicly without `NGROK_BASIC_AUTH`. Protect the tunnel before sharing sensitive mentor data.
-          </div>
-        ) : null}
-
         <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
           <Card className="rounded-md py-5">
             <CardHeader className="gap-4 px-5">
@@ -3452,58 +3442,41 @@ function RuntimeExposurePanel({
   copyStatus: string;
   onCopyUrl: (value: string | null | undefined) => void;
 }) {
-  const tunnelActive = Boolean(runtimeStatus?.tunnel.active);
-  const basicAuth = Boolean(runtimeStatus?.auth.basicAuthConfigured);
-  const publicTunnelAllowed = Boolean(runtimeStatus?.auth.publicTunnelExplicitlyAllowed);
-  const publicWithoutAuth = Boolean(runtimeStatus?.warnings.includes("ngrok_public_without_basic_auth"));
   const encryptedStorage = Boolean(healthStatus?.storage.encrypted);
+  const mode = runtimeStatus?.mode;
 
   return (
     <Card className="rounded-md py-5">
       <CardHeader className="px-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-lg">Runtime exposure</CardTitle>
-            <div className="mt-1 text-xs text-muted-foreground">Local and ngrok reachability</div>
+            <CardTitle className="text-lg">Runtime endpoint</CardTitle>
+            <div className="mt-1 text-xs text-muted-foreground">Server listen address</div>
           </div>
           <Badge
             variant="outline"
-            className={tunnelActive ? "rounded-md border-amber-200 bg-amber-50 text-amber-700" : "rounded-md border-emerald-200 bg-emerald-50 text-emerald-700"}
+            className="rounded-md border-emerald-200 bg-emerald-50 text-emerald-700"
           >
-            {tunnelActive ? "Tunnel active" : "Local only"}
+            {mode === "production" ? "Production" : mode === "development" ? "Local" : "Loading"}
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-3 px-5">
         <RuntimeUrlRow
           icon={<Lock className="h-4 w-4" />}
-          label="Local URL"
+          label="Listen address"
           value={runtimeStatus?.localUrl || "Loading"}
           onCopy={() => onCopyUrl(runtimeStatus?.localUrl)}
-        />
-        <RuntimeUrlRow
-          icon={<Globe2 className="h-4 w-4" />}
-          label="Tunnel URL"
-          value={runtimeStatus?.tunnel.publicUrl || "Not active"}
-          onCopy={() => onCopyUrl(runtimeStatus?.tunnel.publicUrl)}
-          disabled={!runtimeStatus?.tunnel.publicUrl}
         />
         <div className="grid grid-cols-2 gap-2 text-sm">
           <MiniStat label="Version" value={runtimeStatus?.version || "Loading"} />
           <MiniStat label="Mode" value={runtimeStatus?.mode || "Loading"} />
-          <MiniStat label="Auth" value={basicAuth ? "Basic auth" : publicTunnelAllowed ? "Public opt-in" : "Required"} />
           <MiniStat label="Ledger" value={encryptedStorage ? "Encrypted" : healthStatus ? "Plain JSON" : "Loading"} />
         </div>
         {copyStatus ? <div className="text-xs text-muted-foreground">{copyStatus}</div> : null}
-        {publicWithoutAuth ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-            This ngrok URL was explicitly allowed to be public. Set `NGROK_BASIC_AUTH=user:pass` before sharing sensitive mentor data.
-          </div>
-        ) : (
-          <div className="rounded-md border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
-            Unprotected tunnels are blocked by default. Tunnel metadata is read server-side from the local ngrok inspector when available.
-          </div>
-        )}
+        <div className="rounded-md border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+          Public tunnel access is not supported. Configure only approved production hosts through the deployment proxy.
+        </div>
       </CardContent>
     </Card>
   );

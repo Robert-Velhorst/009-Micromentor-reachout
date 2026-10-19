@@ -433,17 +433,6 @@ export type RuntimeStatus = {
   host: string;
   port: number;
   localUrl: string;
-  tunnel: {
-    active: boolean;
-    publicUrl: string | null;
-    inspectorUrl: string | null;
-    target: string | null;
-  };
-  auth: {
-    basicAuthConfigured: boolean;
-    publicTunnelExplicitlyAllowed: boolean;
-  };
-  warnings: Array<"ngrok_public_without_basic_auth" | string>;
 };
 
 export type HealthStatus = {

@@ -40,32 +40,27 @@ function assertSourceIncludes(source, expected, message) {
   if (!source.includes(expected)) throw new Error(message);
 }
 
-console.log("\n[release-check] Secure ngrok policy");
-const tunnelLauncherSource = fs.readFileSync(path.join(process.cwd(), "scripts", "ngrok.mjs"), "utf8");
-const installerSource = fs.readFileSync(path.join(process.cwd(), "scripts", "build-windows-installer.mjs"), "utf8");
+console.log("\n[release-check] Public tunnel support is retired");
+const tunnelLauncherPath = path.join(process.cwd(), "scripts", "ngrok.mjs");
+if (fs.existsSync(tunnelLauncherPath)) {
+  throw new Error("The retired public tunnel launcher is still present");
+}
+for (const relativePath of [
+  "package.json",
+  "README.md",
+  "server/index.ts",
+  "client/src/lib/ledgerApi.ts",
+  "client/src/pages/Home.tsx",
+  "scripts/build-windows-installer.mjs",
+]) {
+  const source = fs.readFileSync(path.join(process.cwd(), relativePath), "utf8");
+  if (/ngrok|NGROK_/i.test(source)) {
+    throw new Error(`Retired public tunnel support remains in ${relativePath}`);
+  }
+}
 const serverSource = fs.readFileSync(path.join(process.cwd(), "server", "index.ts"), "utf8");
 const ledgerSource = fs.readFileSync(path.join(process.cwd(), "server", "ledger.ts"), "utf8");
 const ledgerClientSource = fs.readFileSync(path.join(process.cwd(), "client", "src", "lib", "ledgerApi.ts"), "utf8");
-assertSourceIncludes(
-  tunnelLauncherSource,
-  "if (!basicAuth && !allowPublicTunnel)",
-  "ngrok launcher no longer blocks unauthenticated public tunnels by default"
-);
-assertSourceIncludes(
-  tunnelLauncherSource,
-  'process.env.MARO_ALLOW_PUBLIC_TUNNEL === "1"',
-  "ngrok launcher no longer requires an explicit public-tunnel opt-in"
-);
-assertSourceIncludes(
-  installerSource,
-  'if "%MARO_ALLOW_PUBLIC_TUNNEL%"=="1"',
-  "Windows launcher no longer requires an explicit public-tunnel opt-in"
-);
-assertSourceIncludes(
-  installerSource,
-  "Public tunnel not started.",
-  "Windows launcher no longer reports that an unprotected tunnel was blocked"
-);
 assertSourceIncludes(
   serverSource,
   'req.get("X-MARO-Request") !== "1"',

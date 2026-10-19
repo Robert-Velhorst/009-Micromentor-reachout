@@ -7,11 +7,6 @@ import { registerLedgerRoutes } from "./ledger";
 const serverDir = path.dirname(path.resolve(process.argv[1] || "."));
 const appVersion = process.env.MARO_APP_VERSION || process.env.MARO_BUILD_VERSION || "development";
 const localHosts = new Set(["127.0.0.1", "localhost", "::1"]);
-const ngrokHostSuffixes = [".ngrok.app", ".ngrok-free.app", ".ngrok.io"];
-
-function hostAlias(host: string) {
-  return host === "localhost" ? "127.0.0.1" : host;
-}
 
 function requestHostname(value: string | undefined) {
   const host = String(value || "").split(",", 1)[0].trim();
@@ -37,51 +32,6 @@ function hostIsAllowed(req: Request) {
   const hostname = requestHostname(req.get("host"));
   if (!hostname) return false;
   if (localHosts.has(hostname) || configuredAllowedHosts().has(hostname)) return true;
-
-  const tunnelEnabled = Boolean(process.env.NGROK_BASIC_AUTH) || process.env.MARO_ALLOW_PUBLIC_TUNNEL === "1";
-  return tunnelEnabled && ngrokHostSuffixes.some((suffix) => hostname.endsWith(suffix));
-}
-
-function tunnelTargetsServer(addr: string | undefined, host: string, port: number) {
-  if (!addr) return false;
-  try {
-    const parsed = new URL(addr);
-    const tunnelHost = hostAlias(parsed.hostname);
-    const expectedHost = hostAlias(host);
-    const tunnelPort = Number(parsed.port || (parsed.protocol === "https:" ? 443 : 80));
-    return tunnelPort === port && tunnelHost === expectedHost;
-  } catch {
-    return addr.includes(`:${port}`);
-  }
-}
-
-async function detectTunnelStatus(host: string, port: number) {
-  try {
-    const response = await fetch("http://127.0.0.1:4040/api/tunnels", {
-      signal: AbortSignal.timeout(750),
-    });
-    if (!response.ok) {
-      throw new Error(`ngrok API returned ${response.status}`);
-    }
-    const data = await response.json() as {
-      tunnels?: Array<{ proto?: string; public_url?: string; config?: { addr?: string } }>;
-    };
-    const matchingTunnels = (data.tunnels || []).filter((item) => tunnelTargetsServer(item.config?.addr, host, port));
-    const tunnel = matchingTunnels.find((item) => item.proto === "https") ?? matchingTunnels[0] ?? null;
-    return {
-      active: Boolean(tunnel?.public_url),
-      publicUrl: tunnel?.public_url ?? null,
-      inspectorUrl: "http://127.0.0.1:4040",
-      target: tunnel?.config?.addr ?? null,
-    };
-  } catch {
-    return {
-      active: false,
-      publicUrl: null,
-      inspectorUrl: null,
-      target: null,
-    };
-  }
 }
 
 async function startServer() {
@@ -157,24 +107,15 @@ async function startServer() {
 
   registerLedgerRoutes(app);
 
-  app.get("/api/runtime/status", async (_req, res) => {
+  app.get("/api/runtime/status", (_req, res) => {
     const port = Number(process.env.PORT || 3000);
     const host = process.env.HOST || "127.0.0.1";
-    const tunnel = await detectTunnelStatus(host, port);
     res.json({
       mode: isProduction ? "production" : "development",
       version: appVersion,
       host,
       port,
       localUrl: `http://${host}:${port}`,
-      tunnel,
-      auth: {
-        basicAuthConfigured: Boolean(process.env.NGROK_BASIC_AUTH),
-        publicTunnelExplicitlyAllowed: process.env.MARO_ALLOW_PUBLIC_TUNNEL === "1",
-      },
-      warnings: tunnel.active && !process.env.NGROK_BASIC_AUTH
-        ? ["ngrok_public_without_basic_auth"]
-        : [],
     });
   });
 

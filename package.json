@@ -10,7 +10,6 @@
     "build:extension": "node scripts/build-extension.mjs",
     "installer:win": "npm run build && node scripts/build-windows-installer.mjs",
     "start": "node dist/index.cjs",
-    "tunnel": "npm run build && node scripts/ngrok.mjs",
     "preview": "npm run build && npm run start",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "check:api": "npm run build && node scripts/check-ledger-api.mjs",
