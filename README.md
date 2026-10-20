@@ -35,7 +35,7 @@ MARO is a local-first MicroMentor outreach operating ledger for preparing, revie
 - Review campaign results with response rate, booking rate, positive outcome rate, overdue follow-ups, and outcome filters.
 - Generate local process-measured resource-cost records using `Resource Cost x 2 = Final Price`.
 - Persist invoice/usage-report snapshots for campaign billing transparency without charging anyone.
-- Show whether the app is local-only or reachable through ngrok, including a warning when the tunnel is public without basic auth.
+- Show the active local or hosted runtime endpoint without opening a public tunnel.
 - Export, validate, restore, and reset the local workspace with schema-versioned JSON backups.
 - Use session privacy mode to hide mentor notes, draft bodies, response text, follow-up text, and delivery evidence until explicitly revealed.
 - Open the stored source profile and copy an approved snapshot from the message queue for manual MicroMentor handoff; MARO never auto-sends.
@@ -99,7 +99,7 @@ The Express server now exposes operational API routes before serving the fronten
 
 All `POST`, `PATCH`, `PUT`, and `DELETE` requests under `/api` must include `X-MARO-Request: 1`. The app adds this marker automatically. Combined with the server's no-CORS policy, `Sec-Fetch-Site` check, and request-host allowlist, it prevents cross-site pages, form posts, and DNS-rebinding hosts from reading or changing the local ledger. Trusted local integrations must add the header explicitly.
 
-MARO accepts `localhost`, `127.0.0.1`, and IPv6 loopback hosts by default. Protected ngrok hosts are accepted only while tunnel mode is configured. Set `MARO_ALLOWED_HOSTS` to a comma-separated list of exact additional hosts when placing MARO behind a trusted local reverse proxy.
+MARO accepts `localhost`, `127.0.0.1`, and IPv6 loopback hosts by default. Set `MARO_ALLOWED_HOSTS` to a comma-separated list of exact additional hosts when placing MARO behind an approved reverse proxy. Wildcard hosts and public tunnels are not supported.
 
 The default persistence file is `data/maro-ledger.json`. Set `MARO_DATA_DIR` to store it elsewhere. Runtime ledger data is ignored by git. Writes use a flushed temporary file plus atomic replacement and retain `maro-ledger.json.backup` as the previous valid state. If the primary file becomes unreadable, MARO restores the rolling backup and records a high-risk recovery audit event.
 
@@ -128,8 +128,7 @@ The HAI integration status endpoint is read-only. It exposes campaign readiness,
 ## Requirements
 
 - Windows 11, macOS, or Linux for development.
-- Node.js and npm for development.
-- ngrok CLI installed and authenticated only if you explicitly need the optional temporary tunnel for an integration check.
+- Node.js 24.22.0 LTS or 26.12.0 Current, and npm for development. The production image uses Node.js 26.12.0.
 
 ## Development
 
@@ -145,7 +144,7 @@ Run the local-only development server:
 npm run dev
 ```
 
-The default development command binds Vite to loopback. It does not launch ngrok or expose the local ledger publicly.
+The development command binds Vite to loopback. Remote deployment is separate and targets Hetzner; no public tunnel is included.
 
 To run the production build locally:
 
@@ -167,31 +166,11 @@ npm run build
 npm run start
 ```
 
-The production server binds to `127.0.0.1` by default. Set `PORT` or `HOST` if you need a different local port or host.
+The production server binds to `127.0.0.1` by default. Set `PORT` or `HOST` only for a configured reverse-proxy deployment.
 
-## Optional temporary ngrok integration check
+## Remote deployment
 
-Install and authenticate ngrok first:
-
-```sh
-ngrok config add-authtoken <token>
-```
-
-Start the explicitly requested tunnel only when a temporary remote integration check requires it:
-
-```sh
-set NGROK_BASIC_AUTH=user:password
-npm run tunnel
-```
-
-An unauthenticated public tunnel is blocked by default. If a specific test requires it, the explicit override is:
-
-```sh
-set MARO_ALLOW_PUBLIC_TUNNEL=1
-npm run tunnel
-```
-
-The command center reads `GET /api/runtime/status` to show the app version, local URL, detected ngrok tunnel URL, basic-auth status, and explicit public-tunnel opt-in. If an explicitly allowed public tunnel is active without `NGROK_BASIC_AUTH`, MARO shows a first-viewport warning before you share the tunnel URL.
+Hetzner is the production target. Follow [DEPLOYMENT_TARGET.md](DEPLOYMENT_TARGET.md) and the deployment guide before preparing a cutover. The repository does not include a public tunnel launcher.
 
 ## Windows Installer
 
@@ -207,9 +186,9 @@ The generated installer is written to:
 artifacts/MARO-Windows11-Setup.exe
 ```
 
-The installer embeds the built app and a Node runtime, installs MARO into `%LOCALAPPDATA%\MARO`, writes installed-version metadata, creates launch and uninstall shortcuts, registers an Add/Remove Programs uninstall entry for the current Windows user, starts the local server, and opens the browser. When ngrok is available on PATH, the launcher opens a tunnel only when `NGROK_BASIC_AUTH` is set or `MARO_ALLOW_PUBLIC_TUNNEL=1` explicitly permits public access.
+The installer embeds the built app and a Node runtime, installs MARO into `%LOCALAPPDATA%\MARO`, writes installed-version metadata, creates launch and uninstall shortcuts, registers an Add/Remove Programs uninstall entry for the current Windows user, starts the local server, and opens the browser. The installed app does not launch public tunnels.
 
-To remove an installed copy, use Windows Settings > Apps > Installed apps, or run the Start Menu shortcut named `Uninstall MARO`. Close MARO server and ngrok windows before uninstalling.
+To remove an installed copy, use Windows Settings > Apps > Installed apps, or run the Start Menu shortcut named `Uninstall MARO`. Close the MARO server before uninstalling.
 
 ## Checks
 

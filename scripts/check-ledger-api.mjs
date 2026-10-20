@@ -188,9 +188,6 @@ try {
   const runtime = await api("/api/runtime/status");
   assert(runtime.version === packageJson.version, "Runtime status did not report the package app version");
   assert(runtime.localUrl === baseUrl, "Runtime status did not report the smoke local URL");
-  assert(runtime.tunnel.active === false, "Runtime status should not report an active tunnel during smoke test");
-  assert(runtime.auth.basicAuthConfigured === false, "Runtime status unexpectedly reported basic auth in smoke test");
-  assert(runtime.auth.publicTunnelExplicitlyAllowed === false, "Runtime status unexpectedly reported public tunnel opt-in in smoke test");
 
   const initialDashboard = await api("/api/dashboard");
   assert(initialDashboard.selectedCampaignId, "Dashboard snapshot did not select an active campaign");
