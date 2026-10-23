@@ -1,8 +1,19 @@
-version: '3'
 services:
   mentor-messenger-magic:
     build:
       context: .
+    init: true
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:3000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    environment:
+      MARO_LEDGER_PASSPHRASE: ${MARO_LEDGER_PASSPHRASE:?Set a strong ledger encryption passphrase}
+    volumes:
+      - maro-ledger:/data
     restart: unless-stopped
+
+volumes:
+  maro-ledger:

@@ -15,31 +15,45 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [24.22.0, 26.12.0]
+        node-version: [24.22.1, 26.12.1]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm ci
+      - run: npm install --global npm@12.2.1
+      - run: npm ci --ignore-scripts
       - run: npm audit --audit-level=low
       - run: npm run check:release
 
   container:
-    name: Build and smoke test static image
+    name: Full application and persistent encrypted ledger
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.12.1
       - run: docker build --file Dockerfile --tag maro-web:ci .
-      - name: Start image and verify HTTP response
-        run: |
-          docker run --detach --name maro-web-ci --publish 127.0.0.1:8080:80 maro-web:ci
-          if ! curl --fail --silent --show-error --retry 20 --retry-delay 2 --retry-connrefused --retry-all-errors http://127.0.0.1:8080/; then
-            docker ps --all
-            docker logs maro-web-ci
-            exit 1
-          fi
-      - name: Remove test container
+      - run: node scripts/check-container.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
-        run: docker rm --force maro-web-ci || true
+        with:
+          name: container-verification
+          path: artifacts/container-verification.json
+          if-no-files-found: error
+
+  windows-installer:
+    name: Windows installer and embedded runtime
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.12.1
+          cache: npm
+      - run: npm install --global npm@12.2.1
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=low
+      - run: npm run check:release
