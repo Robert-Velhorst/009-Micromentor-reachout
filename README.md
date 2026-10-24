@@ -128,7 +128,7 @@ The HAI integration status endpoint is read-only. It exposes campaign readiness,
 ## Requirements
 
 - Windows 11, macOS, or Linux for development.
-- Node.js 24.22.0 LTS or 26.12.0 Current, and npm for development. The production image uses Node.js 26.12.0.
+- Node.js 24.22.1 LTS or 26.12.1 Current, and npm 12.2.1 for development. The production image uses Node.js 26.12.1.
 
 ## Development
 
@@ -170,7 +170,9 @@ The production server binds to `127.0.0.1` by default. Set `PORT` or `HOST` only
 
 ## Remote deployment
 
-Hetzner is the production target. Follow [DEPLOYMENT_TARGET.md](DEPLOYMENT_TARGET.md) and the deployment guide before preparing a cutover. The repository does not include a public tunnel launcher.
+Hetzner is the production target. Follow [DEPLOYMENT_TARGET.md](DEPLOYMENT_TARGET.md) and [the deployment guide](DEPLOYMENT.md) before preparing a cutover. The repository does not include a public tunnel launcher.
+
+The container serves both the React interface and the ledger API. Compose binds it to `127.0.0.1:8080`, requires `MARO_LEDGER_PASSPHRASE`, and persists the encrypted ledger in a named volume. An authenticated TLS reverse proxy is required before any remote access.
 
 ## Windows Installer
 

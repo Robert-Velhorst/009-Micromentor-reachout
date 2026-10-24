@@ -1,36 +1,21 @@
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS node-runtime
-ARG TARGETARCH
-WORKDIR /tmp
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl xz-utils libatomic1 \
- && rm -rf /var/lib/apt/lists/*
-RUN set -eux; \
-    case "$TARGETARCH" in \
-      amd64) node_arch=x64; node_sha=fd47865ecd6391ebb431fc815e01b9135bf83ded5cf373247e9331e196b7aded ;; \
-      arm64) node_arch=arm64; node_sha=fd6cc729fa4448c2ac27c3fca5606019ced63c65a15c152c8df03e0cbce7f4c5 ;; \
-      *) echo "Unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
-    esac; \
-    curl --fail --location --silent --show-error \
-      "https://nodejs.org/dist/v26.12.0/node-v26.12.0-linux-${node_arch}.tar.xz" \
-      --output node.tar.xz; \
-    echo "${node_sha}  node.tar.xz" | sha256sum --check --status; \
-    tar -xJf node.tar.xz --directory /usr/local --strip-components=1; \
-    rm node.tar.xz; \
-    node --version | grep --fixed-strings --line-regexp "v26.12.0"
-
-FROM node-runtime AS build
+FROM node:26.12.1-trixie-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS build
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci && npm audit --audit-level=low
+COPY package.json package-lock.json ./
+RUN npm install --global npm@12.2.1
+RUN npm ci --ignore-scripts && npm audit --audit-level=low
 COPY . .
-RUN npm run check:release
+RUN npm run check:release && npm sbom --omit=dev --sbom-format cyclonedx > dist/runtime-sbom.json
 
-FROM nginx:1.31.7-alpine@sha256:892bb2152464f0c5d8972593a5f5afaf8054552580b699d95f8ff4af08c2d33d AS runtime
-
-COPY --from=build /app/dist /usr/share/nginx/html
-
-RUN printf 'server {\n    listen 80;\n    location / {\n        root /usr/share/nginx/html;\n        index index.html;\n        try_files $uri $uri/ /index.html;\n    }\n}\n' > /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+FROM node:26.12.1-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS runtime
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 MARO_DATA_DIR=/data
+WORKDIR /app
+COPY --from=build --chown=node:node /app/dist ./dist
+RUN apk upgrade --no-cache
+RUN rm -rf /usr/local/lib/node_modules/npm /opt/yarn-*
+RUN rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn /usr/local/bin/yarnpkg
+RUN mkdir -p /data && chown node:node /data
+USER node
+VOLUME ["/data"]
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "dist/index.cjs"]

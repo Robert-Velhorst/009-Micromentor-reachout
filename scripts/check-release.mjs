@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -139,11 +139,18 @@ if (process.platform === "win32") {
         throw new Error(`Installed payload is missing ${relativePath}`);
       }
     }
+    const embeddedNode = execFileSync(path.join(installRoot, "runtime", "node.exe"), ["-p", "process.versions.node"], { encoding: "utf8", windowsHide: true, timeout: 15000 }).trim();
+    if (embeddedNode !== process.versions.node) throw new Error("Installed runtime differs from the build runtime");
+    console.log(`[release-check] Installed Node.js: ${embeddedNode}`);
 
     const installerBytes = fs.readFileSync(installerPath);
     const installerHash = createHash("sha256").update(installerBytes).digest("hex").toUpperCase();
     console.log(`[release-check] Installer SHA-256: ${installerHash}`);
   } finally {
+    const relativeInstallRoot = path.relative(fs.realpathSync(os.tmpdir()), fs.realpathSync(installRoot));
+    if (!relativeInstallRoot || relativeInstallRoot.startsWith("..") || path.isAbsolute(relativeInstallRoot) || !path.basename(installRoot).startsWith("maro-installer-smoke-")) {
+      throw new Error("Refusing to remove an installer fixture outside its temporary directory");
+    }
     fs.rmSync(installRoot, { recursive: true, force: true });
   }
 } else {
