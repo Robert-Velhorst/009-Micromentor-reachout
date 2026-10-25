@@ -128,7 +128,7 @@ The HAI integration status endpoint is read-only. It exposes campaign readiness,
 ## Requirements
 
 - Windows 11, macOS, or Linux for development.
-- Node.js 24.22.0 LTS or 26.12.0 Current, and npm for development. The production image uses Node.js 26.12.0.
+- Node.js 24.22.1 LTS or 26.12.1 Current, and npm for development. Container builds use Node.js 26.12.1; the final image serves the static assets with Nginx.
 
 ## Development
 
