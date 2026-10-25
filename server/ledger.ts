@@ -2440,7 +2440,15 @@ function reviewMessageQuality(campaign: OutreachCampaign, mentor: MentorProfile 
   const body = draft.body.trim();
   const combined = `${subject}\n${body}`;
   const lowerCombined = combined.toLowerCase();
-  const unresolvedTokens = Array.from(combined.matchAll(/\{([^}]+)\}/g)).map((match) => match[1]?.trim()).filter(Boolean);
+  const unresolvedTokens: string[] = [];
+  let opening = combined.indexOf("{");
+  while (opening !== -1) {
+    const closing = combined.indexOf("}", opening + 1);
+    if (closing === -1) break;
+    const token = combined.slice(opening + 1, closing).trim();
+    if (token) unresolvedTokens.push(token);
+    opening = combined.indexOf("{", closing + 1);
+  }
   const bodyWords = body.split(/\s+/).filter(Boolean).length;
   const callToActionCount = countMatches(lowerCombined, [
     /\?/,
