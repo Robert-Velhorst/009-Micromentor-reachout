@@ -1,0 +1,48 @@
+name: Micromentor normal lock refresh evidence
+on:
+  push:
+    branches: [audit/micromentor-body-parser-lock-20261025]
+permissions:
+  contents: read
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '26.12.1'
+      - run: npm install --global npm@12.2.1
+      - name: Refresh through the existing Express dependency range without overrides
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          mkdir -p "$RUNNER_TEMP/micromentor-lock"
+          git rev-parse HEAD > "$RUNNER_TEMP/micromentor-lock/tested-head.txt"
+          git ls-files -z | xargs -0 sha256sum > "$RUNNER_TEMP/micromentor-lock/source-before.sha256"
+          npm update body-parser --package-lock-only --ignore-scripts --no-audit
+          git diff --name-only > "$RUNNER_TEMP/micromentor-lock/changed-paths.txt"
+          cp package-lock.json "$RUNNER_TEMP/micromentor-lock/package-lock.json"
+          node --version > "$RUNNER_TEMP/micromentor-lock/node-version.txt"
+          npm --version > "$RUNNER_TEMP/micromentor-lock/npm-version.txt"
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os,re
+          out=Path(os.environ['RUNNER_TEMP'])/'micromentor-lock'
+          assert (out/'changed-paths.txt').read_text().splitlines()==['package-lock.json']
+          lock=json.loads((out/'package-lock.json').read_text())
+          assert lock['packages']['node_modules/body-parser']['version']=='2.4.0'
+          prereleases={name:p['version'] for name,p in lock['packages'].items() if p.get('version') and not re.fullmatch(r'\d+\.\d+\.\d+(?:\+[A-Za-z0-9.-]+)?',p['version'])}
+          (out/'prereleases.json').write_text(json.dumps(prereleases,indent=2))
+          assert not prereleases
+          PY
+          npm audit --package-lock-only --json > "$RUNNER_TEMP/micromentor-lock/audit.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: micromentor-normal-body-parser-lock
+          path: ${{ runner.temp }}/micromentor-lock/
+          if-no-files-found: error
