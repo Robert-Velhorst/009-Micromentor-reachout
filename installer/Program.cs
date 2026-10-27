@@ -34,12 +34,25 @@ internal static class Program
         or JsonException or COMException or Win32Exception or TargetInvocationException
         or NotSupportedException;
 
-    private static int Main()
+    private static int Main(string[] args)
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("MARO installation requires Windows.");
         try
         {
+            if (args.Length == 1 && args[0] == "--runtime-info")
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    runtimeVersion = Environment.Version.ToString(),
+                    frameworkDescription = RuntimeInformation.FrameworkDescription,
+                    processArchitecture = RuntimeInformation.ProcessArchitecture.ToString(),
+                    osArchitecture = RuntimeInformation.OSArchitecture.ToString(),
+                    appVersion = AppVersion
+                }));
+                return 0;
+            }
+            if (args.Length != 0) throw new ArgumentException("Unrecognized MARO installer argument.");
             string? configured = Environment.GetEnvironmentVariable("MARO_INSTALL_DIR");
             string installDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
                 String.IsNullOrWhiteSpace(configured)

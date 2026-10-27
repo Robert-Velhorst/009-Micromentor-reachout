@@ -67,6 +67,12 @@ try {
   assert.equal(runtimeConfig.runtimeOptions.framework, undefined);
   fs.copyFileSync(configPath, path.join(output, "compiled-installer.runtimeconfig.json"));
   const installer = path.join(root, "artifacts", "MARO-Windows11-Setup.exe");
+  const actualInstallerRuntime = JSON.parse(execFileSync(installer, ["--runtime-info"], {
+    encoding: "utf8", windowsHide: true,
+  }));
+  assert.equal(actualInstallerRuntime.runtimeVersion, profile.dotnetRuntimeVersion);
+  assert.equal(actualInstallerRuntime.frameworkDescription, `.NET ${profile.dotnetRuntimeVersion}`);
+  assert.equal(actualInstallerRuntime.processArchitecture.toLowerCase(), process.arch);
   const installerHash = hash(fs.readFileSync(installer));
   const payloadHash = hash(fs.readFileSync(path.join(generated, "maro-app.zip")));
   const stagedFiles = {};
@@ -85,6 +91,7 @@ try {
     actualNodeVersion: process.versions.node, actualNodeSha256: nodeHash, actualDotnetSdkVersion: sdkVersion,
     compilerPath: compiler, compilerSha256: hash(fs.readFileSync(compiler)), publisherHostSignatures: signatures,
     selfContainedRuntimeConfig: runtimeConfig, generatedCSharpSha256: hash(fs.readFileSync(path.join(generated, "MAROInstaller.cs"))),
+    actualInstallerRuntime,
     generatedProjectSha256: hash(fs.readFileSync(path.join(generated, "MAROInstaller.csproj"))),
     installerSha256: installerHash, installerPayloadZipSha256: payloadHash, stagedPayloadFiles: stagedFiles,
     artifactReleaseSigningOrOperatorAcceptance: false, currentCompilerBuildAndOriginalReleaseCasesPass: true,
