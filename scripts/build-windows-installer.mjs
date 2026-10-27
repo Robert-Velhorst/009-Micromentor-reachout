@@ -212,6 +212,11 @@ namespace MAROInstaller
 
         private static int Main()
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                throw new PlatformNotSupportedException("MARO installation requires Windows.");
+            }
+
             try
             {
                 string? installDir = Environment.GetEnvironmentVariable("MARO_INSTALL_DIR");
@@ -309,6 +314,11 @@ namespace MAROInstaller
 
         private static void RegisterUninstallEntry(string installDir)
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                throw new PlatformNotSupportedException("MARO installation requires Windows.");
+            }
+
             using (RegistryKey? key = Registry.CurrentUser.CreateSubKey(@"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MARO"))
             {
                 if (key == null)
@@ -344,6 +354,11 @@ namespace MAROInstaller
 
         private static void CreateShortcut(string shortcutPath, string targetPath, string workingDirectory)
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                throw new PlatformNotSupportedException("MARO installation requires Windows.");
+            }
+
             string? shortcutDirectory = Path.GetDirectoryName(shortcutPath);
             if (String.IsNullOrEmpty(shortcutDirectory))
             {
