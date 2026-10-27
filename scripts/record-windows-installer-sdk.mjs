@@ -61,10 +61,11 @@ try {
   assert.ok(signatures.every((entry) => entry.status === "Valid"));
   assert.match(signatures.find((entry) => entry.name === "dotnet").subject, /Microsoft/i);
   const generated = path.join(root, "artifacts", "windows-installer");
-  const configPath = path.join(generated, "obj", "Release", "net10.0-windows", profile.runtimeIdentifiers[process.arch], "MARO-Windows11-Setup.runtimeconfig.json");
+  const configPath = path.join(generated, "bin", "Release", "net10.0-windows", profile.runtimeIdentifiers[process.arch], "MARO-Windows11-Setup.runtimeconfig.json");
   const runtimeConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.ok(runtimeConfig.runtimeOptions.includedFrameworks.some((entry) => entry.name === "Microsoft.NETCore.App" && entry.version === profile.dotnetRuntimeVersion));
   assert.equal(runtimeConfig.runtimeOptions.framework, undefined);
+  fs.copyFileSync(configPath, path.join(output, "compiled-installer.runtimeconfig.json"));
   const installer = path.join(root, "artifacts", "MARO-Windows11-Setup.exe");
   const installerHash = hash(fs.readFileSync(installer));
   const payloadHash = hash(fs.readFileSync(path.join(generated, "maro-app.zip")));

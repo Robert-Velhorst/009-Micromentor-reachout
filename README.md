@@ -204,3 +204,15 @@ npm run check:release
 `npm run check:release` runs the TypeScript contract check, production build plus encrypted-ledger API smoke test, production surface checks for CSP/security headers and external asset regressions, and the Windows installer build on Windows hosts.
 
 Security, resource, and feature analysis notes are in `analysis/SECURITY_RESOURCE_FEATURE_REPORT.md`. The requirement-to-evidence closeout is in `analysis/COMPLETION_AUDIT.md`.
+
+
+Windows installer upgrades stage the new payload before replacing an owned installation.
+The default `data` directory and files outside the recorded managed payload are carried
+forward; the complete old install remains beside it as `<install>.maro-recovery`.
+Close MARO first. Existing nonempty directories without a MARO ownership marker,
+reparse points, overlapping custom data/program paths, and an unreviewed recovery
+checkpoint stop the upgrade. The checkpoint is never automatically deleted.
+Legacy custom files inside `dist` or `runtime` remain in that recovery directory.
+Review those files before accepting an upgrade; move any data out of program roots.
+Uninstall deregisters Windows shortcuts/registry entries and retains the install and data.
+No real installation or ledger migration is performed by these CI cases.

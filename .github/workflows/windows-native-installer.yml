@@ -61,6 +61,9 @@ jobs:
           $sourceRoot = (Get-Location).Path
           & ./artifacts/codeql-tool/codeql/codeql.exe database create artifacts/csharp-database --language=csharp --build-mode=manual --source-root="$sourceRoot" --command="npm run check:release" --threads=2 --ram=4096
           if ($LASTEXITCODE -ne 0) { throw 'Original release checks or complete CSharp extraction failed.' }
+      - name: Additional owned installer upgrade and recovery cases
+        if: steps.release.outcome == 'success'
+        run: node scripts/check-installer-upgrade.mjs
       - name: Bind actual native SDK, runtime, payload and unchanged source
         if: always()
         env:
