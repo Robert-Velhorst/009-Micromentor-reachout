@@ -1,0 +1,108 @@
+name: Current Windows native installer and complete CSharp source
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  windows-installer:
+    if: github.repository == 'Robert-Velhorst/009-Micromentor-reachout' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-latest
+    env:
+      NPM_CONFIG_ENGINE_STRICT: 'true'
+      NPM_CONFIG_STRICT_PEER_DEPS: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_CLI_UI_LANGUAGE: en
+      CODEQL_VERSION: '2.27.3'
+      CODEQL_WINDOWS_BUNDLE_SHA256: b1a54af0e0657bc8dd2201474373aae6cee72c20d820a3a89423013f2465533d
+    steps:
+      - name: Preserve canonical source bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '26.12.1'
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '10.0.403'
+      - name: Select stable npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@12.2.1 --no-audit --no-fund
+          npm_prefix="$(npm prefix --global)"
+          printf '%s\n' "$npm_prefix" >> "$GITHUB_PATH"
+      - name: Bind all source before execution
+        run: node scripts/record-windows-installer-sdk.mjs before
+      - name: Verify and extract the official stable Windows CodeQL bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force artifacts/codeql-tool | Out-Null
+          curl.exe --fail --location --retry 3 --output artifacts/codeql-bundle.tar.gz "https://github.com/github/codeql-action/releases/download/codeql-bundle-v$env:CODEQL_VERSION/codeql-bundle-win64.tar.gz"
+          if ($LASTEXITCODE -ne 0) { throw 'CodeQL bundle download failed.' }
+          $actual = (Get-FileHash -LiteralPath artifacts/codeql-bundle.tar.gz -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $env:CODEQL_WINDOWS_BUNDLE_SHA256) { throw 'CodeQL bundle checksum mismatch.' }
+          tar.exe -xzf artifacts/codeql-bundle.tar.gz -C artifacts/codeql-tool
+          if ($LASTEXITCODE -ne 0) { throw 'CodeQL extraction failed.' }
+          & ./artifacts/codeql-tool/codeql/codeql.exe version --format=json | Out-File -Encoding utf8 artifacts/windows-sdk-evidence/codeql-version.json
+          if ($LASTEXITCODE -ne 0) { throw 'CodeQL version probe failed.' }
+      - run: npm ci
+      - run: npm audit --audit-level=low
+      - name: Original release and API checks including the actual Windows installer
+        id: release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sourceRoot = (Get-Location).Path
+          & ./artifacts/codeql-tool/codeql/codeql.exe database create artifacts/csharp-database --language=csharp --build-mode=manual --source-root="$sourceRoot" --command="npm run check:release" --threads=2 --ram=4096
+          if ($LASTEXITCODE -ne 0) { throw 'Original release checks or complete CSharp extraction failed.' }
+      - name: Additional owned installer upgrade and recovery cases
+        if: steps.release.outcome == 'success'
+        run: node scripts/check-installer-upgrade.mjs
+      - name: Bind actual native SDK, runtime, payload and unchanged source
+        if: always()
+        env:
+          RELEASE_CHECK_OUTCOME: ${{ steps.release.outcome }}
+        run: node scripts/record-windows-installer-sdk.mjs after
+      - name: Finalize and analyze every extracted CSharp source with the complete suite
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./artifacts/codeql-tool/codeql/codeql.exe database analyze artifacts/csharp-database codeql/csharp-queries:codeql-suites/csharp-security-and-quality.qls --format=sarifv2.1.0 --output=artifacts/windows-sdk-evidence/full-csharp-source.sarif --threads=2 --ram=4096
+          if ($LASTEXITCODE -ne 0) { throw 'Full CSharp analysis failed.' }
+          Copy-Item -LiteralPath artifacts/csharp-database/src.zip -Destination artifacts/windows-sdk-evidence/csharp-extracted-source.zip
+      - name: Require every CSharp result to remain in scope and no findings
+        if: always()
+        shell: python
+        run: |
+          import hashlib,json,pathlib,zipfile
+          root=pathlib.Path.cwd();out=root/'artifacts/windows-sdk-evidence'
+          data=json.loads((out/'full-csharp-source.sarif').read_text(encoding='utf-8-sig'));assert len(data['runs'])==1
+          run=data['runs'][0];components=[run['tool']['driver'],*run['tool'].get('extensions',[])]
+          assert not any('pr-diff-range' in part.get('name','') for part in components)
+          rules={rule['id'] for part in components for rule in part.get('rules',[])};assert rules
+          source=root/'artifacts/windows-installer/MAROInstaller.cs';expected=hashlib.sha256(source.read_bytes()).hexdigest()
+          with zipfile.ZipFile(out/'csharp-extracted-source.zip') as archive:
+              matches=[n for n in archive.namelist() if n.endswith('/artifacts/windows-installer/MAROInstaller.cs')]
+              assert len(matches)==1 and hashlib.sha256(archive.read(matches[0])).hexdigest()==expected
+          findings=run.get('results',[])
+          (out/'csharp-source-summary.json').write_text(json.dumps({'rules':sorted(rules),'all_results_retained':True,'findings':len(findings),'compiled_source_sha256':expected,'no_source_query_or_diff_exclusions':True},indent=2)+'\n')
+          assert not findings,'Complete CSharp findings remain; no exclusions or dismissals are used.'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: windows-native-installer-complete-evidence
+          path: |
+            artifacts/windows-sdk-evidence/
+            artifacts/windows-installer/MAROInstaller.cs
+            artifacts/windows-installer/MAROInstaller.csproj
+            artifacts/windows-installer/maro-app.zip
+            artifacts/MARO-Windows11-Setup.exe
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "dotnetSdkVersion": "10.0.403",
+  "dotnetRuntimeVersion": "10.0.14",
+  "csharpLanguageVersion": "14.0",
+  "nodeVersion": "26.12.1",
+  "npmVersion": "12.2.1",
+  "runtimeIdentifiers": {
+    "x64": "win-x64",
+    "arm64": "win-arm64"
+  },
+  "nodeExeSha256": {
+    "x64": "1c63f1417e2e26d83ca9a9ec1d548524ab1305bc7209d90ebca56257ff0d84ed",
+    "arm64": "7384299eeb99f419acaa4142771689fbca72e1c942f8da02b7928ffe1744e3ff"
+  },
+  "primarySources": {
+    "dotnetIndex": "https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json",
+    "dotnetReleases": "https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json",
+    "nodeChecksums": "https://nodejs.org/dist/v26.12.1/SHASUMS256.txt"
+  },
+  "officialSdkArchives": {
+    "x64": {
+      "name": "dotnet-sdk-win-x64.zip",
+      "rid": "win-x64",
+      "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.403/dotnet-sdk-10.0.403-win-x64.zip",
+      "hash": "7a114c318fa7f1d9822991b534b2814d0e78386ceda816b371f5141acefe741d87ccb606ede06cadac8f9ac5070e32b708a67bbd1619ff5e5a7858a27874ef48"
+    },
+    "arm64": {
+      "name": "dotnet-sdk-win-arm64.zip",
+      "rid": "win-arm64",
+      "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.403/dotnet-sdk-10.0.403-win-arm64.zip",
+      "hash": "f78ecd8b48e24fd72ee604687b75f1bbb81505e8343f7d52e4baf9ea32372557eb30e88facaaad195bf2646fcce117fd941e49da0d5bdee1d60d63d836968429"
+    }
+  },
+  "previewSdkAllowed": false
+}
