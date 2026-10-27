@@ -174,6 +174,8 @@ Hetzner is the production target. Follow [DEPLOYMENT_TARGET.md](DEPLOYMENT_TARGE
 
 ## Windows Installer
 
+Build on Windows with the exact stable .NET SDK and Node versions in `installer-sdk.json` / `global.json`. The installer embeds the pinned .NET runtime and Node; the build uses C#14 with nullable checks and compiler warnings treated as errors. No preview SDK or legacy compiler fallback is accepted.
+
 Build a Windows 11 installer:
 
 ```sh

@@ -13,13 +13,10 @@ const installerPath = path.join(root, "artifacts", "MARO-Windows11-Setup.exe");
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const appVersion = String(packageJson.version || "0.0.0");
 const publisher = "Noodzakelijk Online";
-const cscPath = path.join(
-  process.env.SystemRoot || "C:\\Windows",
-  "Microsoft.NET",
-  "Framework64",
-  "v4.0.30319",
-  "csc.exe"
-);
+const sdkProfile = JSON.parse(fs.readFileSync(path.join(root, "installer-sdk.json"), "utf8"));
+const sdkProject = path.join(artifactsRoot, "MAROInstaller.csproj");
+const publishRoot = path.join(artifactsRoot, "publish");
+const runtimeIdentifier = sdkProfile.runtimeIdentifiers[process.arch];
 
 function assertInside(parent, child) {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
@@ -74,11 +71,34 @@ if (!fs.existsSync(path.join(root, "dist", "public", "index.html"))) {
   throw new Error("dist/public/index.html is missing. Run npm run build before building the installer.");
 }
 
-if (!fs.existsSync(cscPath)) {
-  throw new Error(`The .NET Framework C# compiler was not found at ${cscPath}.`);
+if (!runtimeIdentifier || !/^win-(x64|arm64)$/.test(runtimeIdentifier)) {
+  throw new Error(`No current Windows installer runtime is configured for ${process.arch}.`);
 }
+if (!/^\d+\.\d+\.\d+$/.test(sdkProfile.dotnetSdkVersion)
+    || !/^\d+\.\d+\.\d+$/.test(sdkProfile.dotnetRuntimeVersion)
+    || !/^\d+\.\d+$/.test(sdkProfile.csharpLanguageVersion)) {
+  throw new Error("The installer requires explicit stable SDK, runtime and C# versions.");
+}
+if (process.versions.node !== sdkProfile.nodeVersion) {
+  throw new Error(`Build with the pinned stable Node ${sdkProfile.nodeVersion}.`);
+}
+const selectedSdk = spawnSync("dotnet", ["--version"], {
+  cwd: root, shell: false, encoding: "utf8", windowsHide: true,
+});
+if (selectedSdk.status !== 0 || selectedSdk.stdout.trim() !== sdkProfile.dotnetSdkVersion) {
+  throw new Error(`Install the pinned stable .NET SDK ${sdkProfile.dotnetSdkVersion}; no fallback is accepted.`);
+}
+const sdkList = spawnSync("dotnet", ["--list-sdks"], {
+  cwd: root, shell: false, encoding: "utf8", windowsHide: true,
+});
+const sdkPrefix = `${sdkProfile.dotnetSdkVersion} [`;
+const sdkRow = sdkList.stdout.split(/\r?\n/).find((line) => line.startsWith(sdkPrefix));
+if (sdkList.status !== 0 || !sdkRow) {
+  throw new Error("The selected .NET SDK location could not be verified.");
+}
+const dotnetRoot = path.dirname(sdkRow.slice(sdkPrefix.length, -1));
 
-for (const target of [artifactsRoot, appRoot, appZip, csharpSource, installerPath]) {
+for (const target of [artifactsRoot, appRoot, appZip, csharpSource, installerPath, sdkProject, publishRoot]) {
   assertInside(path.join(root, "artifacts"), target);
 }
 
@@ -88,6 +108,13 @@ fs.mkdirSync(appRoot, { recursive: true });
 copyDirectory(path.join(root, "dist"), path.join(appRoot, "dist"));
 fs.mkdirSync(path.join(appRoot, "runtime"), { recursive: true });
 fs.copyFileSync(process.execPath, path.join(appRoot, "runtime", "node.exe"));
+for (const [from, name] of [
+  [path.join(path.dirname(process.execPath), "LICENSE"), "THIRD-PARTY-NODE-LICENSE.txt"],
+  [path.join(dotnetRoot, "LICENSE.txt"), "THIRD-PARTY-DOTNET-LICENSE.txt"],
+  [path.join(dotnetRoot, "ThirdPartyNotices.txt"), "THIRD-PARTY-DOTNET-NOTICES.txt"],
+]) {
+  fs.copyFileSync(from, path.join(appRoot, name));
+}
 
 writeText(
   path.join(appRoot, "MARO.cmd"),
@@ -158,22 +185,6 @@ Close the MARO server before uninstalling.
 `
 );
 
-if (fs.existsSync(appZip)) {
-  fs.unlinkSync(appZip);
-}
-
-run(
-  "powershell",
-  [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    "$ProgressPreference='SilentlyContinue'; Compress-Archive -Force -Path * -DestinationPath $env:APP_ZIP",
-  ],
-  { cwd: appRoot, env: { ...process.env, APP_ZIP: appZip } }
-);
-
 writeText(
   csharpSource,
   `using System;
@@ -203,7 +214,7 @@ namespace MAROInstaller
         {
             try
             {
-                string installDir = Environment.GetEnvironmentVariable("MARO_INSTALL_DIR");
+                string? installDir = Environment.GetEnvironmentVariable("MARO_INSTALL_DIR");
                 if (String.IsNullOrWhiteSpace(installDir))
                 {
                     installDir = Path.Combine(
@@ -282,7 +293,7 @@ namespace MAROInstaller
         private static void ExtractEmbeddedPayload(string destination)
         {
             Assembly assembly = Assembly.GetExecutingAssembly();
-            using (Stream input = assembly.GetManifestResourceStream(ResourceName))
+            using (Stream? input = assembly.GetManifestResourceStream(ResourceName))
             {
                 if (input == null)
                 {
@@ -298,7 +309,7 @@ namespace MAROInstaller
 
         private static void RegisterUninstallEntry(string installDir)
         {
-            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MARO"))
+            using (RegistryKey? key = Registry.CurrentUser.CreateSubKey(@"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MARO"))
             {
                 if (key == null)
                 {
@@ -333,12 +344,17 @@ namespace MAROInstaller
 
         private static void CreateShortcut(string shortcutPath, string targetPath, string workingDirectory)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(shortcutPath));
+            string? shortcutDirectory = Path.GetDirectoryName(shortcutPath);
+            if (String.IsNullOrEmpty(shortcutDirectory))
+            {
+                throw new ArgumentException("A shortcut directory is required.", nameof(shortcutPath));
+            }
+            Directory.CreateDirectory(shortcutDirectory);
 
             try
             {
-                Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-                dynamic shell = Activator.CreateInstance(shellType);
+                Type shellType = Type.GetTypeFromProgID("WScript.Shell") ?? throw new InvalidOperationException("Windows Script Host is unavailable.");
+                dynamic shell = Activator.CreateInstance(shellType) ?? throw new InvalidOperationException("Windows Script Host could not be created.");
                 dynamic shortcut = shell.CreateShortcut(shortcutPath);
                 shortcut.TargetPath = targetPath;
                 shortcut.WorkingDirectory = workingDirectory;
@@ -359,18 +375,41 @@ namespace MAROInstaller
 `
 );
 
-run(cscPath, [
-  "/nologo",
-  "/target:exe",
-  "/platform:anycpu",
-  "/optimize+",
-  `/out:${installerPath}`,
-  `/resource:${appZip},MaroPayloadZip`,
-  "/reference:System.IO.Compression.dll",
-  "/reference:System.IO.Compression.FileSystem.dll",
-  "/reference:Microsoft.CSharp.dll",
-  csharpSource,
+writeText(
+  sdkProject,
+  `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeIdentifier>${runtimeIdentifier}</RuntimeIdentifier>
+    <RuntimeFrameworkVersion>${sdkProfile.dotnetRuntimeVersion}</RuntimeFrameworkVersion>
+    <LangVersion>${sdkProfile.csharpLanguageVersion}</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>MARO-Windows11-Setup</AssemblyName>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="MAROInstaller.cs" />
+    <EmbeddedResource Include="maro-app.zip" LogicalName="MaroPayloadZip" />
+  </ItemGroup>
+  <Target Name="CreateMaroPayload" BeforeTargets="PrepareResources">
+    <ZipDirectory SourceDirectory="$(MSBuildProjectDirectory)/app"
+                  DestinationFile="$(MSBuildProjectDirectory)/maro-app.zip" Overwrite="true" />
+  </Target>
+</Project>
+`
+);
+
+run("dotnet", [
+  "publish", sdkProject, "--configuration", "Release", "--runtime", runtimeIdentifier,
+  "--self-contained", "true", "--output", publishRoot,
 ]);
+fs.copyFileSync(path.join(publishRoot, "MARO-Windows11-Setup.exe"), installerPath);
 
 const stats = fs.statSync(installerPath);
 console.log(`Created ${installerPath}`);
